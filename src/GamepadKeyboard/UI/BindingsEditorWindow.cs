@@ -293,10 +293,6 @@ namespace GamepadKeyboard.UI
                 Add("D-pad Down", () => p.DDown, v => p.DDown = v);
                 Add("D-pad Left", () => p.DLeft, v => p.DLeft = v);
                 Add("D-pad Right", () => p.DRight, v => p.DRight = v);
-                Add("Y+D-pad Up", () => p.YDUp, v => p.YDUp = v);
-                Add("Y+D-pad Down", () => p.YDDown, v => p.YDDown = v);
-                Add("Y+D-pad Left", () => p.YDLeft, v => p.YDLeft = v);
-                Add("Y+D-pad Right", () => p.YDRight, v => p.YDRight = v);
                 BuildComboSection(() => p.ComboBindings, v => p.ComboBindings = v);
             }
         }
@@ -322,7 +318,7 @@ namespace GamepadKeyboard.UI
 
         private static int IndexOfAction(ComboBox box, string action)
         {
-            for (int i = 1; i < box.Items.Count; i++)
+            for (int i = 0; i < box.Items.Count; i++)
                 if (Equals(box.Items[i], action)) return i;
             return -1;
         }
@@ -330,9 +326,10 @@ namespace GamepadKeyboard.UI
         private void FillChoices(ComboBox box, string currentValue)
         {
             box.Items.Clear();
+            box.Items.Add("None");
             box.Items.Add(PoolItem);
-            if (!string.IsNullOrEmpty(currentValue))
-                box.Items.Add(currentValue);   // custom value (e.g. Key:X) stays visible at index 1
+            if (!string.IsNullOrEmpty(currentValue) && currentValue != "None")
+                box.Items.Add(currentValue);   // custom value (e.g. Key:X) stays visible
             foreach (var a in ActionCatalog.All) box.Items.Add(a);
         }
 
