@@ -107,53 +107,8 @@ namespace GamepadKeyboard.Keyboard
                 new KeyDef("RAlt", Vk.RMenu, 1.25),
                 new KeyDef("RCtrl", Vk.RControl, 1.25));
 
-            // Numeric keypad (optional block, offset to the right)
-            const int npx = 16;
-            Row(0, new KeyDef("PrtSc", Vk.Print, 1), new KeyDef("ScrLk", Vk.Scroll, 1), new KeyDef("Pause", Vk.Pause, 1));
-            // ^ these land at x=0..2; shift them right manually below.
-
-            _keys[^3].X = npx; _keys[^3].Y = 1;
-            _keys[^2].X = npx; _keys[^2].Y = 1;
-            _keys[^1].X = npx + 2; _keys[^1].Y = 1;
-
-            // NumPad rows
-            Add(new KeyDef("NumLk", Vk.NumLock), npx, 2);
-            Add(new KeyDef("/", Vk.Divide), npx + 1, 2);
-            Add(new KeyDef("*", Vk.Multiply), npx + 2, 2);
-            Add(new KeyDef("-", Vk.Subtract), npx + 3, 2);
-
-            Add(new KeyDef("7", Vk.NumPad0 + 7), npx, 3);
-            Add(new KeyDef("8", Vk.NumPad0 + 8), npx, 4);
-            Add(new KeyDef("9", Vk.NumPad0 + 9), npx, 5);
-            Add(new KeyDef("+", Vk.Add), npx + 3, 3, 1, 2);
-
-            Add(new KeyDef("4", Vk.NumPad0 + 4), npx, 4);
-            Add(new KeyDef("5", Vk.NumPad0 + 5), npx, 5);
-            Add(new KeyDef("6", Vk.NumPad0 + 6), npx, 6);
-
-            Add(new KeyDef("1", Vk.NumPad0 + 1), npx, 5);
-            Add(new KeyDef("2", Vk.NumPad0 + 2), npx, 6);
-            Add(new KeyDef("3", Vk.NumPad0 + 3), npx, 7);
-            Add(new KeyDef("Enter", Vk.Return), npx + 3, 5, 1, 2);
-
-            Add(new KeyDef("0", Vk.NumPad0), npx, 7, 2, 1);
-            Add(new KeyDef(".", Vk.Decimal), npx + 2, 7);
-
-            // Home / nav cluster between main block and numpad
-            const int nx = 15;
-            Add(new KeyDef("Ins", Vk.Insert), nx, 2);
-            Add(new KeyDef("Home", Vk.Home), nx + 1, 2);
-            Add(new KeyDef("PgUp", Vk.PageUp), nx + 2, 2);
-            Add(new KeyDef("Del", Vk.Delete), nx, 3);
-            Add(new KeyDef("End", Vk.End), nx + 1, 3);
-            Add(new KeyDef("PgDn", Vk.PageDown), nx + 2, 3);
-            Add(new KeyDef("^", Vk.Up), nx + 1, 4);
-            Add(new KeyDef("<", Vk.Left, 1, true), nx, 5);
-            Add(new KeyDef("v", Vk.Down), nx + 1, 5);
-            Add(new KeyDef(">", Vk.Right, 1, true), nx + 2, 5);
-
-            GridW = npx + 4;
-            GridH = 8;
+            GridW = 16;   // widest row: 13 function keys
+            GridH = 6;    // rows 0..5
         }
 
         private void Add(KeyDef k, double x, double y, double w = 1, double h = 1)

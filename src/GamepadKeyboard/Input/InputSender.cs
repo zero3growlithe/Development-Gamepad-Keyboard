@@ -65,19 +65,22 @@ namespace GamepadKeyboard.Input
             Dispatch(inputs);
         }
 
-        public void MouseButton(uint downFlag, uint upFlag)
+        public void MouseButton(uint downFlag, uint upFlag, uint mouseData = 0)
         {
-            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
-            inputs[0] = new NativeMethods.INPUT
-            {
-                type = NativeMethods.INPUT_MOUSE,
-                U = new NativeMethods.InputUnion
-                {
-                    mi = new NativeMethods.MOUSEINPUT { dwFlags = downFlag }
-                }
-            };
+            var inputs = new NativeMethods.INPUT[2];
+            inputs[0] = MouseInput(downFlag, mouseData);
+            inputs[1] = MouseInput(upFlag, mouseData);
             Dispatch(inputs);
         }
+
+        private static NativeMethods.INPUT MouseInput(uint flags, uint mouseData) => new()
+        {
+            type = NativeMethods.INPUT_MOUSE,
+            U = new NativeMethods.InputUnion
+            {
+                mi = new NativeMethods.MOUSEINPUT { mouseData = mouseData, dwFlags = flags }
+            }
+        };
 
         public void MouseWheel(int delta) => Wheel(delta, NativeMethods.MOUSEEVENTF_WHEEL);
 
@@ -125,10 +128,22 @@ namespace GamepadKeyboard.Input
             };
         }
 
+        private static bool _lastFailed;
+
         private static void Dispatch(Span<NativeMethods.INPUT> inputs)
         {
             var arr = inputs.ToArray();
-            _ = NativeMethods.SendInput((uint)arr.Length, arr, NativeMethods.INPUT.Size);
+            uint sent = NativeMethods.SendInput((uint)arr.Length, arr, NativeMethods.INPUT.Size);
+            if (sent == arr.Length)
+            {
+                _lastFailed = false;
+            }
+            else if (!_lastFailed)
+            {
+                _lastFailed = true;
+                App.Log("SendInput failed: sent " + sent + "/" + arr.Length +
+                        " err=" + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+            }
         }
     }
 }

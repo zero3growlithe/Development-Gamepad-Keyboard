@@ -15,8 +15,7 @@ namespace GamepadKeyboard.Overlay
         private readonly TextBlock _text = new()
         {
             Foreground = Brushes.White,
-            FontSize = 18,
-            FontWeight = FontWeights.Bold
+            FontSize = 12
         };
 
         private readonly System.Windows.Threading.DispatcherTimer _hideTimer;
@@ -24,6 +23,7 @@ namespace GamepadKeyboard.Overlay
         public ToastOverlay()
         {
             WindowStyle = WindowStyle.None;
+            Topmost = true;
             AllowsTransparency = true;
             Background = Brushes.Transparent;
             ResizeMode = ResizeMode.NoResize;
@@ -35,7 +35,7 @@ namespace GamepadKeyboard.Overlay
             {
                 Background = new SolidColorBrush(Color.FromArgb(210, 24, 24, 32)),
                 CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(16, 8, 16, 8),
+                Padding = new Thickness(8, 4, 8, 4),
                 Child = _text
             };
             Content = border;

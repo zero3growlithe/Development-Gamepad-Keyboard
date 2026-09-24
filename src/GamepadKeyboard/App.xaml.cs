@@ -34,6 +34,7 @@ namespace GamepadKeyboard
             Log("=== launch ===");
 
             Settings.AppSettings.Load();
+            Input.GamepadSnapshot.Deadzone = Settings.AppSettings.Instance.StickDeadzone;
 
             _orchestrator = new AppOrchestrator();
             _orchestrator.Start();

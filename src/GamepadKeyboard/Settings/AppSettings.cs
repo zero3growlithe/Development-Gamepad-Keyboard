@@ -14,6 +14,7 @@ namespace GamepadKeyboard.Settings
         public double KeySpacing { get; set; } = 6.0;
         public double LeftRayScale { get; set; } = 1.0;    // multiplies distance to Esc
         public double RightRayScale { get; set; } = 1.0;   // multiplies distance to F12
+        public double StickDeadzone { get; set; } = 0.12;
         public double MouseSpeed { get; set; } = 12.0;
         public double MouseSpeedBoostMultiplier { get; set; } = 2.5;
         public double ScrollSpeed { get; set; } = 3.0;
@@ -124,11 +125,11 @@ namespace GamepadKeyboard.Settings
         public string A { get; set; } = "Space";
         public string B { get; set; } = "Backspace";
         public string X { get; set; } = "Tab";
-        public string Y { get; set; } = "ToggleKeyboardMouseMode";
+        public string Y { get; set; } = "None";
 
-        /// <summary>Commits the key highlighted by the left / right stick ray.</summary>
-        public string LB { get; set; } = "CommitLeft";
-        public string RB { get; set; } = "CommitRight";
+        /// <summary>LB = left mouse button, RB = right mouse button (user mapping).</summary>
+        public string LB { get; set; } = "LeftClick";
+        public string RB { get; set; } = "RightClick";
 
         /// <summary>Hold-type modifier (tap = toggle): HoldShift / HoldCtrl / HoldAlt / HoldWin, or any action.</summary>
         public string LT { get; set; } = "HoldShift";
@@ -137,7 +138,7 @@ namespace GamepadKeyboard.Settings
         public string RS { get; set; } = "None";
 
         public string View { get; set; } = "DisableInput";
-        public string Menu { get; set; } = "ToggleOverlay";
+        public string Menu { get; set; } = "ToggleKeyboardMouseMode";
 
         public string DUp { get; set; } = "ArrowUp";
         public string DDown { get; set; } = "ArrowDown";
@@ -156,7 +157,7 @@ namespace GamepadKeyboard.Settings
         public string Name { get; set; } = "Default";
 
         public string A { get; set; } = "LeftClick";
-        public string B { get; set; } = "KeyboardMode";
+        public string B { get; set; } = "RightClick";
         public string X { get; set; } = "MiddleClick";
         public string Y { get; set; } = "ToggleLegend";
 
@@ -174,6 +175,6 @@ namespace GamepadKeyboard.Settings
         public string RS { get; set; } = "None";
 
         public string View { get; set; } = "DisableInput";
-        public string Menu { get; set; } = "ToggleOverlay";
+        public string Menu { get; set; } = "ToggleKeyboardMouseMode";
     }
 }

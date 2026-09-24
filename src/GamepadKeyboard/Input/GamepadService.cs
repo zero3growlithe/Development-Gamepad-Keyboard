@@ -41,12 +41,6 @@ namespace GamepadKeyboard.Input
 
             var reading = pad[0].GetCurrentReading();
             var snap = GamepadSnapshot.From(reading);
-
-            _pollTimer.Change(0, 1000 / Math.Max(60, PollHz));
-
-            if (_hasLast && snap.Equals(_last))
-                return;
-
             _last = snap;
             _hasLast = true;
             StateChanged?.Invoke(snap);
@@ -84,14 +78,17 @@ namespace GamepadKeyboard.Input
         }
 
         public bool AnyInput =>
-            Math.Abs(LX) > 0.15 || Math.Abs(LY) > 0.15 || Math.Abs(RX) > 0.15 || Math.Abs(RY) > 0.15 ||
+            Math.Abs(LX) > 0.02 || Math.Abs(LY) > 0.02 || Math.Abs(RX) > 0.02 || Math.Abs(RY) > 0.02 ||
             A || B || X || Y || LB || RB || LS || RS ||
             DUp || DDown || DLeft || DRight || View || Menu ||
             LeftTrigger > 0.5 || RightTrigger > 0.5;
 
+        public static double Deadzone = 0.12;
+
         public static GamepadSnapshot From(Windows.Gaming.Input.GamepadReading r)
         {
-            static double Axis(double v) => Math.Abs(v) < 0.12 ? 0 : (v - Math.Sign(v) * 0.12) / (1.0 - 0.12);
+            double dz = Deadzone;
+            double Axis(double v) => Math.Abs(v) < dz ? 0 : (v - Math.Sign(v) * dz) / (1.0 - dz);
 
             return new GamepadSnapshot(
                 Axis(r.LeftThumbstickX), Axis(r.LeftThumbstickY),

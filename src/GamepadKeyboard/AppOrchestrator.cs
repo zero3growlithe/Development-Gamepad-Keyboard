@@ -174,6 +174,13 @@ namespace GamepadKeyboard
         private void OnPad(Input.GamepadSnapshot s)
         {
             _mapper.Process(s);
+            if (!_mapper.MouseMode && !_mapper.InputEnabled)
+                return; // nothing to draw in pass-through
+            if (!_mapper.MouseMode)
+            {
+                // rays move every reading — refresh on the UI thread
+                _keyboard.Dispatcher.BeginInvoke(RefreshUiCore);
+            }
         }
 
         private void RefreshUi()
