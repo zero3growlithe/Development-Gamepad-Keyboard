@@ -350,6 +350,7 @@ namespace GamepadKeyboard
                     break;
 
                 case "ToggleOverlay":
+                case "ToggleKeyboard":
                     var ovs = AppSettings.Instance;
                     ovs.ShowOverlay = !ovs.ShowOverlay;
                     AppSettings.Save();

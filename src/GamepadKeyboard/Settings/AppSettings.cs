@@ -164,7 +164,7 @@ namespace GamepadKeyboard.Settings
         public string A { get; set; } = "LeftClick";
         public string B { get; set; } = "RightClick";
         public string X { get; set; } = "MiddleClick";
-        public string Y { get; set; } = "ToggleLegend";
+        public string Y { get; set; } = "ToggleKeyboard";
 
         public string LB { get; set; } = "LeftClick";
         public string RB { get; set; } = "RightClick";
