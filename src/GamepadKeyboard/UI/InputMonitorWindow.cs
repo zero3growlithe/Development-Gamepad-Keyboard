@@ -91,8 +91,20 @@ namespace GamepadKeyboard.UI
                 ex | NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_TOOLWINDOW);
         }
 
+        private bool _hiddenByDisable;
+
         private void Update()
         {
+            // input disabled (gamepad freed for games) -> hide the tool's GUI completely
+            bool hide = !_mapper.InputEnabled;
+            if (hide == _hiddenByDisable) { if (hide) return; }
+            else
+            {
+                _hiddenByDisable = hide;
+                if (hide) Hide(); else Show();
+            }
+            if (hide) return;
+
             var lines = _pad.MonitorLines();
             lines.Add("input enabled: " + _mapper.InputEnabled + "   mouse mode: " + _mapper.MouseMode);
             lines.Add("");

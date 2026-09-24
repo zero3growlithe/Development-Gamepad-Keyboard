@@ -281,8 +281,9 @@ namespace GamepadKeyboard
                 }
             }
 
-            // overlay visibility follows the setting (ToggleOverlay action / tray)
-            bool wantShown = Settings.AppSettings.Instance.ShowOverlay;
+            // overlay visibility follows the setting (ToggleOverlay action / tray);
+            // when input is disabled (gamepad freed for games) the GUI hides completely
+            bool wantShown = Settings.AppSettings.Instance.ShowOverlay && _mapper.InputEnabled;
             if (wantShown && !_keyboardShown)
             {
                 _keyboardShown = true;
@@ -318,7 +319,7 @@ namespace GamepadKeyboard
         private void RefreshLegend()
         {
             var st = Settings.AppSettings.Instance;
-            if (st.ShowButtonLegend)
+            if (st.ShowButtonLegend && _mapper.InputEnabled)
             {
                 _legend.ApplySettings(st.LegendLeft, st.LegendTop, st.LegendOpacity, st.LegendFontSize);
                 _legend.SetEntries(LegendEntries());
