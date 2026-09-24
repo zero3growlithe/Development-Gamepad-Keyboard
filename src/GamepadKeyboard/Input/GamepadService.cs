@@ -48,6 +48,7 @@ namespace GamepadKeyboard.Input
                 string chosenName = "";
                 bool foundIdle = false;
                 bool anyInput = false;
+                bool wgiAnyInput = false;
 
                 foreach (var raw in raws)
                 {
@@ -56,12 +57,33 @@ namespace GamepadKeyboard.Input
                     var snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
                     if (snap.AnyInput)
                     {
-                        chosen = snap; chosenName = raw.DisplayName; anyInput = true;
+                        chosen = snap; chosenName = raw.DisplayName; anyInput = true; wgiAnyInput = true;
                         break;
                     }
                     if (!foundIdle)
                     {
                         chosen = snap; chosenName = raw.DisplayName; foundIdle = true;
+                    }
+                }
+
+                // ── XInput fallback: WGI enumeration works but readings stay idle when
+                //    the real pad is hidden (HidHide) or consumed (DS4Windows / Steam Input
+                //    virtual pads). The virtual Xbox pad is always reachable via XInput. ──
+                if (!wgiAnyInput && Native.XInput.Available)
+                {
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var st = new Native.XInput.XINPUT_STATE();
+                        int err = Native.XInput.GetState(i, ref st);
+                        if (err != 0) continue;
+                        var snap = GamepadSnapshot.FromXInput(st);
+                        if (snap.AnyInput)
+                        {
+                            chosen = snap; chosenName = "XInput slot " + i; anyInput = true;
+                            if (_loggedExtras.Add("xinput-slot" + i))
+                                App.Log("WGI readings idle -> using XInput slot " + i + " (hidden/virtual pad)");
+                            break;
+                        }
                     }
                 }
 
@@ -161,6 +183,8 @@ namespace GamepadKeyboard.Input
                 }
                 lines.Add("  - \"" + r.DisplayName + "\" [" + r.ButtonCount + "btn/" + r.AxisCount + "ax]" + extras);
             }
+            lines.Add("XInput available: " + Native.XInput.Available +
+                      (_lastActivePad.StartsWith("XInput") ? " (IN USE — WGI reads idle)" : ""));
             lines.Add("last snapshot: " + _last.Summary);
             return lines.ToArray();
         }
@@ -227,6 +251,35 @@ namespace GamepadKeyboard.Input
         }
 
         public static double Deadzone = 0.12;
+
+        /// <summary>XInput fallback converter (virtual Xbox pad from DS4Windows/Steam).</summary>
+        public static GamepadSnapshot FromXInput(Native.XInput.XINPUT_STATE st)
+        {
+            double dz = Deadzone;
+            double Axis(short v) => Math.Abs(v) < dz * short.MaxValue
+                ? 0 : (v - Math.Sign(v) * dz * short.MaxValue) / ((1.0 - dz) * short.MaxValue);
+            ushort b = st.Game.wButtons;
+            return new GamepadSnapshot(
+                Axis(st.Game.sThumbLX), Axis(st.Game.sThumbLY),
+                Axis(st.Game.sThumbRX), Axis(st.Game.sThumbRY),
+                (b & Native.XInput.BTN_A) != 0,
+                (b & Native.XInput.BTN_B) != 0,
+                (b & Native.XInput.BTN_X) != 0,
+                (b & Native.XInput.BTN_Y) != 0,
+                (b & Native.XInput.LEFT_SHOULDER) != 0,
+                (b & Native.XInput.RIGHT_SHOULDER) != 0,
+                (b & Native.XInput.LEFT_THUMB) != 0,
+                (b & Native.XInput.RIGHT_THUMB) != 0,
+                (b & Native.XInput.DPAD_UP) != 0,
+                (b & Native.XInput.DPAD_DOWN) != 0,
+                (b & Native.XInput.DPAD_LEFT) != 0,
+                (b & Native.XInput.DPAD_RIGHT) != 0,
+                (b & Native.XInput.BACK) != 0,
+                (b & Native.XInput.START) != 0,
+                st.Game.bLeftTrigger / 255.0,
+                st.Game.bRightTrigger / 255.0,
+                home: false);   // Xbox guide button is not exposed by XInput
+        }
 
         public static GamepadSnapshot From(Windows.Gaming.Input.GamepadReading r, bool home = false)
         {
