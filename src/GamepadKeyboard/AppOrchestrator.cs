@@ -35,6 +35,7 @@ namespace GamepadKeyboard
             Keyboard.KeyboardLayout layout = new();
             layout.Build();
             _mapper = new ControllerMapper(layout);
+            Input.GamepadService.MouseModeProbe = () => _mapper.MouseMode;   // per-mode deadzone
             _keyboard = new KeyboardOverlay(layout);
 
             _pad.StateChanged += OnPad;

@@ -636,8 +636,11 @@ namespace GamepadKeyboard.UI
             if (vk >= 0x41 && vk <= 0x5A) return ((char)vk).ToString();
             if (vk >= 0x30 && vk <= 0x39) return ((char)vk).ToString();
             if (vk >= 0x70 && vk <= 0x7B) return "F" + (vk - 0x70 + 1);
+            if (vk >= 0x60 && vk <= 0x69) return "NumPad" + (vk - 0x60);
             return vk switch
             {
+                0xBA => ";", 0xBB => "=", 0xBC => ",", 0xBD => "-", 0xBE => ".", 0xBF => "/",
+                0xC0 => "`", 0xDB => "[", 0xDC => "\\", 0xDD => "]", 0xDE => "'",
                 0x08 => "Backspace",
                 0x09 => "Tab",
                 0x0D => "Enter",

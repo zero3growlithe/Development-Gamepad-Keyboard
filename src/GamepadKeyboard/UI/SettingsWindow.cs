@@ -32,6 +32,7 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _boost = new() { Text = "" };
         private readonly TextBox _scroll = new() { Text = "" };
         private readonly TextBox _deadzone = new() { Text = "" };
+        private readonly TextBox _mouseDeadzone = new() { Text = "" };
         private readonly CheckBox _legend = new() { Content = "Show button legend overlay" };
         private readonly CheckBox _toastPermanent = new() { Content = "Keep profile toast permanently visible" };
         private readonly CheckBox _runAdmin = new() { Content = "Run as Administrator every launch (UAC on startup)" };
@@ -52,6 +53,7 @@ namespace GamepadKeyboard.UI
             _boost.Text = s.MouseSpeedBoostMultiplier.ToString("0.##");
             _scroll.Text = s.ScrollSpeed.ToString("0.#");
             _deadzone.Text = s.StickDeadzone.ToString("0.###");
+            _mouseDeadzone.Text = s.MouseStickDeadzone.ToString("0.###");
             _legend.IsChecked = s.ShowButtonLegend;
             _toastPermanent.IsChecked = s.ProfileToastPermanent;
             _runAdmin.IsChecked = s.AdminLaunch;
@@ -77,9 +79,10 @@ namespace GamepadKeyboard.UI
             AddRow(1, "Mouse speed (px per stick unit):", _mouseSpeed);
             AddRow(2, "Mouse speed boost multiplier (R2):", _boost);
             AddRow(3, "Scroll speed:", _scroll);
-            AddRow(4, "Stick deadzone (0.000–0.5):", _deadzone);
-            AddRow(5, "", _legend);
-            AddRow(6, "", _toastPermanent);
+            AddRow(4, "Stick deadzone keyboard mode (0.000–0.5):", _deadzone);
+            AddRow(5, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
+            AddRow(6, "", _legend);
+            AddRow(7, "", _toastPermanent);
 
             // WrapPanel: three wide buttons wrap to the next line instead of
             // being clipped off the 460 px window edge
@@ -133,6 +136,7 @@ namespace GamepadKeyboard.UI
             if (double.TryParse(_boost.Text, out var boost) && boost >= 1) s.MouseSpeedBoostMultiplier = boost;
             if (double.TryParse(_scroll.Text, out var scroll) && scroll > 0) s.ScrollSpeed = scroll;
             if (double.TryParse(_deadzone.Text, System.Globalization.CultureInfo.InvariantCulture, out var dz) && dz >= 0 && dz <= 0.5) s.StickDeadzone = dz;
+            if (double.TryParse(_mouseDeadzone.Text, System.Globalization.CultureInfo.InvariantCulture, out var mdz) && mdz >= 0 && mdz <= 0.5) s.MouseStickDeadzone = mdz;
             s.ShowButtonLegend = _legend.IsChecked == true;
             s.ProfileToastPermanent = _toastPermanent.IsChecked == true;
             s.StartInMouseMode = _startMouse.IsChecked == true;

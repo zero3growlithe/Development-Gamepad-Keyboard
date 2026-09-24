@@ -49,11 +49,16 @@ namespace GamepadKeyboard.Input
             try { Native.NativeMethods.TimeEndPeriod(1); } catch { }
         }
 
+        /// <summary>Optional mode probe (true = mouse mode) for the per-mode stick deadzone.</summary>
+        public static Func<bool>? MouseModeProbe;
+
         private void Poll(object? state)
         {
             try
             {
-                GamepadSnapshot.Deadzone = Settings.AppSettings.Instance.StickDeadzone;   // live value
+                var app = Settings.AppSettings.Instance;
+                bool mouse = MouseModeProbe?.Invoke() ?? false;
+                GamepadSnapshot.Deadzone = mouse ? app.MouseStickDeadzone : app.StickDeadzone;   // live per-mode value
                 var raws = Windows.Gaming.Input.RawGameController.RawGameControllers;
 
                 if (raws.Count != _lastRawCount)

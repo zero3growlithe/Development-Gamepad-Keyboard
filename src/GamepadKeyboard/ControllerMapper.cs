@@ -56,6 +56,9 @@ namespace GamepadKeyboard
         // currently held virtual modifier keys (toggle or hold)
         private readonly HashSet<ushort> _heldModifiers = new();
 
+        // hold-to-type state: key currently held down by the left/right commit activation
+        private KeyboardLayout.KeyDef? _heldRayKeyL, _heldRayKeyR;
+
         /// <summary>Virtual modifier keys currently active (toggled on or held) — for UI tint.</summary>
         public IReadOnlyCollection<ushort> HeldModifierVks => _heldModifiers;
 
@@ -162,6 +165,19 @@ namespace GamepadKeyboard
                 ScaleDelta = s.RY;   // up (+RY) = bigger, down = smaller
             }
 
+            // hold modifiers from triggers (LT/RT mapped as HoldShift/HoldCtrl)
+            if (!Sup("LT")) ApplyTriggerModifier(p.LT, s.LeftTrigger);
+            if (!Sup("RT")) ApplyTriggerModifier(p.RT, s.RightTrigger);
+
+            // stick rays (max length = LeftCtrl -> Backspace distance, per-stick slider)
+            LastLeftX = s.LX; LastLeftY = s.LY;
+            double maxL = MaxRayLength() * p.LeftRayLength;
+            (LeftHit, LeftLen) = RayHit(s.LX, s.LY, maxL, left: true);
+
+            LastRightX = s.RX; LastRightY = s.RY;
+            double maxR = MaxRayLength() * p.RightRayLength;
+            (RightHit, RightLen) = RayHit(s.RX, s.RY, maxR, left: false);
+
             // dispatch mapped actions for every button (edge or hold semantics);
             // buttons used as combo LAST button are suppressed while combo modifiers held
             if (!Sup("A")) DispatchButton(p.A, s.A, ref _pA);
@@ -193,18 +209,7 @@ namespace GamepadKeyboard
                 if (!Sup("DRight")) DispatchButton(p.DRight, s.DRight, ref _pDRight);
             }
 
-            // hold modifiers from triggers (LT/RT mapped as HoldShift/HoldCtrl)
-            if (!Sup("LT")) ApplyTriggerModifier(p.LT, s.LeftTrigger);
-            if (!Sup("RT")) ApplyTriggerModifier(p.RT, s.RightTrigger);
 
-            // stick rays (max length = LeftCtrl -> Backspace distance, per-stick slider)
-            LastLeftX = s.LX; LastLeftY = s.LY;
-            double maxL = MaxRayLength() * p.LeftRayLength;
-            (LeftHit, LeftLen) = RayHit(s.LX, s.LY, maxL, left: true);
-
-            LastRightX = s.RX; LastRightY = s.RY;
-            double maxR = MaxRayLength() * p.RightRayLength;
-            (RightHit, RightLen) = RayHit(s.RX, s.RY, maxR, left: false);
         }
 
         private bool HandleProfileSwitch(in GamepadSnapshot s)
@@ -406,6 +411,36 @@ namespace GamepadKeyboard
             }
         }
 
+        /// <summary>
+        /// Hold-to-type: activation held = KeyDown on the ray's current key; moving the ray to
+        /// another key sends KeyUp(old)+KeyDown(new); releasing activation sends KeyUp.
+        /// </summary>
+        private void UpdateHeldRayKey(ref KeyboardLayout.KeyDef? heldKey, bool activationHeld, KeyboardLayout.KeyDef? hit)
+        {
+            if (!activationHeld)
+            {
+                if (heldKey != null) { _sender.KeyUp(heldKey.Vk, heldKey.Extended); heldKey = null; }
+                return;
+            }
+            if (hit == null)
+            {
+                if (heldKey != null) { _sender.KeyUp(heldKey.Vk, heldKey.Extended); heldKey = null; }
+                return;
+            }
+            if (!ReferenceEquals(heldKey, hit))
+            {
+                if (heldKey != null) _sender.KeyUp(heldKey.Vk, heldKey.Extended);
+                _sender.KeyDown(hit.Vk, hit.Extended);
+                heldKey = hit;
+            }
+        }
+
+        private void ReleaseHeldRayKeys()
+        {
+            if (_heldRayKeyL != null) { _sender.KeyUp(_heldRayKeyL.Vk, _heldRayKeyL.Extended); _heldRayKeyL = null; }
+            if (_heldRayKeyR != null) { _sender.KeyUp(_heldRayKeyR.Vk, _heldRayKeyR.Extended); _heldRayKeyR = null; }
+        }
+
         private void DispatchButton(string action, bool held, ref bool prev)
         {
             bool edge = held && !prev;
@@ -427,6 +462,17 @@ namespace GamepadKeyboard
                     return;
             }
 
+            // hold-to-type: commit buttons hold the ray-highlighted key down (LB/R1 style)
+            switch (action)
+            {
+                case "CommitLeft":
+                    UpdateHeldRayKey(ref _heldRayKeyL, held, LeftHit);
+                    return;
+                case "CommitRight":
+                    UpdateHeldRayKey(ref _heldRayKeyR, held, RightHit);
+                    return;
+            }
+
             // mouse buttons support HOLD (drag & drop): down on press, up on release
             switch (action)
             {
@@ -443,12 +489,6 @@ namespace GamepadKeyboard
 
             switch (action)
             {
-                case "CommitLeft":
-                    if (LeftHit != null) CommitKey(LeftHit);
-                    break;
-                case "CommitRight":
-                    if (RightHit != null) CommitKey(RightHit);
-                    break;
                 case "Backspace": _sender.TapKey(Vk.Back); break;
                 case "Space": _sender.TapKey(Vk.Space); break;
                 case "Tab": _sender.TapKey(Vk.Tab); break;
@@ -577,6 +617,7 @@ namespace GamepadKeyboard
                 _sender.KeyUp(vk);
             _heldModifiers.Clear();
             ReleaseHeldClick();   // no stuck mouse buttons on disable / mode switch
+            ReleaseHeldRayKeys(); // no stuck held-typed keys
         }
 
         private static ushort ActionToVk(string action) => action switch
@@ -597,6 +638,8 @@ namespace GamepadKeyboard
                 char c = char.ToUpperInvariant(name[0]);
                 if (c >= 'A' && c <= 'Z') { _sender.TapKey((ushort)c); return; }
                 if (c >= '0' && c <= '9') { _sender.TapKey((ushort)c); return; }
+                ushort oem = Keyboard.KeyboardLayout.KeyDef.CharVk(c);
+                if (oem != c) { _sender.TapKey(oem); return; }   // punctuation: proper VK_OEM_*
             }
             switch (name)
             {
@@ -650,6 +693,8 @@ namespace GamepadKeyboard
                 char c = char.ToUpperInvariant(name[0]);
                 if (c >= 'A' && c <= 'Z') return (ushort)c;
                 if (c >= '0' && c <= '9') return (ushort)c;
+                ushort oem = Keyboard.KeyboardLayout.KeyDef.CharVk(c);
+                if (oem != c) return oem;   // punctuation: proper VK_OEM_*
             }
             return name switch
             {
@@ -665,6 +710,9 @@ namespace GamepadKeyboard
                 "PageUp" => Vk.PageUp, "PageDown" => Vk.PageDown,
                 "Home" => Vk.Home, "End" => Vk.End,
                 "Up" => Vk.Up, "Down" => Vk.Down, "Left" => Vk.Left, "Right" => Vk.Right,
+                "NumPad0" => Vk.NumPad0, "NumPad1" => 0x61, "NumPad2" => 0x62, "NumPad3" => 0x63,
+                "NumPad4" => 0x64, "NumPad5" => 0x65, "NumPad6" => 0x66, "NumPad7" => 0x67,
+                "NumPad8" => 0x68, "NumPad9" => Vk.NumPad9,
                 _ => Vk.None
             };
         }

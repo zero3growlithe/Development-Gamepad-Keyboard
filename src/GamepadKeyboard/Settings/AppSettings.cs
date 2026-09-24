@@ -13,6 +13,7 @@ namespace GamepadKeyboard.Settings
 
         public double KeySpacing { get; set; } = 6.0;
         public double StickDeadzone { get; set; } = 0.005;
+        public double MouseStickDeadzone { get; set; } = 0.005;   // separate deadzone for mouse mode
         public double OverlayScale { get; set; } = 1.0;
         public double OverlayMoveSpeed { get; set; } = 6.0;
         public double OverlayLeft { get; set; } = 100;

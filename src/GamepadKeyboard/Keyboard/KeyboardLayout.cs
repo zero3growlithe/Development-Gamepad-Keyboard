@@ -30,6 +30,28 @@ namespace GamepadKeyboard.Keyboard
                 Vk = vk;
                 W = w;
             }
+
+            /// <summary>Char keys: letters/digits map to their VK; punctuation maps to the proper VK_OEM_* code.</summary>
+            public KeyDef(string label, char c, double w = 1)
+            {
+                Label = label;
+                Vk = CharVk(c);
+                W = w;
+            }
+
+            internal static ushort CharVk(char c)
+            {
+                if (c >= 'A' && c <= 'Z') return (ushort)c;   // VK_A..VK_Z match ASCII
+                if (c >= '0' && c <= '9') return (ushort)c;   // VK_0..VK_9 match ASCII
+                return c switch
+                {
+                    '`' => 0xC0, '-' => 0xBD, '=' => 0xBB,          // OEM_3, OEM_MINUS, OEM_PLUS
+                    '[' => 0xDB, ']' => 0xDD, '\\' => 0xDC,        // OEM_4, OEM_6, OEM_5
+                    ';' => 0xBA, '\'' => 0xDE,                      // OEM_1, OEM_7
+                    ',' => 0xBC, '.' => 0xBE, '/' => 0xBF,          // OEM_COMMA, OEM_PERIOD, OEM_2
+                    _ => (ushort)c
+                };
+            }
         }
 
         public IReadOnlyList<KeyDef> Keys => _keys;
