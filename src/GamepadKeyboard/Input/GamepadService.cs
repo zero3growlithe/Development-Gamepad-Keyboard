@@ -82,8 +82,8 @@ namespace GamepadKeyboard.Input
                     {
                         // no Gamepad wrapper for this device (e.g. DualSense outside
                         // DS4Windows) — read the raw controller directly, calibrated
-                        var cal = GetCalibration(raw);
-                        snap = GamepadSnapshot.FromRaw(raw, ReadHome(raw), cal);
+                        var (cal, map) = GetCalibration(raw);
+                        snap = GamepadSnapshot.FromRaw(raw, ReadHome(raw), cal, map);
                     }
                     if (snap.AnyInput)
                     {
@@ -184,19 +184,29 @@ namespace GamepadKeyboard.Input
         }
 
         private readonly Dictionary<string, AxisCalibration> _calibrations = new();
+        private readonly Dictionary<string, RawButtonMap> _buttonMaps = new();
 
-        private AxisCalibration GetCalibration(Windows.Gaming.Input.RawGameController raw)
+        private (AxisCalibration cal, RawButtonMap map) GetCalibration(Windows.Gaming.Input.RawGameController raw)
         {
-            if (_calibrations.TryGetValue(raw.DisplayName, out var existing)) return existing;
+            if (_calibrations.TryGetValue(raw.DisplayName, out var existing))
+                return (existing, _buttonMaps[raw.DisplayName]);
             var buttons = new bool[raw.ButtonCount];
             var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
             var axes = new double[raw.AxisCount];
             raw.GetCurrentReading(buttons, switches, axes);
             var cal = new AxisCalibration((double[])axes.Clone());
+            var map = RawButtonMap.Detect(raw);
             _calibrations[raw.DisplayName] = cal;
+            _buttonMaps[raw.DisplayName] = map;
+            // one-time ground-truth dump: ALL button labels + axis neutrals
+            var lbls = new List<string>();
+            for (int i = 0; i < raw.ButtonCount; i++)
+                lbls.Add(i + "=" + raw.GetButtonLabel(i));
+            App.Log("button labels \"" + raw.DisplayName + "\": " + string.Join(",", lbls));
             App.Log("raw axis calibration \"" + raw.DisplayName + "\": neutral=[" +
-                    string.Join(",", System.Linq.Enumerable.Select(axes, a => a.ToString("0.00"))) + "]");
-            return cal;
+                    string.Join(",", System.Linq.Enumerable.Select(axes, a => a.ToString("0.00"))) + "] map=" +
+                    (map == RawButtonMap.Sony ? "Sony" : "Generic"));
+            return (cal, map);
         }
 
         private Windows.Gaming.Input.Gamepad? GetPad(Windows.Gaming.Input.RawGameController raw)
@@ -297,7 +307,7 @@ namespace GamepadKeyboard.Input
 
     /// <summary>
     /// Per-device raw axis calibration captured at first reading: neutral offset
-    /// (DualSense raw axes are [0..2], neutral=1) plus gain to full -1..1 range.
+    /// (DualSense raw axes are [0..1], neutral=0.5) plus gain to full -1..1 range.
     /// </summary>
     public sealed class AxisCalibration
     {
@@ -305,16 +315,58 @@ namespace GamepadKeyboard.Input
 
         public AxisCalibration(double[] neutralAtCapture) => _neutral = neutralAtCapture;
 
+        public double NeutralOf(int axis) => axis < _neutral.Length ? _neutral[axis] : 0;
+
         public double Normalize(int axis, double value)
         {
             if (axis >= _neutral.Length) return 0;
             double n = _neutral[axis];
-            double d = value - n;
-            // gain chosen so typical endpoints reach full deflection: DualSense [0..2]
-            // spans 1.0 each side; [-1..1] devices have neutral ~0 and span 1.0 anyway.
-            double span = Math.Max(Math.Abs(n - (-1.0)), Math.Abs(1.0 - n));
-            if (span < 0.25) span = 1.0;   // neutral centered: already -1..1
-            return Math.Clamp(d / span, -1, 1);
+            // [0..1] axis (DualSense, neutral 0.5): span 0.5 → (v-0.5)*2, exactly the
+            // user-measured mapping. [-1..1] axis (neutral ~0): span 1 → passthrough.
+            // [0..2] axis (neutral 1): span 1 → (v-1).
+            double span = Math.Max(n, 1.0 - n);
+            if (span < 0.25) span = 1.0;
+            return Math.Clamp((value - n) / span, -1, 1);
+        }
+    }
+
+    /// <summary>
+    /// True raw-button mapping for the DualSense exposed by Windows (Sony order,
+    /// NOT XInput order): 0=Square 1=Cross 2=Circle 3=Triangle 4=L1 5=R1 6=L2 7=R2
+    /// 8=Create 9=Options 10=L3 11=R3 12=PS 13=Touchpad 14=Mic; dpad = hat switch.
+    /// Generic fallback matches the virtual Xbox pad (0=A 1=B 2=X 3=Y 4=LB 5=RB
+    /// 6=View 7=Menu 8=LS 9=RS 10-13=dpad).
+    /// </summary>
+    internal sealed class RawButtonMap
+    {
+        public int A, B, X, Y, LB, RB, LS, RS, View, Menu;
+        public int[] DPad = new int[4];   // Up Down Left Right (button indices)
+
+        public static readonly RawButtonMap Generic = new()
+        {
+            A = 0, B = 1, X = 2, Y = 3,
+            LB = 4, RB = 5,
+            View = 6, Menu = 7,
+            LS = 8, RS = 9,
+            DPad = new[] { 10, 11, 12, 13 }
+        };
+
+        public static readonly RawButtonMap Sony = new()
+        {
+            A = 1, B = 2, X = 0, Y = 3,          // Cross, Circle, Square, Triangle
+            LB = 4, RB = 5,
+            LS = 10, RS = 11,
+            View = 8, Menu = 9,                  // Create, Options
+            DPad = new[] { -1, -1, -1, -1 }      // dpad = hat switch, not buttons
+        };
+
+        public static RawButtonMap Detect(Windows.Gaming.Input.RawGameController raw)
+        {
+            // DualSense/DualShock: raw button 6 = L2-as-button with no WGI label,
+            // while Xbox-like pads have label Back/View at index 6
+            if (raw.ButtonCount > 6 && raw.GetButtonLabel(6) == Windows.Gaming.Input.GameControllerButtonLabel.None)
+                return Sony;
+            return Generic;
         }
     }
 
@@ -383,7 +435,7 @@ namespace GamepadKeyboard.Input
         /// (DualSense standalone). Layout follows the common XInput-compatible
         /// raw ordering; axis min/max are read from the controller to normalize.
         /// </summary>
-        public static GamepadSnapshot FromRaw(Windows.Gaming.Input.RawGameController raw, bool home, AxisCalibration cal)
+        internal static GamepadSnapshot FromRaw(Windows.Gaming.Input.RawGameController raw, bool home, AxisCalibration cal, RawButtonMap map)
         {
             var buttons = new bool[raw.ButtonCount];
             var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
@@ -392,19 +444,59 @@ namespace GamepadKeyboard.Input
 
             double Axis(int i) => i < axes.Length ? cal.Normalize(i, axes[i]) : 0;
             double Clamp01(double v) => v < 0 ? 0 : v;
+            bool B(int i) => i >= 0 && i < buttons.Length && buttons[i];
 
-            bool B(int i) => i < buttons.Length && buttons[i];
-            // XInput-compatible raw ordering (matches the virtual Xbox pad WGI exposes)
+            // dpad: buttons on generic/XInput-like pads, hat switch on Sony layout
+            bool dUp, dDown, dLeft, dRight;
+            if (raw.SwitchCount > 0)
+            {
+                var pos = switches[0];
+                dUp    = pos == Windows.Gaming.Input.GameControllerSwitchPosition.Up ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.UpRight ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.UpLeft;
+                dDown  = pos == Windows.Gaming.Input.GameControllerSwitchPosition.Down ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.DownRight ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.DownLeft;
+                dLeft  = pos == Windows.Gaming.Input.GameControllerSwitchPosition.Left ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.UpLeft ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.DownLeft;
+                dRight = pos == Windows.Gaming.Input.GameControllerSwitchPosition.Right ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.UpRight ||
+                         pos == Windows.Gaming.Input.GameControllerSwitchPosition.DownRight;
+            }
+            else
+            {
+                dUp    = B(map.DPad[0]);
+                dDown  = B(map.DPad[1]);
+                dLeft  = B(map.DPad[2]);
+                dRight = B(map.DPad[3]);
+            }
+
+            // triggers: pick axes whose captured neutral is near 0 (idle) — trigger
+            // axes rest at 0 on DualSense ([0..1] analog), stick axes rest at 0.5
+            int ltAxis = -1, rtAxis = -1;
+            for (int i = 0; i < raw.AxisCount && rtAxis < 0; i++)
+            {
+                double n = cal.NeutralOf(i);
+                if (n < 0.25)
+                {
+                    if (ltAxis < 0) ltAxis = i; else rtAxis = i;
+                }
+            }
+            if (ltAxis < 0 || rtAxis < 0) { ltAxis = 3; rtAxis = 4; }   // fallback
+            double lt = ltAxis >= 0 ? Clamp01(cal.Normalize(ltAxis, ltAxis < axes.Length ? axes[ltAxis] : 0)) : 0;
+            double rt = rtAxis >= 0 ? Clamp01(cal.Normalize(rtAxis, rtAxis < axes.Length ? axes[rtAxis] : 0)) : 0;
+            // DualSense raw axis order (user-measured): 0=LX 1=LY 2=RX 3=? 4=? 5=RY
+            // (axes 3/4 rest at 0 -> triggers, auto-detected below)
             return new GamepadSnapshot(
                 Axis(0), -Axis(1),
-                Axis(3), -Axis(4),
-                B(0), B(1), B(2), B(3),
-                B(4), B(5),
-                B(8), B(9),
-                B(10), B(11), B(12), B(13),
-                B(6), B(7),
-                Clamp01(Axis(5)),                   // LT
-                Clamp01(Axis(2)),                   // RT
+                Axis(2), -Axis(5),
+                B(map.A), B(map.B), B(map.X), B(map.Y),
+                B(map.LB), B(map.RB),
+                B(map.LS), B(map.RS),
+                dUp, dDown, dLeft, dRight,
+                B(map.View), B(map.Menu),
+                lt, rt,
                 home);
         }
 
