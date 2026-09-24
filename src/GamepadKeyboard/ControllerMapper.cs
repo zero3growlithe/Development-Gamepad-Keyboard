@@ -19,9 +19,11 @@ namespace GamepadKeyboard
         private readonly KeyboardLayout _layout;
 
         public bool MouseMode { get; set; }
+        /// <summary>Keyboard was entered from mouse mode via Y — B returns to mouse.</summary>
+        public bool KeyboardFromMouse { get; private set; }
 
         /// <summary>When disabled the pad is passed through untouched (game use).</summary>
-        public bool InputEnabled { get; private set; } = true;
+        public bool InputEnabled { get; private set; }   // starts disabled: gamepad free for games until enable combo
 
         public void SetInputEnabled(bool enabled)
         {
@@ -144,6 +146,17 @@ namespace GamepadKeyboard
                 ScaleDelta = s.RY;   // up (+RY) = bigger, down = smaller
             }
 
+            // fixed mode-switch: B returns to mouse mode if keyboard was opened via Y in mouse mode
+            if (KeyboardFromMouse && s.B && !_pB)
+            {
+                KeyboardFromMouse = false;
+                MouseMode = true;
+                App.Log("mode: keyboard -> mouse (B)");
+                Notification?.Invoke("Mouse mode");
+                StateChanged?.Invoke();
+                return;
+            }
+
             // dispatch mapped actions for every button (edge or hold semantics)
             DispatchButton(p.A, s.A, ref _pA);
             DispatchButton(p.B, s.B, ref _pB);
@@ -246,10 +259,21 @@ namespace GamepadKeyboard
             if (profile.DRight == "ScrollRight") { if (s.DRight) _sender.MouseHWheel(120); }
             else DispatchButton(profile.DRight, s.DRight, ref _pDRight);
 
+            // fixed mode-switch: Y press in mouse mode enables the keyboard overlay
+            if (s.Y && !_pY && MouseMode)
+            {
+                MouseMode = false;
+                KeyboardFromMouse = true;
+                App.Log("mode: mouse -> keyboard (Y)");
+                Notification?.Invoke("Keyboard mode");
+                StateChanged?.Invoke();
+            }
+
             // buttons
             DispatchButton(profile.A, s.A, ref _pA);
             DispatchButton(profile.B, s.B, ref _pB);
             DispatchButton(profile.X, s.X, ref _pX);
+            if (!MouseMode) return;   // switched to keyboard this tick: skip mouse Y dispatch
             DispatchButton(profile.Y, s.Y, ref _pY);
             DispatchButton(profile.LB, s.LB, ref _pLB);
             DispatchButton(profile.RB, s.RB, ref _pRB);
@@ -331,10 +355,11 @@ namespace GamepadKeyboard
 
                 case "ToggleKeyboardMouseMode":
                     MouseMode = !MouseMode;
+                    KeyboardFromMouse = false;
                     StateChanged?.Invoke();
                     break;
-                case "KeyboardMode": MouseMode = false; StateChanged?.Invoke(); break;
-                case "MouseMode": MouseMode = true; StateChanged?.Invoke(); break;
+                case "KeyboardMode": MouseMode = false; KeyboardFromMouse = false; StateChanged?.Invoke(); break;
+                case "MouseMode": MouseMode = true; KeyboardFromMouse = false; StateChanged?.Invoke(); break;
 
                 case "SwitchKeyboardProfile":
                     SwitchProfile(+1);

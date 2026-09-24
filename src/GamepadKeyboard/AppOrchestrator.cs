@@ -69,18 +69,12 @@ namespace GamepadKeyboard
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             _keyboard.SetPointPositions();
 
-            if (Settings.AppSettings.Instance.ShowOverlay)
-                ShowKeyboard();
-            else
-                _keyboard.Hide();
-
-            RefreshLegend();
-
-            _keyboard.ShowStatus(
-                Settings.AppSettings.Instance.StartInMouseMode ? "Mouse mode" : "Keyboard mode",
-                Settings.AppSettings.Instance.ProfileToastSeconds,
-                Settings.AppSettings.Instance.ProfileToastPermanent);
+            // launch state: input disabled (pad free for games) and no GUI visible;
+            // the enable combo (PS+Menu+Select / L3+R3+L1+R1) starts the tool normally
+            _keyboard.Hide();
+            _legend.Hide();
             _mapper.MouseMode = Settings.AppSettings.Instance.StartInMouseMode;
+            _enabledItem!.Checked = false;   // tray checkbox reflects the disabled start
         }
 
         private bool _keyboardShown;
@@ -106,7 +100,7 @@ namespace GamepadKeyboard
 
             var enabledItem = new ToolStripMenuItem("Input enabled");
             enabledItem.CheckOnClick = true;
-            enabledItem.Checked = _mapper.InputEnabled;
+            enabledItem.Checked = _mapper.InputEnabled;   // false at launch (disabled start)
             enabledItem.Click += (_, __) => _mapper.SetInputEnabled(enabledItem.Checked);
             _enabledItem = enabledItem;
 

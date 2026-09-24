@@ -33,7 +33,7 @@ namespace GamepadKeyboard.Settings
         public double LegendTop { get; set; } = 40;
         public int ProfileToastSeconds { get; set; } = 3;
         public bool ProfileToastPermanent { get; set; } = false;
-        public bool StartInMouseMode { get; set; } = false;
+        public bool StartInMouseMode { get; set; } = true;
         public int ActiveProfile { get; set; } = 0;
         public int ActiveMouseProfile { get; set; } = 0;
         public bool AdminLaunch { get; set; } = false;
