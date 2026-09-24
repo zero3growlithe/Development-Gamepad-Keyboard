@@ -31,6 +31,7 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _mouseSpeed = new() { Text = "" };
         private readonly TextBox _boost = new() { Text = "" };
         private readonly TextBox _scroll = new() { Text = "" };
+        private readonly TextBox _deadzone = new() { Text = "" };
         private readonly CheckBox _legend = new() { Content = "Show button legend overlay" };
         private readonly CheckBox _toastPermanent = new() { Content = "Keep profile toast permanently visible" };
         private readonly CheckBox _runAdmin = new() { Content = "Run as Administrator every launch (UAC on startup)" };
@@ -50,6 +51,7 @@ namespace GamepadKeyboard.UI
             _mouseSpeed.Text = s.MouseSpeed.ToString("0.#");
             _boost.Text = s.MouseSpeedBoostMultiplier.ToString("0.##");
             _scroll.Text = s.ScrollSpeed.ToString("0.#");
+            _deadzone.Text = s.StickDeadzone.ToString("0.###");
             _legend.IsChecked = s.ShowButtonLegend;
             _toastPermanent.IsChecked = s.ProfileToastPermanent;
             _runAdmin.IsChecked = s.AdminLaunch;
@@ -57,7 +59,7 @@ namespace GamepadKeyboard.UI
             _startMouse.IsChecked = s.StartInMouseMode;
 
             var grid = new Grid { Margin = new Thickness(12) };
-            for (int i = 0; i < 6; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int i = 0; i < 7; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -75,8 +77,9 @@ namespace GamepadKeyboard.UI
             AddRow(1, "Mouse speed (px per stick unit):", _mouseSpeed);
             AddRow(2, "Mouse speed boost multiplier (R2):", _boost);
             AddRow(3, "Scroll speed:", _scroll);
-            AddRow(4, "", _legend);
-            AddRow(5, "", _toastPermanent);
+            AddRow(4, "Stick deadzone (0.000–0.5):", _deadzone);
+            AddRow(5, "", _legend);
+            AddRow(6, "", _toastPermanent);
 
             var buttons = new StackPanel
             {
@@ -112,6 +115,7 @@ namespace GamepadKeyboard.UI
             if (double.TryParse(_mouseSpeed.Text, out var ms) && ms > 0) s.MouseSpeed = ms;
             if (double.TryParse(_boost.Text, out var boost) && boost >= 1) s.MouseSpeedBoostMultiplier = boost;
             if (double.TryParse(_scroll.Text, out var scroll) && scroll > 0) s.ScrollSpeed = scroll;
+            if (double.TryParse(_deadzone.Text, System.Globalization.CultureInfo.InvariantCulture, out var dz) && dz >= 0 && dz <= 0.5) s.StickDeadzone = dz;
             s.ShowButtonLegend = _legend.IsChecked == true;
             s.ProfileToastPermanent = _toastPermanent.IsChecked == true;
             s.StartInMouseMode = _startMouse.IsChecked == true;

@@ -53,6 +53,7 @@ namespace GamepadKeyboard.Input
         {
             try
             {
+                GamepadSnapshot.Deadzone = Settings.AppSettings.Instance.StickDeadzone;   // live value
                 var raws = Windows.Gaming.Input.RawGameController.RawGameControllers;
 
                 if (raws.Count != _lastRawCount)
@@ -428,7 +429,7 @@ namespace GamepadKeyboard.Input
             }
         }
 
-        public static double Deadzone = 0.12;
+        public static double Deadzone = 0.005;
 
         /// <summary>
         /// Raw-controller reading for devices the Gamepad wrapper cannot wrap
@@ -442,7 +443,13 @@ namespace GamepadKeyboard.Input
             var axes = new double[raw.AxisCount];
             raw.GetCurrentReading(buttons, switches, axes);
 
-            double Axis(int i) => i < axes.Length ? cal.Normalize(i, axes[i]) : 0;
+            double Axis(int i)
+            {
+                if (i >= axes.Length) return 0;
+                double v = cal.Normalize(i, axes[i]);
+                double dz = Deadzone;
+                return Math.Abs(v) < dz ? 0 : (v - Math.Sign(v) * dz) / (1.0 - dz);
+            }
             double Clamp01(double v) => v < 0 ? 0 : v;
             bool B(int i) => i >= 0 && i < buttons.Length && buttons[i];
 

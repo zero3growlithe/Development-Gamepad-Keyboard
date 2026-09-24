@@ -14,7 +14,7 @@ namespace GamepadKeyboard.Settings
         public double KeySpacing { get; set; } = 6.0;
         public double LeftRayScale { get; set; } = 1.0;    // multiplies distance to Esc
         public double RightRayScale { get; set; } = 1.0;   // multiplies distance to F12
-        public double StickDeadzone { get; set; } = 0.12;
+        public double StickDeadzone { get; set; } = 0.005;
         public double OverlayScale { get; set; } = 1.0;
         public double OverlayMoveSpeed { get; set; } = 6.0;
         public double OverlayLeft { get; set; } = 100;
