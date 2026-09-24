@@ -162,6 +162,58 @@ namespace GamepadKeyboard.Input
             return gp;
         }
 
+        /// <summary>Live per-controller readings for the input monitor window.</summary>
+        public System.Collections.Generic.List<string> MonitorLines()
+        {
+            var lines = new System.Collections.Generic.List<string>
+            {
+                "input path: " + (_lastActivePad.StartsWith("XInput") ? "XINPUT (fallback)" : "WGI"),
+                ""
+            };
+            var raws = Windows.Gaming.Input.RawGameController.RawGameControllers;
+            if (raws.Count == 0)
+            {
+                lines.Add("no WGI controllers");
+                return lines;
+            }
+            foreach (var raw in raws)
+            {
+                var buttons = new bool[raw.ButtonCount];
+                var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
+                var axes = new double[raw.AxisCount];
+                raw.GetCurrentReading(buttons, switches, axes);
+                int pressed = 0;
+                for (int i = 0; i < buttons.Length; i++) if (buttons[i]) pressed++;
+                string axesStr = "";
+                for (int i = 0; i < axes.Length; i++)
+                    axesStr += (i > 0 ? " " : "") + axes[i].ToString("+0.00;-0.00");
+                lines.Add("\"" + raw.DisplayName + "\"");
+                lines.Add("  buttons down: " + pressed + "/" + raw.ButtonCount + "   axes: " + axesStr);
+            }
+            lines.Add("");
+            if (Native.XInput.Available)
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    var st = new Native.XInput.XINPUT_STATE();
+                    int err = Native.XInput.GetState(i, ref st);
+                    if (err != 0) { lines.Add("XInput " + i + ": —"); continue; }
+                    lines.Add("XInput " + i + ": packet " + st.dwPacketNumber +
+                              "  LX=" + (st.Game.sThumbLX / 32768.0).ToString("+0.00;-0.00") +
+                              " LY=" + (st.Game.sThumbLY / 32768.0).ToString("+0.00;-0.00") +
+                              " RX=" + (st.Game.sThumbRX / 32768.0).ToString("+0.00;-0.00") +
+                              " RY=" + (st.Game.sThumbRY / 32768.0).ToString("+0.00;-0.00") +
+                              " btn=0x" + st.Game.wButtons.ToString("X4") +
+                              " LT=" + st.Game.bLeftTrigger + " RT=" + st.Game.bRightTrigger);
+                }
+            }
+            else
+            {
+                lines.Add("XInput: not available");
+            }
+            return lines;
+        }
+
         /// <summary>One-shot state dump for the tray diagnostics item.</summary>
         public string[] Diagnostics()
         {

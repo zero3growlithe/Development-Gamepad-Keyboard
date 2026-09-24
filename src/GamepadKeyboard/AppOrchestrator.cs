@@ -108,6 +108,10 @@ namespace GamepadKeyboard
             enabledItem.Click += (_, __) => _mapper.SetInputEnabled(enabledItem.Checked);
             _enabledItem = enabledItem;
 
+            var monitorItem = new ToolStripMenuItem("Input monitor…");
+            monitorItem.Click += (_, __) =>
+                UI.InputMonitorWindow.ShowSingleton(_pad, _mapper);
+
             var diagItem = new ToolStripMenuItem("Diagnostics…");
             diagItem.Click += (_, __) =>
             {
@@ -173,6 +177,7 @@ namespace GamepadKeyboard
 
             menu.Items.Add(enabledItem);
             menu.Items.Add(overlayItem);
+            menu.Items.Add(monitorItem);
             menu.Items.Add(diagItem);
             menu.Items.Add(settingsItem);
             menu.Items.Add(aboutItem);
