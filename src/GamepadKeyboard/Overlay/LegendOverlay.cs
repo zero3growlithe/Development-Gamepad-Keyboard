@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using GamepadKeyboard.Native;
 
 namespace GamepadKeyboard.Overlay
 {
@@ -37,6 +39,16 @@ namespace GamepadKeyboard.Overlay
             Left = 40;
             Top = 40;
             Width = 240;
+        }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int ex = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
+            NativeMethods.SetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE,
+                ex | NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TRANSPARENT |
+                NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_TOOLWINDOW);
         }
 
         public void SetEntries(IReadOnlyList<(string key, string action)> entries)

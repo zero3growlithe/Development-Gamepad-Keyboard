@@ -81,8 +81,9 @@ namespace GamepadKeyboard.Input
                     else
                     {
                         // no Gamepad wrapper for this device (e.g. DualSense outside
-                        // DS4Windows) — read the raw controller directly
-                        snap = GamepadSnapshot.FromRaw(raw, ReadHome(raw));
+                        // DS4Windows) — read the raw controller directly, calibrated
+                        var cal = GetCalibration(raw);
+                        snap = GamepadSnapshot.FromRaw(raw, ReadHome(raw), cal);
                     }
                     if (snap.AnyInput)
                     {
@@ -182,6 +183,22 @@ namespace GamepadKeyboard.Input
             return any;
         }
 
+        private readonly Dictionary<string, AxisCalibration> _calibrations = new();
+
+        private AxisCalibration GetCalibration(Windows.Gaming.Input.RawGameController raw)
+        {
+            if (_calibrations.TryGetValue(raw.DisplayName, out var existing)) return existing;
+            var buttons = new bool[raw.ButtonCount];
+            var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
+            var axes = new double[raw.AxisCount];
+            raw.GetCurrentReading(buttons, switches, axes);
+            var cal = new AxisCalibration((double[])axes.Clone());
+            _calibrations[raw.DisplayName] = cal;
+            App.Log("raw axis calibration \"" + raw.DisplayName + "\": neutral=[" +
+                    string.Join(",", System.Linq.Enumerable.Select(axes, a => a.ToString("0.00"))) + "]");
+            return cal;
+        }
+
         private Windows.Gaming.Input.Gamepad? GetPad(Windows.Gaming.Input.RawGameController raw)
         {
             if (_padCache.TryGetValue(raw.DisplayName, out var cached))
@@ -278,6 +295,29 @@ namespace GamepadKeyboard.Input
         }
     }
 
+    /// <summary>
+    /// Per-device raw axis calibration captured at first reading: neutral offset
+    /// (DualSense raw axes are [0..2], neutral=1) plus gain to full -1..1 range.
+    /// </summary>
+    public sealed class AxisCalibration
+    {
+        private readonly double[] _neutral;
+
+        public AxisCalibration(double[] neutralAtCapture) => _neutral = neutralAtCapture;
+
+        public double Normalize(int axis, double value)
+        {
+            if (axis >= _neutral.Length) return 0;
+            double n = _neutral[axis];
+            double d = value - n;
+            // gain chosen so typical endpoints reach full deflection: DualSense [0..2]
+            // spans 1.0 each side; [-1..1] devices have neutral ~0 and span 1.0 anyway.
+            double span = Math.Max(Math.Abs(n - (-1.0)), Math.Abs(1.0 - n));
+            if (span < 0.25) span = 1.0;   // neutral centered: already -1..1
+            return Math.Clamp(d / span, -1, 1);
+        }
+    }
+
     /// <summary>Immutable snapshot of one gamepad reading.</summary>
     public readonly struct GamepadSnapshot : IEquatable<GamepadSnapshot>
     {
@@ -343,15 +383,14 @@ namespace GamepadKeyboard.Input
         /// (DualSense standalone). Layout follows the common XInput-compatible
         /// raw ordering; axis min/max are read from the controller to normalize.
         /// </summary>
-        public static GamepadSnapshot FromRaw(Windows.Gaming.Input.RawGameController raw, bool home)
+        public static GamepadSnapshot FromRaw(Windows.Gaming.Input.RawGameController raw, bool home, AxisCalibration cal)
         {
             var buttons = new bool[raw.ButtonCount];
             var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
             var axes = new double[raw.AxisCount];
             raw.GetCurrentReading(buttons, switches, axes);
 
-            // GetCurrentReading axes arrive normalized -1..1 (triggers 0..1) per WinRT
-            double Axis(int i) => i < axes.Length ? axes[i] : 0;
+            double Axis(int i) => i < axes.Length ? cal.Normalize(i, axes[i]) : 0;
             double Clamp01(double v) => v < 0 ? 0 : v;
 
             bool B(int i) => i < buttons.Length && buttons[i];

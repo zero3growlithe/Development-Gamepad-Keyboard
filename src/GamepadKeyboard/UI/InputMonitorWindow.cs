@@ -1,8 +1,10 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using GamepadKeyboard.Native;
 
 namespace GamepadKeyboard.UI
 {
@@ -77,6 +79,16 @@ namespace GamepadKeyboard.UI
             _timer.Start();
 
             Closed += (_, __) => { _timer.Stop(); _instance = null; };
+        }
+
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int ex = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
+            // NOACTIVATE: never takes focus — SendInput targets keep receiving keys
+            NativeMethods.SetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE,
+                ex | NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_TOOLWINDOW);
         }
 
         private void Update()
