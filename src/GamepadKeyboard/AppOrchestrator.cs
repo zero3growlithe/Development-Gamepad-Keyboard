@@ -296,8 +296,8 @@ namespace GamepadKeyboard
             }
 
             // overlay visibility follows the setting (ToggleOverlay action / tray);
-            // when input is disabled (gamepad freed for games) the GUI hides completely
-            bool wantShown = Settings.AppSettings.Instance.ShowOverlay && _mapper.InputEnabled;
+            // hidden while input disabled (gamepad free for games) AND in mouse mode
+            bool wantShown = Settings.AppSettings.Instance.ShowOverlay && _mapper.InputEnabled && !_mapper.MouseMode;
             if (wantShown && !_keyboardShown)
             {
                 _keyboardShown = true;

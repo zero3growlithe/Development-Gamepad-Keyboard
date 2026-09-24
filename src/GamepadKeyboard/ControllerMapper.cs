@@ -365,6 +365,49 @@ namespace GamepadKeyboard
         /// Runs a mapped action on press edge. Hold-type actions (modifiers,
         /// DisableInput) use the held flag directly; everything else is edge-only.
         /// </summary>
+        private string? _heldClickAction;
+
+        private void ReleaseHeldClick()
+        {
+            if (_heldClickAction == null) return;
+            (uint up, uint data) = _heldClickAction switch
+            {
+                "LeftClick" => (NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
+                "RightClick" => (NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
+                "MiddleClick" => (NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
+                "XButton1" => (NativeMethods.MOUSEEVENTF_XUP, 1u),
+                "XButton2" => (NativeMethods.MOUSEEVENTF_XUP, 2u),
+                _ => (0u, 0u)
+            };
+            if (up != 0) _sender.MouseButtonRelease(up, data);
+            _heldClickAction = null;
+        }
+
+        private void HandleClickHold(string action, bool held, ref bool prev)
+        {
+            (uint down, uint up, uint data) = action switch
+            {
+                "LeftClick" => (NativeMethods.MOUSEEVENTF_LEFTDOWN, NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
+                "RightClick" => (NativeMethods.MOUSEEVENTF_RIGHTDOWN, NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
+                "MiddleClick" => (NativeMethods.MOUSEEVENTF_MIDDLEDOWN, NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
+                "XButton1" => (NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 1u),
+                "XButton2" => (NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 2u),
+                _ => (0u, 0u, 0u)
+            };
+            if (down == 0) return;
+
+            if (held && !prev)
+            {
+                _sender.MouseButtonPress(down, data);
+                _heldClickAction = action;
+            }
+            else if (!held && prev)
+            {
+                _sender.MouseButtonRelease(up, data);
+                _heldClickAction = null;
+            }
+        }
+
         private void DispatchButton(string action, bool held, ref bool prev)
         {
             bool edge = held && !prev;
@@ -383,6 +426,18 @@ namespace GamepadKeyboard
                     if (edge) ToggleModifier(ActionToVk(action));
                     return;
                 case "None":
+                    return;
+            }
+
+            // mouse buttons support HOLD (drag & drop): down on press, up on release
+            switch (action)
+            {
+                case "LeftClick":
+                case "RightClick":
+                case "MiddleClick":
+                case "XButton1":
+                case "XButton2":
+                    HandleClickHold(action, held, ref prev);
                     return;
             }
 
@@ -458,11 +513,6 @@ namespace GamepadKeyboard
                     break;
 
                 // mouse actions (also valid in keyboard-mode mappings if wanted)
-                case "LeftClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_LEFTDOWN, NativeMethods.MOUSEEVENTF_LEFTUP); break;
-                case "RightClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_RIGHTDOWN, NativeMethods.MOUSEEVENTF_RIGHTUP); break;
-                case "MiddleClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_MIDDLEDOWN, NativeMethods.MOUSEEVENTF_MIDDLEUP); break;
-                case "XButton1": _sender.MouseButton(NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 1); break;
-                case "XButton2": _sender.MouseButton(NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 2); break;
                 case "ScrollUp": _sender.MouseWheel(120); break;
                 case "ScrollDown": _sender.MouseWheel(-120); break;
                 case "ScrollLeft": _sender.MouseHWheel(-120); break;
@@ -528,6 +578,7 @@ namespace GamepadKeyboard
             foreach (var vk in _heldModifiers)
                 _sender.KeyUp(vk);
             _heldModifiers.Clear();
+            ReleaseHeldClick();   // no stuck mouse buttons on disable / mode switch
         }
 
         private static ushort ActionToVk(string action) => action switch

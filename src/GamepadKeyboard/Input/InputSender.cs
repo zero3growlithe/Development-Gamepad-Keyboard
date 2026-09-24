@@ -73,6 +73,16 @@ namespace GamepadKeyboard.Input
             Dispatch(inputs);
         }
 
+        public void MouseButtonPress(uint downFlag, uint mouseData = 0)
+        {
+            Dispatch(new[] { MouseInput(downFlag, mouseData) });
+        }
+
+        public void MouseButtonRelease(uint upFlag, uint mouseData = 0)
+        {
+            Dispatch(new[] { MouseInput(upFlag, mouseData) });
+        }
+
         private static NativeMethods.INPUT MouseInput(uint flags, uint mouseData) => new()
         {
             type = NativeMethods.INPUT_MOUSE,
