@@ -81,9 +81,10 @@ namespace GamepadKeyboard.UI
             AddRow(5, "", _legend);
             AddRow(6, "", _toastPermanent);
 
-            var editors = new StackPanel
+            // WrapPanel: three wide buttons wrap to the next line instead of
+            // being clipped off the 460 px window edge
+            var editors = new WrapPanel
             {
-                Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 10, 0, 0)
             };
             var kbBtn = new Button { Content = "Gamepad bindings (keyboard mode)…", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 8, 0) };
