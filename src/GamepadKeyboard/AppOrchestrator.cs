@@ -166,20 +166,33 @@ namespace GamepadKeyboard
             _keyboard.Dispatcher.BeginInvoke(new Action(() => item.Checked = isChecked));
         }
 
+        private static Icon? _appIcon;
+
         private static Icon LoadIcon()
         {
-            // tiny embedded 16x16 icon drawn procedurally (no external asset needed)
+            // the exe's own Win32 icon (ApplicationIcon in csproj = gamepad-keyboard device icon)
+            if (_appIcon != null) return _appIcon;
+            try
+            {
+                string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                if (!string.IsNullOrEmpty(exe))
+                {
+                    _appIcon = Icon.ExtractAssociatedIcon(exe);
+                    if (_appIcon != null) return _appIcon;
+                }
+            }
+            catch { /* fall back to procedural */ }
             using var bmp = new Bitmap(16, 16);
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.FromArgb(24, 24, 32));
                 using var p1 = new Pen(Color.DeepSkyBlue, 2);
                 g.DrawRectangle(p1, 2, 5, 5, 4);
-                g.DrawRectangle(p1, 9, 5, 5, 4);
                 using var b = new SolidBrush(Color.Orange);
                 g.FillRectangle(b, 4, 10, 8, 3);
             }
-            return Icon.FromHandle(bmp.GetHicon());
+            _appIcon = Icon.FromHandle(bmp.GetHicon());
+            return _appIcon;
         }
 
         private void OnPad(Input.GamepadSnapshot s)

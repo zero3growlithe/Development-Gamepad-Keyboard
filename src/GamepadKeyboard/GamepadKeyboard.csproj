@@ -9,6 +9,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>appicon.ico</ApplicationIcon>
     <AssemblyName>DevelopmentGamepadKeyboard</AssemblyName>
     <RootNamespace>GamepadKeyboard</RootNamespace>
     <Nullable>enable</Nullable>
@@ -16,7 +17,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <AssemblyTitle>Development Gamepad Keyboard</AssemblyTitle>
     <Product>Development Gamepad Keyboard</Product>
     <Description>Control the mouse and type with dual analog sticks on gamepads.</Description>
