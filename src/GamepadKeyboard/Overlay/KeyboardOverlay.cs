@@ -28,7 +28,7 @@ namespace GamepadKeyboard.Overlay
         private readonly Ellipse _rightHit = MakeHit();
         private readonly TextBlock _profileLabel = MakeLabel();
 
-        public KeyboardLayout Layout { get; } = new();
+        public KeyboardLayout Layout { get; }
 
         public event Action<KeyboardLayout.KeyDef>? KeyClicked;
 
@@ -43,15 +43,14 @@ namespace GamepadKeyboard.Overlay
             Topmost = true;
             ShowActivated = false;
 
-            var grid = new Grid();
-            _canvas.Children.Add(grid);
-            Content = grid;
-
-            grid.Children.Add(_profileLabel);
+            // the canvas IS the content — keys, points, rays and label all live here
+            _canvas.Children.Add(_profileLabel);
             Canvas.SetZIndex(_profileLabel, 100);
+            Content = _canvas;
 
             RebuildKeys();
             SizeToContent();
+            LayoutProfileLabel(Width);
         }
 
         private void RebuildKeys()
@@ -90,7 +89,13 @@ namespace GamepadKeyboard.Overlay
                 }
             }
 
-            // add the dynamic elements on top
+            // dynamic elements on top (remove first so a rebuild never re-parents)
+            _canvas.Children.Remove(_leftRay);
+            _canvas.Children.Remove(_rightRay);
+            _canvas.Children.Remove(_leftPoint);
+            _canvas.Children.Remove(_rightPoint);
+            _canvas.Children.Remove(_leftHit);
+            _canvas.Children.Remove(_rightHit);
             _canvas.Children.Add(_leftRay);
             _canvas.Children.Add(_rightRay);
             _canvas.Children.Add(_leftPoint);
@@ -133,7 +138,7 @@ namespace GamepadKeyboard.Overlay
         public void LayoutProfileLabel(double width)
         {
             Canvas.SetLeft(_profileLabel, 4);
-            Canvas.SetTop(_profileLabel, ActualHeight - 30);
+            Canvas.SetTop(_profileLabel, Height - 40);
         }
 
         public new void SizeToContent()
@@ -147,6 +152,7 @@ namespace GamepadKeyboard.Overlay
         {
             RebuildKeys();
             SizeToContent();
+            LayoutProfileLabel(Width);
             // reposition points per profile after a resize
             SetPointPositions();
         }

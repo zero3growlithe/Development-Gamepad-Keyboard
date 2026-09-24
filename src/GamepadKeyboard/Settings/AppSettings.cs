@@ -137,7 +137,7 @@ namespace GamepadKeyboard.Settings
         public string RS { get; set; } = "None";
 
         public string View { get; set; } = "DisableInput";
-        public string Menu { get; set; } = "None";
+        public string Menu { get; set; } = "ToggleOverlay";
 
         public string DUp { get; set; } = "ArrowUp";
         public string DDown { get; set; } = "ArrowDown";
@@ -174,6 +174,6 @@ namespace GamepadKeyboard.Settings
         public string RS { get; set; } = "None";
 
         public string View { get; set; } = "DisableInput";
-        public string Menu { get; set; } = "None";
+        public string Menu { get; set; } = "ToggleOverlay";
     }
 }

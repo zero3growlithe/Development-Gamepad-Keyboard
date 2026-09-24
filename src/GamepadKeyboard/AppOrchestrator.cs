@@ -1,7 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
-using System.Windows;
 using System.Windows.Forms;
 using GamepadKeyboard.Native;
 using GamepadKeyboard.Overlay;
@@ -22,10 +21,12 @@ namespace GamepadKeyboard
         private readonly LegendOverlay _legend = new();
         private readonly ToastOverlay _toast = new();
         private NotifyIcon? _tray;
+        private ToolStripMenuItem? _overlayItem;
 
         public AppOrchestrator()
         {
-            Keyboard.KeyboardLayout layout = _mapper_Layout();
+            Keyboard.KeyboardLayout layout = new();
+            layout.Build();
             _mapper = new ControllerMapper(layout);
             _keyboard = new KeyboardOverlay(layout);
 
@@ -36,13 +37,11 @@ namespace GamepadKeyboard
                     _toast.Show(msg,
                         Settings.AppSettings.Instance.ProfileToastSeconds,
                         Settings.AppSettings.Instance.ProfileToastPermanent));
-        }
-
-        private static Keyboard.KeyboardLayout _mapper_Layout()
-        {
-            var l = new Keyboard.KeyboardLayout();
-            l.Build();
-            return l;
+            _mapper.Notification += msg =>
+                _keyboard.Dispatcher.BeginInvoke(() =>
+                    _toast.Show(msg,
+                        Settings.AppSettings.Instance.ProfileToastSeconds,
+                        Settings.AppSettings.Instance.ProfileToastPermanent));
         }
 
         public void Start()
@@ -51,27 +50,26 @@ namespace GamepadKeyboard
 
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             _keyboard.SetPointPositions();
-            _keyboard.KeyClicked += _ => { /* future: keyboard-test clicks */ };
 
             if (Settings.AppSettings.Instance.ShowOverlay)
-                _keyboard.Show();
+                ShowKeyboard();
+            else
+                _keyboard.Hide();
 
-            if (Settings.AppSettings.Instance.ShowButtonLegend)
-            {
-                _legend.ApplySettings(
-                    Settings.AppSettings.Instance.LegendLeft,
-                    Settings.AppSettings.Instance.LegendTop,
-                    Settings.AppSettings.Instance.LegendOpacity,
-                    Settings.AppSettings.Instance.LegendFontSize);
-                _legend.SetEntries(LegendEntries());
-                _legend.Show();
-            }
+            RefreshLegend();
 
             _toast.Show(
                 Settings.AppSettings.Instance.StartInMouseMode ? "Mouse mode" : "Keyboard mode",
                 Settings.AppSettings.Instance.ProfileToastSeconds,
                 Settings.AppSettings.Instance.ProfileToastPermanent);
             _mapper.MouseMode = Settings.AppSettings.Instance.StartInMouseMode;
+        }
+
+        private void ShowKeyboard()
+        {
+            _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
+            _keyboard.SetPointPositions();
+            _keyboard.Show();
         }
 
         private void BuildTray()
@@ -84,6 +82,18 @@ namespace GamepadKeyboard
             };
 
             var menu = new ContextMenuStrip();
+
+            var overlayItem = new ToolStripMenuItem("Show keyboard");
+            overlayItem.CheckOnClick = true;
+            overlayItem.Checked = Settings.AppSettings.Instance.ShowOverlay;
+            overlayItem.Click += (_, __) =>
+            {
+                bool show = overlayItem.Checked;
+                Settings.AppSettings.Instance.ShowOverlay = show;
+                Settings.AppSettings.Save();
+                if (show) ShowKeyboard(); else _keyboard.Hide();
+            };
+            _overlayItem = overlayItem;
 
             var adminItem = new ToolStripMenuItem();
             adminItem.Text = Util.LaunchUtil.IsAdmin() ? "Run as User" : "Run as Administrator";
@@ -124,6 +134,7 @@ namespace GamepadKeyboard
             var exitItem = new ToolStripMenuItem("Exit");
             exitItem.Click += (_, __) => Exit();
 
+            menu.Items.Add(overlayItem);
             menu.Items.Add(settingsItem);
             menu.Items.Add(aboutItem);
             menu.Items.Add(new ToolStripSeparator());
@@ -134,6 +145,14 @@ namespace GamepadKeyboard
 
             _tray.ContextMenuStrip = menu;
             _tray.DoubleClick += (_, __) => SettingsWindow.ShowSingleton();
+        }
+
+        /// <summary>Tray item used by the ToggleOverlay action to sync the checkmark.</summary>
+        public void SetOverlayChecked(bool isChecked)
+        {
+            var item = _overlayItem;
+            if (item == null) return;
+            _keyboard.Dispatcher.BeginInvoke(new Action(() => item.Checked = isChecked));
         }
 
         private static Icon LoadIcon()
@@ -173,10 +192,18 @@ namespace GamepadKeyboard
         private void RefreshUiCore()
         {
             _keyboard.ClearHighlights();
-            if (_mapper.MouseMode || true)  // legend reflects active mode + profile
-            {
-                _legend.SetEntries(LegendEntries());
-            }
+            RefreshLegend();
+
+            // overlay visibility follows the setting (ToggleOverlay action / tray)
+            bool wantShown = Settings.AppSettings.Instance.ShowOverlay;
+            if (wantShown && !_keyboard.IsVisible) _keyboard.Show();
+            if (!wantShown && _keyboard.IsVisible) _keyboard.Hide();
+            // keep the tray checkmark in sync (mapped ToggleOverlay flips it too)
+            var items = _tray?.ContextMenuStrip?.Items;
+            if (items != null)
+                foreach (System.Windows.Forms.ToolStripItem it in items)
+                    if (it is System.Windows.Forms.ToolStripMenuItem mi && mi.Text == "Show keyboard")
+                        mi.Checked = wantShown;
             if (!_mapper.MouseMode)
             {
                 if (_mapper.LeftHit != null)
@@ -191,6 +218,21 @@ namespace GamepadKeyboard
                 }
             }
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
+        }
+
+        private void RefreshLegend()
+        {
+            var st = Settings.AppSettings.Instance;
+            if (st.ShowButtonLegend)
+            {
+                _legend.ApplySettings(st.LegendLeft, st.LegendTop, st.LegendOpacity, st.LegendFontSize);
+                _legend.SetEntries(LegendEntries());
+                _legend.Show();
+            }
+            else
+            {
+                _legend.Hide();
+            }
         }
 
         private System.Collections.Generic.IReadOnlyList<(string key, string action)> LegendEntries()

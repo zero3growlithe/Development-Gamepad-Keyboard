@@ -292,6 +292,13 @@ namespace GamepadKeyboard
                     StateChanged?.Invoke();
                     break;
 
+                case "ToggleOverlay":
+                    var ovs = AppSettings.Instance;
+                    ovs.ShowOverlay = !ovs.ShowOverlay;
+                    AppSettings.Save();
+                    StateChanged?.Invoke();
+                    break;
+
                 // mouse actions (also valid in keyboard-mode mappings if wanted)
                 case "LeftClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_LEFTDOWN, NativeMethods.MOUSEEVENTF_LEFTUP); break;
                 case "RightClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_RIGHTDOWN, NativeMethods.MOUSEEVENTF_RIGHTUP); break;
