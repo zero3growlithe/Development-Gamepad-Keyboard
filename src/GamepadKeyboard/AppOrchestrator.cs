@@ -31,6 +31,7 @@ namespace GamepadKeyboard
 
         public AppOrchestrator()
         {
+            _current = this;
             Keyboard.KeyboardLayout layout = new();
             layout.Build();
             _mapper = new ControllerMapper(layout);
@@ -76,6 +77,25 @@ namespace GamepadKeyboard
             _mapper.MouseMode = Settings.AppSettings.Instance.StartInMouseMode;
             _enabledItem!.Checked = false;   // tray checkbox reflects the disabled start
         }
+
+        /// <summary>Static bridge for editor windows: reload profile-dependent UI.</summary>
+        public static void NotifyMappingsChanged()
+        {
+            var o = _current;
+            if (o == null) return;
+            var d = o._keyboard?.Dispatcher;
+            if (d == null) return;
+            d.BeginInvoke(() =>
+            {
+                if (o._keyboard == null) return;
+                o._keyboard.RebuildAndResize();
+                o._keyboard.SetPointPositions();
+                o._keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
+                o.RefreshUiCore();
+            });
+        }
+
+        private static AppOrchestrator? _current;
 
         private bool _keyboardShown;
 
@@ -357,6 +377,7 @@ namespace GamepadKeyboard
 
         public void Dispose()
         {
+            if (_current == this) _current = null;
             _pad.Dispose();
             if (_tray != null)
             {

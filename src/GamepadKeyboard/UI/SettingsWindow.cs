@@ -81,6 +81,21 @@ namespace GamepadKeyboard.UI
             AddRow(5, "", _legend);
             AddRow(6, "", _toastPermanent);
 
+            var editors = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 10, 0, 0)
+            };
+            var kbBtn = new Button { Content = "Gamepad bindings (keyboard mode)…", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 8, 0) };
+            kbBtn.Click += (_, __) => new BindingsEditorWindow(mouse: false).Show();
+            var moBtn = new Button { Content = "Gamepad bindings (mouse mode)…", Padding = new Thickness(10, 3, 10, 3) };
+            moBtn.Click += (_, __) => new BindingsEditorWindow(mouse: true).Show();
+            var ptsBtn = new Button { Content = "Stick center points…", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(8, 0, 0, 0) };
+            ptsBtn.Click += (_, __) => new StickPointsEditorWindow().Show();
+            editors.Children.Add(kbBtn);
+            editors.Children.Add(moBtn);
+            editors.Children.Add(ptsBtn);
+
             var buttons = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -102,6 +117,7 @@ namespace GamepadKeyboard.UI
             _runAdmin.Margin = new Thickness(12, 8, 12, 0);
             _startup.Margin = new Thickness(12, 4, 12, 0);
             _startMouse.Margin = new Thickness(12, 4, 12, 0);
+            outer.Children.Add(editors);
             outer.Children.Add(buttons);
             buttons.Margin = new Thickness(0, 12, 12, 12);
 

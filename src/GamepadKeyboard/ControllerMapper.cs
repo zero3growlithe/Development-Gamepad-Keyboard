@@ -328,6 +328,7 @@ namespace GamepadKeyboard
                 case "Enter": _sender.TapKey(Vk.Return); break;
                 case "Escape": _sender.TapKey(Vk.Escape); break;
                 case "Delete": _sender.TapKey(Vk.Delete, extended: true); break;
+                case "Insert": _sender.TapKey(Vk.Insert, extended: true); break;
                 case "ArrowUp": _sender.TapKey(Vk.Up, extended: true); break;
                 case "ArrowDown": _sender.TapKey(Vk.Down, extended: true); break;
                 case "ArrowLeft": _sender.TapKey(Vk.Left, extended: true); break;
