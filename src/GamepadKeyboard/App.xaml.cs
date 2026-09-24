@@ -35,6 +35,7 @@ namespace GamepadKeyboard
 
             Settings.AppSettings.Load();
             Input.GamepadSnapshot.Deadzone = Settings.AppSettings.Instance.StickDeadzone;
+            // overlay position is restored in KeyboardOverlay ctor via OverlayLeft/Top
 
             _orchestrator = new AppOrchestrator();
             _orchestrator.Start();

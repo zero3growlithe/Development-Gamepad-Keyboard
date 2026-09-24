@@ -32,6 +32,14 @@ namespace GamepadKeyboard
         public double LastRightX { get; private set; }
         public double LastRightY { get; private set; }
 
+        /// <summary>LS held = move overlay, RS held = scale overlay (sticky until released).</summary>
+        public bool AdjustMove { get; private set; }
+        public bool AdjustScale { get; private set; }
+        public double MoveDX { get; private set; }
+        public double MoveDY { get; private set; }
+        public double ScaleDelta { get; private set; }   // per-tick, up/down = +/-
+
+
         // currently held virtual modifier keys (toggle or hold)
         private readonly HashSet<ushort> _heldModifiers = new();
 
@@ -88,6 +96,19 @@ namespace GamepadKeyboard
             // origin-point edit mode is intentionally NOT here; profile switch first
             if (HandleProfileSwitch(s))
                 return;
+
+            // ── overlay adjust mode: hold L3 = move (left stick), hold R3 = scale (right stick) ──
+            AdjustMove = s.LS;
+            AdjustScale = s.RS;
+            if (AdjustMove)
+            {
+                MoveDX = s.LX;
+                MoveDY = s.LY;
+            }
+            if (AdjustScale)
+            {
+                ScaleDelta = s.RY;   // up (+RY) = bigger, down = smaller
+            }
 
             // dispatch mapped actions for every button (edge or hold semantics)
             DispatchButton(p.A, s.A, ref _pA);

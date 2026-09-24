@@ -22,6 +22,9 @@ namespace GamepadKeyboard
         private readonly ToastOverlay _toast = new();
         private NotifyIcon? _tray;
         private ToolStripMenuItem? _overlayItem;
+        private bool _settingsDirty;
+        private readonly System.Windows.Threading.DispatcherTimer _saveTimer =
+            new() { Interval = TimeSpan.FromSeconds(2) };
 
         public AppOrchestrator()
         {
@@ -37,12 +40,20 @@ namespace GamepadKeyboard
                     _toast.Show(msg,
                         Settings.AppSettings.Instance.ProfileToastSeconds,
                         Settings.AppSettings.Instance.ProfileToastPermanent));
-            _mapper.Notification += msg =>
-                _keyboard.Dispatcher.BeginInvoke(() =>
-                    _toast.Show(msg,
-                        Settings.AppSettings.Instance.ProfileToastSeconds,
-                        Settings.AppSettings.Instance.ProfileToastPermanent));
+
+            // debounce settings writes while dragging with the sticks
+            _saveTimer.Tick += (_, __) =>
+            {
+                if (_settingsDirty)
+                {
+                    _settingsDirty = false;
+                    Settings.AppSettings.Save();
+                }
+            };
+            _saveTimer.Start();
         }
+
+
 
         public void Start()
         {
@@ -200,6 +211,26 @@ namespace GamepadKeyboard
         {
             _keyboard.ClearHighlights();
             RefreshLegend();
+
+            // ── stick-driven overlay adjust: L3 hold = move (left stick), R3 hold = scale (right stick) ──
+            if (_mapper.AdjustMove)
+            {
+                var spd = Settings.AppSettings.Instance.OverlayMoveSpeed;
+                _keyboard.Left = Math.Clamp(_keyboard.Left + _mapper.MoveDX * spd, -_keyboard.Width + 80, System.Windows.SystemParameters.WorkArea.Width - 40);
+                _keyboard.Top = Math.Clamp(_keyboard.Top - _mapper.MoveDY * spd, 0, System.Windows.SystemParameters.WorkArea.Height - 40);
+                Settings.AppSettings.Instance.OverlayLeft = _keyboard.Left;
+                Settings.AppSettings.Instance.OverlayTop = _keyboard.Top;
+                _settingsDirty = true;
+            }
+            if (_mapper.AdjustScale)
+            {
+                if (Math.Abs(_mapper.ScaleDelta) > 0.15)
+                {
+                    _keyboard.SetScale(_keyboard.Scale + Math.Sign(_mapper.ScaleDelta) * 0.02);
+                    Settings.AppSettings.Instance.OverlayScale = _keyboard.Scale;
+                    _settingsDirty = true;
+                }
+            }
 
             // overlay visibility follows the setting (ToggleOverlay action / tray)
             bool wantShown = Settings.AppSettings.Instance.ShowOverlay;

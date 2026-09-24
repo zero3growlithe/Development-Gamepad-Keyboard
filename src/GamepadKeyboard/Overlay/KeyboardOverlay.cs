@@ -20,6 +20,7 @@ namespace GamepadKeyboard.Overlay
     {
         private readonly Canvas _canvas = new();
         private readonly Dictionary<KeyboardLayout.KeyDef, Border> _keyBorders = new();
+        private readonly HashSet<KeyboardLayout.KeyDef> _highlighted = new();
         private readonly Ellipse _leftPoint = MakePoint(Brushes.Orange);
         private readonly Ellipse _rightPoint = MakePoint(Brushes.DeepSkyBlue);
         private readonly Line _leftRay = MakeRay();
@@ -27,6 +28,11 @@ namespace GamepadKeyboard.Overlay
         private readonly Ellipse _leftHit = MakeHit();
         private readonly Ellipse _rightHit = MakeHit();
         private readonly TextBlock _profileLabel = MakeLabel();
+        private readonly ScaleTransform _scaleT = new(1, 1);
+        private double _baseW, _baseH;   // unscaled canvas size
+        private double _scale = 1.0;
+
+        public double Scale => _scale;
 
         public KeyboardLayout Layout { get; }
 
@@ -46,11 +52,15 @@ namespace GamepadKeyboard.Overlay
             // the canvas IS the content — keys, points, rays and label all live here
             _canvas.Children.Add(_profileLabel);
             Canvas.SetZIndex(_profileLabel, 100);
+            _canvas.LayoutTransform = _scaleT;   // stick-driven scaling
             Content = _canvas;
 
+            Left = Settings.AppSettings.Instance.OverlayLeft;
+            Top = Settings.AppSettings.Instance.OverlayTop;
             RebuildKeys();
             SizeToContent();
-            LayoutProfileLabel(Width);
+            LayoutProfileLabel(_baseW);
+            SetScale(Settings.AppSettings.Instance.OverlayScale);
         }
 
         private void RebuildKeys()
@@ -138,14 +148,28 @@ namespace GamepadKeyboard.Overlay
         public void LayoutProfileLabel(double width)
         {
             Canvas.SetLeft(_profileLabel, 4);
-            Canvas.SetTop(_profileLabel, Height - 40);
+            Canvas.SetTop(_profileLabel, _baseH - 40);
         }
 
         public new void SizeToContent()
         {
             var pitch = 48 + AppSettings.Instance.KeySpacing;
-            Width = Layout.GridW * pitch + 8;
-            Height = Layout.GridH * pitch + 44;
+            _baseW = Layout.GridW * pitch + 8;
+            _baseH = Layout.GridH * pitch + 44;
+            ApplyScale();
+        }
+
+        public void SetScale(double scale)
+        {
+            _scale = Math.Clamp(scale, 0.5, 2.5);
+            ApplyScale();
+        }
+
+        private void ApplyScale()
+        {
+            Width = _baseW * _scale;
+            Height = _baseH * _scale;
+            _scaleT.ScaleX = _scaleT.ScaleY = _scale;
         }
 
         public void RebuildAndResize()
@@ -166,8 +190,8 @@ namespace GamepadKeyboard.Overlay
 
         private void SetPoint(Ellipse dot, Ellipse hit, double nx, double ny)
         {
-            double x = nx * (Width - 8) + 4;
-            double y = ny * (Height - 44) + 4;
+            double x = nx * (_baseW - 8) + 4;
+            double y = ny * (_baseH - 44) + 4;
             Canvas.SetLeft(hit, x - 13);
             Canvas.SetTop(hit, y - 13);
             Canvas.SetLeft(dot, x - 7);
@@ -210,16 +234,19 @@ namespace GamepadKeyboard.Overlay
             {
                 b.BorderBrush = active ? (Brush)FindResource("ActiveBrush") : (Brush)FindResource("HighlightBrush");
                 b.BorderThickness = new Thickness(active ? 2.5 : 1.8);
+                _highlighted.Add(k);
             }
         }
 
         public void ClearHighlights()
         {
+            if (_highlighted.Count == 0) return;   // hot path: 250 Hz idle calls
             foreach (var kv in _keyBorders)
             {
                 kv.Value.BorderBrush = (Brush)FindResource("KeyBorderBrush");
                 kv.Value.BorderThickness = new Thickness(1);
             }
+            _highlighted.Clear();
         }
 
         protected override void OnSourceInitialized(EventArgs e)
