@@ -11,7 +11,8 @@ namespace GamepadKeyboard.Input
     /// </summary>
     public sealed class GamepadService : IDisposable
     {
-        private readonly System.Threading.Timer _pollTimer;
+        private readonly System.Threading.Thread _pollThread;
+        private volatile bool _stop;
         private GamepadSnapshot _last = default;
         private int _lastRawCount = -1;
         private readonly Dictionary<string, Windows.Gaming.Input.Gamepad> _padCache = new();
@@ -25,8 +26,27 @@ namespace GamepadKeyboard.Input
 
         public GamepadService()
         {
-            // Timer on its own thread pool; cheap enough at 250 Hz.
-            _pollTimer = new System.Threading.Timer(Poll, null, 0, 4);
+            // dedicated high-priority thread: never throttled when the app is
+            // backgrounded (threadpool timers can be coalesced/delayed for tray apps)
+            _pollThread = new System.Threading.Thread(PollLoop)
+            {
+                IsBackground = true,
+                Priority = System.Threading.ThreadPriority.AboveNormal,
+                Name = "GamepadPoll"
+            };
+            _pollThread.Start();
+        }
+
+        private void PollLoop()
+        {
+            // 1 ms system timer resolution so Sleep(4) is actually ~4 ms
+            try { Native.NativeMethods.TimeBeginPeriod(1); } catch { }
+            while (!_stop)
+            {
+                Poll(null);
+                System.Threading.Thread.Sleep(4);
+            }
+            try { Native.NativeMethods.TimeEndPeriod(1); } catch { }
         }
 
         private void Poll(object? state)
@@ -241,7 +261,11 @@ namespace GamepadKeyboard.Input
             return lines.ToArray();
         }
 
-        public void Dispose() => _pollTimer.Dispose();
+        public void Dispose()
+        {
+            _stop = true;
+            try { _pollThread.Join(200); } catch { }
+        }
     }
 
     /// <summary>Immutable snapshot of one gamepad reading.</summary>

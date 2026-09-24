@@ -43,9 +43,9 @@ namespace GamepadKeyboard
         public double LastRightX { get; private set; }
         public double LastRightY { get; private set; }
 
-        /// <summary>LS held = move overlay, RS held = scale overlay (sticky until released).</summary>
-        public bool AdjustMove { get; private set; }
-        public bool AdjustScale { get; private set; }
+        /// <summary>L3/R3 press toggles (sticky until toggled off or input disabled).</summary>
+        public bool AdjustMove { get; set; }
+        public bool AdjustScale { get; set; }
         public double MoveDX { get; private set; }
         public double MoveDY { get; private set; }
         public double ScaleDelta { get; private set; }   // per-tick, up/down = +/-
@@ -92,6 +92,8 @@ namespace GamepadKeyboard
             if (!InputEnabled)
             {
                 // pass-through: app injects nothing, game sees the pad natively
+                AdjustMove = AdjustScale = false;
+                MoveDX = MoveDY = ScaleDelta = 0;
                 ClearAllEdges(s);
                 return;
             }
@@ -114,9 +116,21 @@ namespace GamepadKeyboard
             if (HandleProfileSwitch(s))
                 return;
 
-            // ── overlay adjust mode: hold L3 = move (left stick), hold R3 = scale (right stick) ──
-            AdjustMove = s.LS;
-            AdjustScale = s.RS;
+            // ── overlay adjust TOGGLES: press L3 once = move mode, press again = off ──
+            if (s.LS && !_pLS)
+            {
+                AdjustMove = !AdjustMove;
+                MoveDX = MoveDY = 0;
+                Notification?.Invoke(AdjustMove ? "Move mode ON — left stick moves the keyboard"
+                                                : "Move mode OFF");
+            }
+            if (s.RS && !_pRS)
+            {
+                AdjustScale = !AdjustScale;
+                ScaleDelta = 0;
+                Notification?.Invoke(AdjustScale ? "Scale mode ON — right stick up/down scales"
+                                                 : "Scale mode OFF");
+            }
             if (AdjustMove)
             {
                 MoveDX = s.LX;
@@ -136,8 +150,7 @@ namespace GamepadKeyboard
             DispatchButton(p.LB, s.LB, ref _pLB);
             DispatchButton(p.RB, s.RB, ref _pRB);
 
-            DispatchButton(p.LS, s.LS, ref _pLS);
-            DispatchButton(p.RS, s.RS, ref _pRS);
+            // L3/R3 are dedicated to overlay move/scale toggles — not mappable here
 
             DispatchButton(p.View, s.View, ref _pView);
             DispatchButton(p.Menu, s.Menu, ref _pMenu);
@@ -162,13 +175,15 @@ namespace GamepadKeyboard
             ApplyTriggerModifier(p.LT, s.LeftTrigger);
             ApplyTriggerModifier(p.RT, s.RightTrigger);
 
-            // stick rays
+            // stick rays (max length = origin point -> Esc / F12, not layout corner)
             LastLeftX = s.LX; LastLeftY = s.LY;
-            double maxL = RayLengthFor(Vk.Escape) * AppSettings.Instance.LeftRayScale * p.RayScale;
+            double maxL = RayLengthFor(Vk.Escape, p.LeftX * GridW(), p.LeftY * GridH())
+                          * AppSettings.Instance.LeftRayScale * p.RayScale;
             (LeftHit, LeftLen) = RayHit(s.LX, s.LY, maxL, left: true);
 
             LastRightX = s.RX; LastRightY = s.RY;
-            double maxR = RayLengthFor(Vk.F12) * AppSettings.Instance.RightRayScale * p.RayScale;
+            double maxR = RayLengthFor(Vk.F12, p.RightX * GridW(), p.RightY * GridH())
+                          * AppSettings.Instance.RightRayScale * p.RayScale;
             (RightHit, RightLen) = RayHit(s.RX, s.RY, maxR, left: false);
         }
 
@@ -542,7 +557,7 @@ namespace GamepadKeyboard
             double gx = (left ? p.LeftX : p.RightX) * GridW();
             double gy = (left ? p.LeftY : p.RightY) * GridH();
             double ex = gx + sx * len / Pitch();
-            double ey = gy + sy * len / Pitch();
+            double ey = gy - sy * len / Pitch();   // grid Y grows downward; stick up = smaller Y
 
             KeyboardLayout.KeyDef? best = null;
             double bestD = double.MaxValue;
@@ -560,11 +575,12 @@ namespace GamepadKeyboard
         private double GridH() => _layout.GridH;
         private double Pitch() => 48 + AppSettings.Instance.KeySpacing;
 
-        private double RayLengthFor(ushort vk)
+        private double RayLengthFor(ushort vk, double gx, double gy)
         {
             var k = _layout.FindByVk(vk);
             if (k == null) return _layout.GridH * Pitch();
-            return Math.Sqrt(k.X * k.X + k.Y * k.Y) * Pitch();
+            double dx = k.X - gx, dy = k.Y - gy;
+            return Math.Sqrt(dx * dx + dy * dy) * Pitch();
         }
 
         private double ApplyCurve(double v)

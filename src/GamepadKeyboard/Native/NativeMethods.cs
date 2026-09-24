@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace GamepadKeyboard.Native
 {
-    internal static class NativeMethods
+    public static class NativeMethods
     {
         // ── SendInput ──────────────────────────────────────────────────────────
         [StructLayout(LayoutKind.Sequential)]
@@ -103,5 +103,12 @@ namespace GamepadKeyboard.Native
 
         [DllImport("user32.dll")]
         public static extern short GetAsyncKeyState(int nVirtKey);
+
+        // ── High-resolution timer (polling cadence when backgrounded) ──────────
+        [DllImport("winmm.dll")]
+        public static extern uint TimeBeginPeriod(uint ms);
+
+        [DllImport("winmm.dll")]
+        public static extern uint TimeEndPeriod(uint ms);
     }
 }
