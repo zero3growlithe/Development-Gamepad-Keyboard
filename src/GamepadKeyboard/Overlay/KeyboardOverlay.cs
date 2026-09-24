@@ -28,6 +28,7 @@ namespace GamepadKeyboard.Overlay
         private readonly Ellipse _leftHit = MakeHit();
         private readonly Ellipse _rightHit = MakeHit();
         private readonly TextBlock _profileLabel = MakeLabel();
+        private readonly TextBlock _statusLabel = MakeLabel();   // mode/notifications, right of profile
         private readonly ScaleTransform _scaleT = new(1, 1);
         private double _baseW, _baseH;   // unscaled canvas size
         private double _scale = 1.0;
@@ -52,9 +53,13 @@ namespace GamepadKeyboard.Overlay
             // the canvas IS the content — keys, points, rays and label all live here
             _canvas.Children.Add(_profileLabel);
             Canvas.SetZIndex(_profileLabel, 100);
+            _canvas.Children.Add(_statusLabel);
+            Canvas.SetZIndex(_statusLabel, 100);
+            _statusLabel.Visibility = Visibility.Collapsed;
             _canvas.LayoutTransform = _scaleT;   // stick-driven scaling
             Content = _canvas;
 
+            _statusHide.Tick += StatusHideTick;
             Left = Settings.AppSettings.Instance.OverlayLeft;
             Top = Settings.AppSettings.Instance.OverlayTop;
             RebuildKeys();
@@ -143,12 +148,51 @@ namespace GamepadKeyboard.Overlay
             Padding = new Thickness(6, 2, 6, 2)
         };
 
-        public void SetProfileName(string name) => _profileLabel.Text = $"Profile: {name}";
+        public void SetProfileName(string name)
+        {
+            _profileLabel.Text = $"Profile: {name}";
+            PlaceStatusAfterProfile();
+        }
 
         public void LayoutProfileLabel(double width)
         {
             Canvas.SetLeft(_profileLabel, 4);
             Canvas.SetTop(_profileLabel, _baseH - 40);
+            PlaceStatusAfterProfile();
+        }
+
+        /// <summary>Notification/status text: same look as profile label, to its right.</summary>
+        public void ShowStatus(string message, int seconds, bool permanent)
+        {
+            _statusLabel.Text = message;
+            _statusLabel.Visibility = Visibility.Visible;
+            PlaceStatusAfterProfile();
+            _statusHide.Stop();
+            if (!permanent)
+            {
+                _statusHide.Interval = TimeSpan.FromSeconds(Math.Max(1, seconds));
+                _statusHide.Start();
+            }
+        }
+
+        private readonly System.Windows.Threading.DispatcherTimer _statusHide =
+            new() { Interval = TimeSpan.FromSeconds(3) };
+
+        private void StatusHideTick(object? sender, EventArgs e)
+        {
+            _statusHide.Stop();
+            _statusLabel.Visibility = Visibility.Collapsed;
+        }
+
+        private void PlaceStatusAfterProfile()
+        {
+            _statusHide.Tick -= StatusHideTick;   // idempotent single subscription
+            _statusHide.Tick += StatusHideTick;
+            // profile label is at (4, _baseH-40); place status right after its rendered width
+            _profileLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double pw = _profileLabel.DesiredSize.Width;
+            Canvas.SetLeft(_statusLabel, 4 + pw + 8);
+            Canvas.SetTop(_statusLabel, _baseH - 40);
         }
 
         public new void SizeToContent()

@@ -19,7 +19,6 @@ namespace GamepadKeyboard
         private readonly ControllerMapper _mapper;
         private readonly KeyboardOverlay _keyboard;
         private readonly LegendOverlay _legend = new();
-        private readonly ToastOverlay _toast = new();
         private NotifyIcon? _tray;
         private ToolStripMenuItem? _overlayItem;
         private ToolStripMenuItem? _enabledItem;
@@ -42,7 +41,7 @@ namespace GamepadKeyboard
             _mapper.Notification += msg =>
                 _keyboard.Dispatcher.BeginInvoke(() =>
                 {
-                    _toast.Show(msg,
+                    _keyboard.ShowStatus(msg,
                         Settings.AppSettings.Instance.ProfileToastSeconds,
                         Settings.AppSettings.Instance.ProfileToastPermanent);
                     if (_enabledItem != null)
@@ -77,7 +76,7 @@ namespace GamepadKeyboard
 
             RefreshLegend();
 
-            _toast.Show(
+            _keyboard.ShowStatus(
                 Settings.AppSettings.Instance.StartInMouseMode ? "Mouse mode" : "Keyboard mode",
                 Settings.AppSettings.Instance.ProfileToastSeconds,
                 Settings.AppSettings.Instance.ProfileToastPermanent);
