@@ -12,8 +12,6 @@ namespace GamepadKeyboard.Settings
         public static AppSettings Instance { get; private set; } = new();
 
         public double KeySpacing { get; set; } = 6.0;
-        public double LeftRayScale { get; set; } = 1.0;    // multiplies distance to Esc
-        public double RightRayScale { get; set; } = 1.0;   // multiplies distance to F12
         public double StickDeadzone { get; set; } = 0.005;
         public double OverlayScale { get; set; } = 1.0;
         public double OverlayMoveSpeed { get; set; } = 6.0;
@@ -123,8 +121,11 @@ namespace GamepadKeyboard.Settings
         /// <summary>Response curve exponent. 1.0 = linear; &gt;1 = finer near center.</summary>
         public double CurveExponent { get; set; } = 1.0;
 
-        /// <summary>Ray length scale relative to the grid-derived maximum.</summary>
-        public double RayScale { get; set; } = 1.0;
+        /// <summary>Left ray length, 0..1 × max distance LeftCtrl→Backspace.</summary>
+        public double LeftRayLength { get; set; } = 1.0;
+
+        /// <summary>Right ray length, 0..1 × max distance LeftCtrl→Backspace.</summary>
+        public double RightRayLength { get; set; } = 1.0;
 
         // ── button mappings (physical pad -> action name) ────────────────────
         public string A { get; set; } = "Space";

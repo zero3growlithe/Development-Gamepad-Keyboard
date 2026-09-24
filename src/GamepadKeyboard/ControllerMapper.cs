@@ -197,15 +197,13 @@ namespace GamepadKeyboard
             if (!Sup("LT")) ApplyTriggerModifier(p.LT, s.LeftTrigger);
             if (!Sup("RT")) ApplyTriggerModifier(p.RT, s.RightTrigger);
 
-            // stick rays (max length = origin point -> Esc / F12, not layout corner)
+            // stick rays (max length = LeftCtrl -> Backspace distance, per-stick slider)
             LastLeftX = s.LX; LastLeftY = s.LY;
-            double maxL = RayLengthFor(Vk.Escape, p.LeftX * GridW(), p.LeftY * GridH())
-                          * AppSettings.Instance.LeftRayScale * p.RayScale;
+            double maxL = MaxRayLength() * p.LeftRayLength;
             (LeftHit, LeftLen) = RayHit(s.LX, s.LY, maxL, left: true);
 
             LastRightX = s.RX; LastRightY = s.RY;
-            double maxR = RayLengthFor(Vk.F12, p.RightX * GridW(), p.RightY * GridH())
-                          * AppSettings.Instance.RightRayScale * p.RayScale;
+            double maxR = MaxRayLength() * p.RightRayLength;
             (RightHit, RightLen) = RayHit(s.RX, s.RY, maxR, left: false);
         }
 
@@ -731,11 +729,13 @@ namespace GamepadKeyboard
         private double GridH() => _layout.GridH;
         private double Pitch() => 48 + AppSettings.Instance.KeySpacing;
 
-        private double RayLengthFor(ushort vk, double gx, double gy)
+        /// <summary>Max ray length = key-center distance LeftCtrl -> Backspace in pixels.</summary>
+        private double MaxRayLength()
         {
-            var k = _layout.FindByVk(vk);
-            if (k == null) return _layout.GridH * Pitch();
-            double dx = k.X - gx, dy = k.Y - gy;
+            var a = _layout.FindByVk(Vk.LControl);
+            var b = _layout.FindByVk(Vk.Back);
+            if (a == null || b == null) return _layout.GridH * Pitch();
+            double dx = b.X - a.X, dy = b.Y - a.Y;
             return Math.Sqrt(dx * dx + dy * dy) * Pitch();
         }
 

@@ -22,10 +22,14 @@ namespace GamepadKeyboard.UI
         private readonly Slider _ly = MakeSlider();
         private readonly Slider _rx = MakeSlider();
         private readonly Slider _ry = MakeSlider();
+        private readonly Slider _ll = MakeRaySlider();
+        private readonly Slider _rl = MakeRaySlider();
         private readonly TextBlock _lxv = MakeValue();
         private readonly TextBlock _lyv = MakeValue();
         private readonly TextBlock _rxv = MakeValue();
         private readonly TextBlock _ryv = MakeValue();
+        private readonly TextBlock _llv = MakeValue();
+        private readonly TextBlock _rlv = MakeValue();
         private int _suppress = 0;
 
         public StickPointsEditorWindow()
@@ -61,10 +65,20 @@ namespace GamepadKeyboard.UI
             root.Children.Add(SliderRow("Right stick — X (left ↔ right):", _rx, _rxv));
             root.Children.Add(SliderRow("Right stick — Y (bottom ↔ top):", _ry, _ryv));
 
+            root.Children.Add(Separator());
+            root.Children.Add(new TextBlock
+            {
+                Text = "Ray length (1.0 = LeftCtrl → Backspace distance):",
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 2, 0, 4)
+            });
+            root.Children.Add(SliderRow("Left stick ray length:", _ll, _llv));
+            root.Children.Add(SliderRow("Right stick ray length:", _rl, _rlv));
+
             var hint = new TextBlock
             {
-                Text = "Points update live on the virtual keyboard overlay. Esc/F12 origin: " +
-                       "ray max length = origin → Esc (left) / F12 (right).",
+                Text = "Points update live on the virtual keyboard overlay. " +
+                       "Ray max length = LeftCtrl → Backspace key distance.",
                 Foreground = Brushes.Gray,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 10, 0, 0)
@@ -81,6 +95,17 @@ namespace GamepadKeyboard.UI
             _profileBox.SelectionChanged += (_, __) => LoadSelected();
             ReloadProfileList();
         }
+
+        private static Slider MakeRaySlider() => new()
+        {
+            Minimum = 0.05,
+            Maximum = 1.0,
+            TickFrequency = 0.05,
+            IsSnapToTickEnabled = false,
+            AutoToolTipPlacement = System.Windows.Controls.Primitives.AutoToolTipPlacement.TopLeft,
+            AutoToolTipPrecision = 2,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         private static Slider MakeSlider() => new()
         {
@@ -152,6 +177,7 @@ namespace GamepadKeyboard.UI
             _suppress++;
             _lx.Value = p.LeftX; _ly.Value = p.LeftY;
             _rx.Value = p.RightX; _ry.Value = p.RightY;
+            _ll.Value = p.LeftRayLength; _rl.Value = p.RightRayLength;
             _suppress--;
 
             UpdateValues();
@@ -165,6 +191,8 @@ namespace GamepadKeyboard.UI
             _ly.ValueChanged += (_, __) => SliderChanged();
             _rx.ValueChanged += (_, __) => SliderChanged();
             _ry.ValueChanged += (_, __) => SliderChanged();
+            _ll.ValueChanged += (_, __) => SliderChanged();
+            _rl.ValueChanged += (_, __) => SliderChanged();
         }
 
         private void SliderChanged()
@@ -175,8 +203,11 @@ namespace GamepadKeyboard.UI
             var p = Kb[idx];
             p.LeftX = _lx.Value; p.LeftY = _ly.Value;
             p.RightX = _rx.Value; p.RightY = _ry.Value;
+            p.LeftRayLength = _ll.Value; p.RightRayLength = _rl.Value;
             _lxv.Text = p.LeftX.ToString("0.000");
             _lyv.Text = p.LeftY.ToString("0.000");
+            _llv.Text = p.LeftRayLength.ToString("0.00");
+            _rlv.Text = p.RightRayLength.ToString("0.00");
             _rxv.Text = p.RightX.ToString("0.000");
             _ryv.Text = p.RightY.ToString("0.000");
 
@@ -190,6 +221,8 @@ namespace GamepadKeyboard.UI
             _lyv.Text = _ly.Value.ToString("0.000");
             _rxv.Text = _rx.Value.ToString("0.000");
             _ryv.Text = _ry.Value.ToString("0.000");
+            _llv.Text = _ll.Value.ToString("0.00");
+            _rlv.Text = _rl.Value.ToString("0.00");
         }
 
         private void AddProfile(bool dup)
