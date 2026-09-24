@@ -1,0 +1,177 @@
+using System;
+using System.Collections.Generic;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+
+using GamepadKeyboard.Native;
+
+namespace GamepadKeyboard.Keyboard
+{
+    /// <summary>
+    /// Builds the full US key layout and lays it out on a Canvas.
+    /// Layout is generated from a compact definition table; geometry depends only on
+    /// KeySpacing (gap in key-width units) so the ray distance scales with it.
+    /// </summary>
+    public sealed class KeyboardLayout
+    {
+        public sealed class KeyDef
+        {
+            public string Label;
+            public ushort Vk;
+            public bool Extended;
+            public double X, Y;   // cell coords (columns / rows), assigned at build time
+            public double W = 1;  // width in key units
+            public double H = 1;
+
+            public KeyDef(string label, ushort vk, double w = 1, bool extended = false)
+            {
+                Label = label;
+                Vk = vk;
+                W = w;
+            }
+        }
+
+        public IReadOnlyList<KeyDef> Keys => _keys;
+        private readonly List<KeyDef> _keys = new();
+
+        /// <summary>Total grid width/height in key units (incl. gaps).</summary>
+        public double GridW { get; private set; }
+        public double GridH { get; private set; }
+
+        public KeyDef? FindByVk(ushort vk)
+        {
+            foreach (var k in _keys)
+                if (k.Vk == vk && vk != 0) return k;
+            return null;
+        }
+
+        private void Row(int y, params KeyDef[] defs)
+        {
+            double x = 0;
+            foreach (var d in defs)
+            {
+                d.X = x;
+                d.Y = y;
+                _keys.Add(d);
+                x += d.W;
+            }
+        }
+
+        public void Build()
+        {
+            // Row 0: Esc + F1..F12
+            Row(0,
+                new KeyDef("Esc", Vk.Escape),
+                new KeyDef("F1", Vk.F1), new KeyDef("F2", Vk.F2), new KeyDef("F3", Vk.F3), new KeyDef("F4", Vk.F4),
+                new KeyDef("F5", Vk.F5), new KeyDef("F6", Vk.F6), new KeyDef("F7", Vk.F7), new KeyDef("F8", Vk.F8),
+                new KeyDef("F9", Vk.F9), new KeyDef("F10", Vk.F10), new KeyDef("F11", Vk.F11), new KeyDef("F12", Vk.F12));
+
+            // Row 1: ` 1..0 - = Backspace
+            Row(1,
+                new KeyDef("`", '`'), new KeyDef("1", '1'), new KeyDef("2", '2'), new KeyDef("3", '3'), new KeyDef("4", '4'),
+                new KeyDef("5", '5'), new KeyDef("6", '6'), new KeyDef("7", '7'), new KeyDef("8", '8'), new KeyDef("9", '9'),
+                new KeyDef("0", '0'), new KeyDef("-", '-'), new KeyDef("=", '='),
+                new KeyDef("Bksp", Vk.Back, 2));
+
+            // Row 2: Tab Q..]
+            Row(2,
+                new KeyDef("Tab", Vk.Tab, 1.5),
+                new KeyDef("Q", 'Q'), new KeyDef("W", 'W'), new KeyDef("E", 'E'), new KeyDef("R", 'R'),
+                new KeyDef("T", 'T'), new KeyDef("Y", 'Y'), new KeyDef("U", 'U'), new KeyDef("I", 'I'),
+                new KeyDef("O", 'O'), new KeyDef("P", 'P'), new KeyDef("[", '['), new KeyDef("]", ']'),
+                new KeyDef("\\", 0xDC, 1.5));
+
+            // Row 3: Caps A..'
+            Row(3,
+                new KeyDef("Caps", Vk.Capital, 1.75),
+                new KeyDef("A", 'A'), new KeyDef("S", 'S'), new KeyDef("D", 'D'), new KeyDef("F", 'F'),
+                new KeyDef("G", 'G'), new KeyDef("H", 'H'), new KeyDef("J", 'J'), new KeyDef("K", 'K'),
+                new KeyDef("L", 'L'), new KeyDef(";", ';'), new KeyDef("'", '\''),
+                new KeyDef("Enter", Vk.Return, 2.25));
+
+            // Row 4: Shift Z../
+            Row(4,
+                new KeyDef("Shift", Vk.LShift, 2.25),
+                new KeyDef("Z", 'Z'), new KeyDef("X", 'X'), new KeyDef("C", 'C'), new KeyDef("V", 'V'),
+                new KeyDef("B", 'B'), new KeyDef("N", 'N'), new KeyDef("M", 'M'), new KeyDef(",", ','), new KeyDef(".", '.'),
+                new KeyDef("/", '/'),
+                new KeyDef("RShift", Vk.RShift, 2.75));
+
+            // Row 5: Ctrl Win Alt Space Alt Ctrl
+            Row(5,
+                new KeyDef("LCtrl", Vk.LControl, 1.25),
+                new KeyDef("Win", Vk.LWin, 1.25),
+                new KeyDef("LAlt", Vk.LMenu, 1.25),
+                new KeyDef("Space", Vk.Space, 6.25),
+                new KeyDef("RAlt", Vk.RMenu, 1.25),
+                new KeyDef("RCtrl", Vk.RControl, 1.25));
+
+            // Numeric keypad (optional block, offset to the right)
+            const int npx = 16;
+            Row(0, new KeyDef("PrtSc", Vk.Print, 1), new KeyDef("ScrLk", Vk.Scroll, 1), new KeyDef("Pause", Vk.Pause, 1));
+            // ^ these land at x=0..2; shift them right manually below.
+
+            _keys[^3].X = npx; _keys[^3].Y = 1;
+            _keys[^2].X = npx; _keys[^2].Y = 1;
+            _keys[^1].X = npx + 2; _keys[^1].Y = 1;
+
+            // NumPad rows
+            Add(new KeyDef("NumLk", Vk.NumLock), npx, 2);
+            Add(new KeyDef("/", Vk.Divide), npx + 1, 2);
+            Add(new KeyDef("*", Vk.Multiply), npx + 2, 2);
+            Add(new KeyDef("-", Vk.Subtract), npx + 3, 2);
+
+            Add(new KeyDef("7", Vk.NumPad0 + 7), npx, 3);
+            Add(new KeyDef("8", Vk.NumPad0 + 8), npx, 4);
+            Add(new KeyDef("9", Vk.NumPad0 + 9), npx, 5);
+            Add(new KeyDef("+", Vk.Add), npx + 3, 3, 1, 2);
+
+            Add(new KeyDef("4", Vk.NumPad0 + 4), npx, 4);
+            Add(new KeyDef("5", Vk.NumPad0 + 5), npx, 5);
+            Add(new KeyDef("6", Vk.NumPad0 + 6), npx, 6);
+
+            Add(new KeyDef("1", Vk.NumPad0 + 1), npx, 5);
+            Add(new KeyDef("2", Vk.NumPad0 + 2), npx, 6);
+            Add(new KeyDef("3", Vk.NumPad0 + 3), npx, 7);
+            Add(new KeyDef("Enter", Vk.Return), npx + 3, 5, 1, 2);
+
+            Add(new KeyDef("0", Vk.NumPad0), npx, 7, 2, 1);
+            Add(new KeyDef(".", Vk.Decimal), npx + 2, 7);
+
+            // Home / nav cluster between main block and numpad
+            const int nx = 15;
+            Add(new KeyDef("Ins", Vk.Insert), nx, 2);
+            Add(new KeyDef("Home", Vk.Home), nx + 1, 2);
+            Add(new KeyDef("PgUp", Vk.PageUp), nx + 2, 2);
+            Add(new KeyDef("Del", Vk.Delete), nx, 3);
+            Add(new KeyDef("End", Vk.End), nx + 1, 3);
+            Add(new KeyDef("PgDn", Vk.PageDown), nx + 2, 3);
+            Add(new KeyDef("^", Vk.Up), nx + 1, 4);
+            Add(new KeyDef("<", Vk.Left, 1, true), nx, 5);
+            Add(new KeyDef("v", Vk.Down), nx + 1, 5);
+            Add(new KeyDef(">", Vk.Right, 1, true), nx + 2, 5);
+
+            GridW = npx + 4;
+            GridH = 8;
+        }
+
+        private void Add(KeyDef k, double x, double y, double w = 1, double h = 1)
+        {
+            k.X = x; k.Y = y; k.W = w; k.H = h;
+            _keys.Add(k);
+        }
+
+        /// <summary>Grid coord (key units) -> pixels with the given spacing.</summary>
+        public static Rect KeyRect(KeyDef k, double spacing)
+        {
+            // cell pitch = base 48 px + spacing px; key occupies (pitch - spacing)
+            double pitch = 48 + spacing;
+            double x = k.X * pitch + spacing / 2;
+            double y = k.Y * pitch + spacing / 2;
+            double w = k.W * pitch - spacing;
+            double h = k.H * pitch - spacing;
+            return new Rect(x, y, w, h);
+        }
+    }
+}

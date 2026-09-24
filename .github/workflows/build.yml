@@ -1,0 +1,31 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build
+        run: dotnet build src/GamepadKeyboard/GamepadKeyboard.csproj -c Release -p:NuGetAudit=false --nologo -v q
+
+      - name: Publish self-contained
+        run: dotnet publish src/GamepadKeyboard/GamepadKeyboard.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:NuGetAudit=false -o publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevelopmentGamepadKeyboard-win-x64
+          path: publish/*
+          retention-days: 30
