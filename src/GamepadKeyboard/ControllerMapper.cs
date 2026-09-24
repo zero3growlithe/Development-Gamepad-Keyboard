@@ -54,6 +54,9 @@ namespace GamepadKeyboard
         // currently held virtual modifier keys (toggle or hold)
         private readonly HashSet<ushort> _heldModifiers = new();
 
+        /// <summary>Virtual modifier keys currently active (toggled on or held) — for UI tint.</summary>
+        public IReadOnlyCollection<ushort> HeldModifierVks => _heldModifiers;
+
         // previous physical state (edge detection)
         private bool _pA, _pB, _pX, _pY, _pLB, _pRB, _pLS, _pRS;
         private bool _pDUp, _pDDown, _pDLeft, _pDRight;
@@ -385,8 +388,8 @@ namespace GamepadKeyboard
         private void ApplyHeld(string action, bool held)
         {
             ushort vk = ActionToVk(action);
-            if (held) { if (_heldModifiers.Add(vk)) _sender.KeyDown(vk); }
-            else { if (_heldModifiers.Remove(vk)) _sender.KeyUp(vk); }
+            if (held) { if (_heldModifiers.Add(vk)) { _sender.KeyDown(vk); StateChanged?.Invoke(); } }
+            else { if (_heldModifiers.Remove(vk)) { _sender.KeyUp(vk); StateChanged?.Invoke(); } }
         }
 
         private void ApplyTriggerModifier(string action, double trigger)
@@ -416,6 +419,7 @@ namespace GamepadKeyboard
                 _heldModifiers.Add(vk);
                 _sender.KeyDown(vk);
             }
+            StateChanged?.Invoke();   // refresh toggle tint immediately (both modes)
         }
 
         private void ReleaseAllModifiers()

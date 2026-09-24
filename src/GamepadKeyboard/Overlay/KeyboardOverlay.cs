@@ -29,6 +29,7 @@ namespace GamepadKeyboard.Overlay
         private readonly Ellipse _rightHit = MakeHit();
         private readonly TextBlock _profileLabel = MakeLabel();
         private readonly TextBlock _statusLabel = MakeLabel();   // mode/notifications, right of profile
+        private HashSet<ushort> _toggledVks = new();             // modifier keys tinted while toggled on
         private readonly ScaleTransform _scaleT = new(1, 1);
         private double _baseW, _baseH;   // unscaled canvas size
         private double _scale = 1.0;
@@ -97,6 +98,9 @@ namespace GamepadKeyboard.Overlay
                 Canvas.SetTop(border, r.Y);
                 _canvas.Children.Add(border);
                 _keyBorders[k] = border;
+
+                if (k.Vk != 0 && _toggledVks.Contains(k.Vk))
+                    border.Background = ToggledBrush;
 
                 if (k.Vk != 0)
                 {
@@ -271,6 +275,28 @@ namespace GamepadKeyboard.Overlay
             Canvas.SetTop(hitE, r.Y + r.Height / 2 - 13);
             hitE.Visibility = Visibility.Visible;
         }
+
+        /// <summary>Tints the background of keys whose virtual modifiers are toggled on.</summary>
+        public void SetToggledKeys(System.Collections.Generic.IReadOnlyCollection<ushort> vks)
+        {
+            _toggledVks = new HashSet<ushort>(vks);
+            foreach (var pair in _keyBorders)
+            {
+                bool on = pair.Key.Vk != 0 && _toggledVks.Contains(pair.Key.Vk);
+                ApplyToggleTint(pair.Value, on);
+            }
+        }
+
+        private void ApplyToggleTint(Border border, bool on)
+        {
+            // ray highlight (active) keeps priority; toggled tint only on plain keys
+            if (on && ReferenceEquals(border.BorderBrush, FindResource("KeyBorderBrush")))
+                border.Background = ToggledBrush;
+            else if (!on && ReferenceEquals(border.Background, ToggledBrush))
+                border.Background = (Brush)FindResource("KeyBrush");
+        }
+
+        static readonly Brush ToggledBrush = new SolidColorBrush(Color.FromArgb(200, 40, 190, 90)); // green
 
         public void HighlightKey(KeyboardLayout.KeyDef? k, bool active)
         {

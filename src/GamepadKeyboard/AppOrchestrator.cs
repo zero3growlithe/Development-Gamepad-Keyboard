@@ -258,6 +258,7 @@ namespace GamepadKeyboard
         private void RefreshUiCore()
         {
             _keyboard.ClearHighlights();
+            _keyboard.SetToggledKeys(_mapper.HeldModifierVks);
             RefreshLegend();
 
             // ── stick-driven overlay adjust: L3 hold = move (left stick), R3 hold = scale (right stick) ──
