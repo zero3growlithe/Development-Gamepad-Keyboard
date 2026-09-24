@@ -22,10 +22,10 @@ namespace GamepadKeyboard.Overlay
         private readonly Canvas _canvas = new();
         private readonly Dictionary<KeyboardLayout.KeyDef, Border> _keyBorders = new();
         private readonly HashSet<KeyboardLayout.KeyDef> _highlighted = new();
-        private readonly Ellipse _leftPoint = MakePoint(Brushes.Orange);
-        private readonly Ellipse _rightPoint = MakePoint(Brushes.DeepSkyBlue);
-        private readonly Line _leftRay = MakeRay();
-        private readonly Line _rightRay = MakeRay();
+        private readonly Ellipse _leftPoint = MakePoint(LeftBrush);
+        private readonly Ellipse _rightPoint = MakePoint(RightBrush);
+        private readonly Line _leftRay = MakeRay(new SolidColorBrush(Color.FromArgb(170, 0xFF, 0xA5, 0x00)));
+        private readonly Line _rightRay = MakeRay(new SolidColorBrush(Color.FromArgb(170, 0x00, 0xBF, 0xFF)));
         private readonly Ellipse _leftHit = MakeHit();
         private readonly Ellipse _rightHit = MakeHit();
         private readonly TextBlock _profileLabel = MakeLabel();
@@ -137,12 +137,15 @@ namespace GamepadKeyboard.Overlay
             Stroke = null, IsHitTestVisible = true
         };
 
-        private static Line MakeRay() => new()
+        private static Line MakeRay(Brush stroke) => new()
         {
             StrokeThickness = 2,
-            Stroke = new SolidColorBrush(Color.FromArgb(160, 60, 200, 255)),
+            Stroke = stroke,
             IsHitTestVisible = false
         };
+
+        static readonly Brush LeftBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xA5, 0x00));      // Orange
+        static readonly Brush RightBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xBF, 0xFF));     // DeepSkyBlue
 
         private static TextBlock MakeLabel() => new()
         {
@@ -304,11 +307,12 @@ namespace GamepadKeyboard.Overlay
 
         static readonly Brush ToggledBrush = new SolidColorBrush(Color.FromArgb(200, 40, 190, 90)); // green
 
-        public void HighlightKey(KeyboardLayout.KeyDef? k, bool active)
+        public void HighlightKey(KeyboardLayout.KeyDef? k, bool active, bool left)
         {
             if (k != null && _keyBorders.TryGetValue(k, out var b))
             {
-                b.BorderBrush = active ? (Brush)FindResource("ActiveBrush") : (Brush)FindResource("HighlightBrush");
+                // border color matches that stick's dot color
+                b.BorderBrush = left ? LeftBrush : RightBrush;
                 b.BorderThickness = new Thickness(active ? 2.5 : 1.8);
                 _highlighted.Add(k);
             }

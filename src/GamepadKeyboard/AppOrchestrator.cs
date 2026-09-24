@@ -275,6 +275,7 @@ namespace GamepadKeyboard
         {
             _keyboard.ClearHighlights();
             _keyboard.SetToggledKeys(_mapper.HeldModifierVks.Concat(_mapper.HeldRayKeyVks));
+            _keyboard.SetPointPositions();   // keep dots on the active profile's origin points
             RefreshLegend();
 
             // ── stick-driven overlay adjust: L3 hold = move (left stick), R3 hold = scale (right stick) ──
@@ -321,12 +322,12 @@ namespace GamepadKeyboard
                 if (_mapper.LeftHit != null)
                 {
                     _keyboard.UpdateRay(true, _mapper.LastLeftX, _mapper.LastLeftY, _mapper.LeftLen, _mapper.LeftHit);
-                    _keyboard.HighlightKey(_mapper.LeftHit, false);
+                    _keyboard.HighlightKey(_mapper.LeftHit, false, left: true);
                 }
                 if (_mapper.RightHit != null)
                 {
                     _keyboard.UpdateRay(false, _mapper.LastRightX, _mapper.LastRightY, _mapper.RightLen, _mapper.RightHit);
-                    _keyboard.HighlightKey(_mapper.RightHit, false);
+                    _keyboard.HighlightKey(_mapper.RightHit, false, left: false);
                 }
             }
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
