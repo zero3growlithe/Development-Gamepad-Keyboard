@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -279,7 +280,8 @@ namespace GamepadKeyboard.Overlay
         /// <summary>Tints the background of keys whose virtual modifiers are toggled on.</summary>
         public void SetToggledKeys(System.Collections.Generic.IReadOnlyCollection<ushort> vks)
         {
-            _toggledVks = new HashSet<ushort>(vks);
+            // modifier VKs only — never tint regular keys
+            _toggledVks = new HashSet<ushort>(vks.Where(IsModifierVk));
             foreach (var pair in _keyBorders)
             {
                 bool on = pair.Key.Vk != 0 && _toggledVks.Contains(pair.Key.Vk);
@@ -287,12 +289,16 @@ namespace GamepadKeyboard.Overlay
             }
         }
 
+        private static bool IsModifierVk(ushort vk) => vk is
+            (ushort)0xA0 or (ushort)0xA1 or   // LShift / RShift
+            (ushort)0xA2 or (ushort)0xA3 or   // LControl / RControl
+            (ushort)0xA4 or (ushort)0xA5 or   // LMenu / RMenu (Alt)
+            (ushort)0x5B or (ushort)0x5C;     // LWin / RWin
+
         private void ApplyToggleTint(Border border, bool on)
         {
-            // ray highlight (active) keeps priority; toggled tint only on plain keys
-            if (on && ReferenceEquals(border.BorderBrush, FindResource("KeyBorderBrush")))
-                border.Background = ToggledBrush;
-            else if (!on && ReferenceEquals(border.Background, ToggledBrush))
+            if (on) border.Background = ToggledBrush;
+            else if (ReferenceEquals(border.Background, ToggledBrush))
                 border.Background = (Brush)FindResource("KeyBrush");
         }
 

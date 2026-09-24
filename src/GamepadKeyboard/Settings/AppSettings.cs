@@ -113,19 +113,19 @@ namespace GamepadKeyboard.Settings
         public string Name { get; set; } = "Default";
 
         // ── origin points (normalized 0..1 inside the layout bounds) ─────────
-        public double LeftX { get; set; } = 0.28;
-        public double LeftY { get; set; } = 0.55;
-        public double RightX { get; set; } = 0.72;
-        public double RightY { get; set; } = 0.55;
+        public double LeftX { get; set; } = 0.32;
+        public double LeftY { get; set; } = 0.553;
+        public double RightX { get; set; } = 0.51;
+        public double RightY { get; set; } = 0.53;
 
         /// <summary>Response curve exponent. 1.0 = linear; &gt;1 = finer near center.</summary>
         public double CurveExponent { get; set; } = 1.0;
 
         /// <summary>Left ray length, 0..1 × max distance LeftCtrl→Backspace.</summary>
-        public double LeftRayLength { get; set; } = 1.0;
+        public double LeftRayLength { get; set; } = 0.4;
 
         /// <summary>Right ray length, 0..1 × max distance LeftCtrl→Backspace.</summary>
-        public double RightRayLength { get; set; } = 1.0;
+        public double RightRayLength { get; set; } = 0.4;
 
         // ── button mappings (physical pad -> action name) ────────────────────
         public string A { get; set; } = "Space";
