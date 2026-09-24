@@ -107,6 +107,14 @@ namespace GamepadKeyboard.Input
             var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
             var axes = new double[raw.AxisCount];
             raw.GetCurrentReading(buttons, switches, axes);
+            // one-time dump of extra button labels for this pad (crash.log ground truth)
+            if (_loggedExtras.Add(raw.DisplayName + "#labels"))
+            {
+                var lbls = new List<string>();
+                for (int i = 14; i < buttons.Length; i++)
+                    lbls.Add(i + "=" + raw.GetButtonLabel(i));
+                App.Log("extra buttons on \"" + raw.DisplayName + "\": " + string.Join(",", lbls));
+            }
             bool any = false;
             for (int i = 14; i < buttons.Length; i++)
             {
@@ -115,7 +123,7 @@ namespace GamepadKeyboard.Input
                 if (buttons[i])
                 {
                     any = true;
-                    string key = raw.DisplayName + "#" + i;
+                    string key = raw.DisplayName + "#press" + i;
                     if (_loggedExtras.Add(key))
                         App.Log("PS/Xbox (home) candidate: raw button " + i + " on \"" + raw.DisplayName + "\"");
                 }

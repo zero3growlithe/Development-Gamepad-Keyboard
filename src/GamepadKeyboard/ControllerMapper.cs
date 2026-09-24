@@ -83,6 +83,9 @@ namespace GamepadKeyboard
                 InputEnabled = true;
                 Notification?.Invoke("Input ENABLED — gamepad controls the PC");
                 StateChanged?.Invoke();
+                _pCombo = combo;
+                SaveEdges(s);   // consume the enabling reading: still-held combo buttons
+                return;         // (View/Menu) must not fire their mapped actions
             }
             _pCombo = combo;
 
@@ -339,8 +342,8 @@ namespace GamepadKeyboard
                 case "LeftClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_LEFTDOWN, NativeMethods.MOUSEEVENTF_LEFTUP); break;
                 case "RightClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_RIGHTDOWN, NativeMethods.MOUSEEVENTF_RIGHTUP); break;
                 case "MiddleClick": _sender.MouseButton(NativeMethods.MOUSEEVENTF_MIDDLEDOWN, NativeMethods.MOUSEEVENTF_MIDDLEUP); break;
-                case "XButton1": _sender.MouseButton(NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP); break;
-                case "XButton2": _sender.MouseButton(NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP); break; // TODO: mouseData=2
+                case "XButton1": _sender.MouseButton(NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 1); break;
+                case "XButton2": _sender.MouseButton(NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 2); break;
                 case "ScrollUp": _sender.MouseWheel(120); break;
                 case "ScrollDown": _sender.MouseWheel(-120); break;
                 case "ScrollLeft": _sender.MouseHWheel(-120); break;
@@ -579,6 +582,8 @@ namespace GamepadKeyboard
             _pLB = s.LB; _pRB = s.RB; _pLS = s.LS; _pRS = s.RS;
             _pDUp = s.DUp; _pDDown = s.DDown; _pDLeft = s.DLeft; _pDRight = s.DRight;
             _pLT = s.LeftTrigger; _pRT = s.RightTrigger;
+            _pView = s.View; _pMenu = s.Menu;
+            _pLTHeld = s.LeftTrigger > 0.5; _pRTHeld = s.RightTrigger > 0.5;
         }
 
         private void ClearAllEdges(in GamepadSnapshot s)
@@ -587,6 +592,8 @@ namespace GamepadKeyboard
             _pLB = s.LB; _pRB = s.RB; _pLS = s.LS; _pRS = s.RS;
             _pDUp = s.DUp; _pDDown = s.DDown; _pDLeft = s.DLeft; _pDRight = s.DRight;
             _pLT = s.LeftTrigger; _pRT = s.RightTrigger;
+            _pView = s.View; _pMenu = s.Menu;
+            _pLTHeld = s.LeftTrigger > 0.5; _pRTHeld = s.RightTrigger > 0.5;
         }
 
         // edge fields used only in some modes
