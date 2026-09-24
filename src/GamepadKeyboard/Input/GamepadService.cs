@@ -91,10 +91,7 @@ namespace GamepadKeyboard.Input
 
         public static GamepadSnapshot From(Windows.Gaming.Input.GamepadReading r)
         {
-            const double dz = 0.12; // deadzone
             static double Axis(double v) => Math.Abs(v) < 0.12 ? 0 : (v - Math.Sign(v) * 0.12) / (1.0 - 0.12);
-
-            bool T(double v) => v > 0.5;
 
             return new GamepadSnapshot(
                 Axis(r.LeftThumbstickX), Axis(r.LeftThumbstickY),
@@ -115,6 +112,19 @@ namespace GamepadKeyboard.Input
                 (r.Buttons & Windows.Gaming.Input.GamepadButtons.Menu) != 0,
                 r.LeftTrigger, r.RightTrigger);
         }
+
+
+        /// <summary>Reads a physical button by mapping-profile name (A, B, LB, RB, LT, RT, LS, RS, View, Menu, DUp…).</summary>
+        public bool Button(string name) => name switch
+        {
+            "A" => A, "B" => B, "X" => X, "Y" => Y,
+            "LB" => LB, "RB" => RB,
+            "LT" => LeftTrigger > 0.5, "RT" => RightTrigger > 0.5,
+            "LS" => LS, "RS" => RS,
+            "View" => View, "Menu" => Menu,
+            "DUp" => DUp, "DDown" => DDown, "DLeft" => DLeft, "DRight" => DRight,
+            _ => false
+        };
 
         public bool Equals(GamepadSnapshot other) =>
             LX == other.LX && LY == other.LY && RX == other.RX && RY == other.RY &&

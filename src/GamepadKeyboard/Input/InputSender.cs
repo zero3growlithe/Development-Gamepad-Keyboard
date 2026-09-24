@@ -44,7 +44,7 @@ namespace GamepadKeyboard.Input
         {
             foreach (char c in text)
             {
-                Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[2];
+                var inputs = new NativeMethods.INPUT[2];
                 inputs[0] = UnicodeInput(c, true);
                 inputs[1] = UnicodeInput(c, false);
                 Dispatch(inputs);

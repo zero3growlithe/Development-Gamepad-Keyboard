@@ -32,11 +32,17 @@ namespace GamepadKeyboard.Settings
         public int ActiveProfile { get; set; } = 0;
         public int ActiveMouseProfile { get; set; } = 0;
         public bool AdminLaunch { get; set; } = false;
-        public string DefaultCursorSize { get; set; } = "M";
 
-        public List<CenterPointProfile> KeyboardProfiles { get; set; } = new()
+        /// <summary>
+        /// Combination that re-enables input after DisableInput: both buttons
+        /// held together. Values are physical button names (A, B, LB, RB, LT, RT, LS, RS, View, Menu).
+        /// </summary>
+        public string EnableComboButton1 { get; set; } = "View";
+        public string EnableComboButton2 { get; set; } = "Menu";
+
+        public List<KeyboardProfile> KeyboardProfiles { get; set; } = new()
         {
-            new CenterPointProfile()
+            new KeyboardProfile()
         };
 
         public List<MouseProfile> MouseProfiles { get; set; } = new()
@@ -45,8 +51,8 @@ namespace GamepadKeyboard.Settings
         };
 
         [JsonIgnore]
-        public CenterPointProfile Profile =>
-            KeyboardProfiles.Count == 0 ? new CenterPointProfile() : KeyboardProfiles[Math.Clamp(ActiveProfile, 0, KeyboardProfiles.Count - 1)];
+        public KeyboardProfile Profile =>
+            KeyboardProfiles.Count == 0 ? new KeyboardProfile() : KeyboardProfiles[Math.Clamp(ActiveProfile, 0, KeyboardProfiles.Count - 1)];
 
         [JsonIgnore]
         public MouseProfile MouseProfile =>
@@ -93,23 +99,56 @@ namespace GamepadKeyboard.Settings
         };
     }
 
-    public sealed class CenterPointProfile
+    /// <summary>
+    /// One keyboard-mode profile: origin points, response curve, ray scale and
+    /// ALL button mappings. Multiple profiles; switch with L2+R2+D-pad or a
+    /// mapped SwitchKeyboardProfile action.
+    /// </summary>
+    public sealed class KeyboardProfile
     {
         public string Name { get; set; } = "Default";
 
-        /// <summary>Left point position, normalized 0..1 within the keyboard layout bounds.</summary>
+        // ── origin points (normalized 0..1 inside the layout bounds) ─────────
         public double LeftX { get; set; } = 0.28;
         public double LeftY { get; set; } = 0.55;
-
-        /// <summary>Right point position, normalized 0..1 within the keyboard layout bounds.</summary>
         public double RightX { get; set; } = 0.72;
         public double RightY { get; set; } = 0.55;
 
-        /// <summary>Response curve exponent. 1.0 = linear; &gt;1 = slower near center (fine control), &lt;1 = faster.</summary>
+        /// <summary>Response curve exponent. 1.0 = linear; &gt;1 = finer near center.</summary>
         public double CurveExponent { get; set; } = 1.0;
 
-        /// <summary>Ray length scale relative to the key-grid-derived maximum.</summary>
+        /// <summary>Ray length scale relative to the grid-derived maximum.</summary>
         public double RayScale { get; set; } = 1.0;
+
+        // ── button mappings (physical pad -> action name) ────────────────────
+        public string A { get; set; } = "Space";
+        public string B { get; set; } = "Backspace";
+        public string X { get; set; } = "Tab";
+        public string Y { get; set; } = "ToggleKeyboardMouseMode";
+
+        /// <summary>Commits the key highlighted by the left / right stick ray.</summary>
+        public string LB { get; set; } = "CommitLeft";
+        public string RB { get; set; } = "CommitRight";
+
+        /// <summary>Hold-type modifier (tap = toggle): HoldShift / HoldCtrl / HoldAlt / HoldWin, or any action.</summary>
+        public string LT { get; set; } = "HoldShift";
+        public string RT { get; set; } = "HoldCtrl";
+        public string LS { get; set; } = "ToggleAlt";
+        public string RS { get; set; } = "None";
+
+        public string View { get; set; } = "DisableInput";
+        public string Menu { get; set; } = "None";
+
+        public string DUp { get; set; } = "ArrowUp";
+        public string DDown { get; set; } = "ArrowDown";
+        public string DLeft { get; set; } = "ArrowLeft";
+        public string DRight { get; set; } = "ArrowRight";
+
+        /// <summary>D-pad layer while Y is held (navigation).</summary>
+        public string YDUp { get; set; } = "PageUp";
+        public string YDDown { get; set; } = "PageDown";
+        public string YDLeft { get; set; } = "Home";
+        public string YDRight { get; set; } = "End";
     }
 
     public sealed class MouseProfile
@@ -133,7 +172,8 @@ namespace GamepadKeyboard.Settings
 
         public string LS { get; set; } = "None";
         public string RS { get; set; } = "None";
-        public string View { get; set; } = "None";
+
+        public string View { get; set; } = "DisableInput";
         public string Menu { get; set; } = "None";
     }
 }

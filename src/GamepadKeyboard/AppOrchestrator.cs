@@ -31,6 +31,11 @@ namespace GamepadKeyboard
 
             _pad.StateChanged += OnPad;
             _mapper.StateChanged += RefreshUi;
+            _mapper.Notification += msg =>
+                _keyboard.Dispatcher.BeginInvoke(() =>
+                    _toast.Show(msg,
+                        Settings.AppSettings.Instance.ProfileToastSeconds,
+                        Settings.AppSettings.Instance.ProfileToastPermanent));
         }
 
         private static Keyboard.KeyboardLayout _mapper_Layout()
@@ -168,6 +173,10 @@ namespace GamepadKeyboard
         private void RefreshUiCore()
         {
             _keyboard.ClearHighlights();
+            if (_mapper.MouseMode || true)  // legend reflects active mode + profile
+            {
+                _legend.SetEntries(LegendEntries());
+            }
             if (!_mapper.MouseMode)
             {
                 if (_mapper.LeftHit != null)
@@ -196,17 +205,15 @@ namespace GamepadKeyboard
                     ("DUp", p.DUp), ("DDown", p.DDown), ("DLeft", p.DLeft), ("DRight", p.DRight)
                 };
             }
+            var k = Settings.AppSettings.Instance.Profile;
             return new (string, string)[]
             {
-                ("Stick L/R", "Aim ray from origin"),
-                ("L1 / R1", "Press selected key"),
-                ("L2 / R2", "Shift / Ctrl"),
-                ("Stick press", "Alt toggle"),
-                ("B", "Backspace"),
-                ("Y", "Switch KB / Mouse"),
-                ("D-pad", "Arrows"),
-                ("Y+D-pad", "PgUp/PgDn/Home/End"),
-                ("L2+R2+Dpad", "Switch profile")
+                ("A", k.A), ("B", k.B), ("X", k.X), ("Y", k.Y),
+                ("LB", k.LB), ("RB", k.RB), ("LT", k.LT), ("RT", k.RT),
+                ("LStick", k.LS), ("RStick", k.RS),
+                ("D-pad", k.DUp + "/" + k.DDown + "/" + k.DLeft + "/" + k.DRight),
+                ("Y+D-pad", k.YDUp + "/" + k.YDDown + "/" + k.YDLeft + "/" + k.YDRight),
+                ("View", k.View), ("Menu", k.Menu)
             };
         }
 
