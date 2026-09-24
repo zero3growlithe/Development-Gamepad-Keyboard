@@ -39,8 +39,9 @@ namespace GamepadKeyboard.Settings
         public bool AdminLaunch { get; set; } = false;
 
         /// <summary>
-        /// Combination that re-enables input after DisableInput: both buttons
-        /// held together. Values are physical button names (A, B, LB, RB, LT, RT, LS, RS, View, Menu).
+        /// Legacy two-button enable combo (kept for settings compatibility; the
+        /// active shortcuts are built-in: Home+Menu+Select, or L3+R3+L1+R1 when
+        /// the PS/Xbox button is not detectable).
         /// </summary>
         public string EnableComboButton1 { get; set; } = "View";
         public string EnableComboButton2 { get; set; } = "Menu";

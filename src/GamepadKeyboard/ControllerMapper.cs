@@ -72,12 +72,14 @@ namespace GamepadKeyboard
         public void Process(in GamepadSnapshot s)
         {
             // ── enable combo (works even when disabled) ──────────────────────
-            var c1 = s.Button(AppSettings.Instance.EnableComboButton1);
-            var c2 = s.Button(AppSettings.Instance.EnableComboButton2);
-            bool combo = c1 && c2;
+            // primary: PS/Xbox (Home) + Menu + Select; fallback: L3 + R3 + L1 + R1
+            bool comboPrimary = s.Home && s.Menu && s.View;
+            bool comboFallback = s.LS && s.RS && s.LB && s.RB;
+            bool combo = comboPrimary || comboFallback;
             if (combo && !_pCombo)
             {
-                App.Log("input enabled -> true (enable combo)");
+                App.Log("input enabled -> true (enable combo: " +
+                        (comboPrimary ? "Home+Menu+Select" : "L3+R3+L1+R1") + ")");
                 InputEnabled = true;
                 Notification?.Invoke("Input ENABLED — gamepad controls the PC");
                 StateChanged?.Invoke();

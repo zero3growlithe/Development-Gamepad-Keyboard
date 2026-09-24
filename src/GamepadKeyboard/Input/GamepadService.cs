@@ -53,7 +53,7 @@ namespace GamepadKeyboard.Input
                 {
                     var gp = GetPad(raw);
                     if (gp == null) continue;
-                    var snap = GamepadSnapshot.From(gp.GetCurrentReading());
+                    var snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
                     if (snap.AnyInput)
                     {
                         chosen = snap; chosenName = raw.DisplayName; anyInput = true;
@@ -92,6 +92,37 @@ namespace GamepadKeyboard.Input
             }
         }
 
+        /// <summary>
+        /// Best-effort PS/Xbox home-button detection: DualSense/DualShock expose the
+        /// PS button (and mic mute) as extra raw buttons beyond the standard 14.
+        /// Buttons with a label (paddles etc.) are ignored; unlabeled extras count as
+        /// Home. Each candidate index is logged once so crash.log shows ground truth.
+        /// </summary>
+        private static readonly HashSet<string> _loggedExtras = new();
+
+        private static bool ReadHome(Windows.Gaming.Input.RawGameController raw)
+        {
+            if (raw.ButtonCount <= 14) return false;
+            var buttons = new bool[raw.ButtonCount];
+            var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
+            var axes = new double[raw.AxisCount];
+            raw.GetCurrentReading(buttons, switches, axes);
+            bool any = false;
+            for (int i = 14; i < buttons.Length; i++)
+            {
+                var label = raw.GetButtonLabel(i);
+                if (label != Windows.Gaming.Input.GameControllerButtonLabel.None) continue;
+                if (buttons[i])
+                {
+                    any = true;
+                    string key = raw.DisplayName + "#" + i;
+                    if (_loggedExtras.Add(key))
+                        App.Log("PS/Xbox (home) candidate: raw button " + i + " on \"" + raw.DisplayName + "\"");
+                }
+            }
+            return any;
+        }
+
         private Windows.Gaming.Input.Gamepad? GetPad(Windows.Gaming.Input.RawGameController raw)
         {
             if (_padCache.TryGetValue(raw.DisplayName, out var cached))
@@ -111,7 +142,17 @@ namespace GamepadKeyboard.Input
                 "Gamepad wrappers: " + Windows.Gaming.Input.Gamepad.Gamepads.Count
             };
             foreach (var r in raws)
-                lines.Add("  - \"" + r.DisplayName + "\" [" + r.ButtonCount + "btn/" + r.AxisCount + "ax]");
+            {
+                string extras = "";
+                if (r.ButtonCount > 14)
+                {
+                    var lbls = new List<string>();
+                    for (uint i = 14; i < r.ButtonCount; i++)
+                        lbls.Add(i + "=" + r.GetButtonLabel((int)i));
+                    extras = " extras: " + string.Join(",", lbls);
+                }
+                lines.Add("  - \"" + r.DisplayName + "\" [" + r.ButtonCount + "btn/" + r.AxisCount + "ax]" + extras);
+            }
             lines.Add("last snapshot: " + _last.Summary);
             return lines.ToArray();
         }
@@ -127,6 +168,7 @@ namespace GamepadKeyboard.Input
         public readonly bool LB, RB, LS, RS;
         public readonly bool DUp, DDown, DLeft, DRight;
         public readonly bool View, Menu;
+        public readonly bool Home;   // PS/Xbox center button (best-effort detection)
 
         public readonly double LeftTrigger;   // 0..1
         public readonly double RightTrigger;  // 0..1
@@ -137,20 +179,22 @@ namespace GamepadKeyboard.Input
             bool lb, bool rb, bool ls, bool rs,
             bool dUp, bool dDown, bool dLeft, bool dRight,
             bool view, bool menu,
-            double lt, double rt)
+            double lt, double rt,
+            bool home = false)
         {
             LX = lx; LY = ly; RX = rx; RY = ry;
             A = a; B = b; X = x; Y = y;
             LB = lb; RB = rb; LS = ls; RS = rs;
             DUp = dUp; DDown = dDown; DLeft = dLeft; DRight = dRight;
             View = view; Menu = menu;
+            Home = home;
             LeftTrigger = lt; RightTrigger = rt;
         }
 
         public bool AnyInput =>
             Math.Abs(LX) > 0.02 || Math.Abs(LY) > 0.02 || Math.Abs(RX) > 0.02 || Math.Abs(RY) > 0.02 ||
             A || B || X || Y || LB || RB || LS || RS ||
-            DUp || DDown || DLeft || DRight || View || Menu ||
+            DUp || DDown || DLeft || DRight || View || Menu || Home ||
             LeftTrigger > 0.1 || RightTrigger > 0.1;
 
         /// <summary>Compact one-line trace of everything currently active (for crash.log).</summary>
@@ -163,7 +207,7 @@ namespace GamepadKeyboard.Input
                 AddIf("A", A); AddIf("B", B); AddIf("X", X); AddIf("Y", Y);
                 AddIf("LB", LB); AddIf("RB", RB); AddIf("LS", LS); AddIf("RS", RS);
                 AddIf("DUp", DUp); AddIf("DDown", DDown); AddIf("DLeft", DLeft); AddIf("DRight", DRight);
-                AddIf("View", View); AddIf("Menu", Menu);
+                AddIf("View", View); AddIf("Menu", Menu); AddIf("Home", Home);
                 if (LeftTrigger > 0.1) parts.Add("LT=" + LeftTrigger.ToString("0.0"));
                 if (RightTrigger > 0.1) parts.Add("RT=" + RightTrigger.ToString("0.0"));
                 if (Math.Abs(LX) > 0.05) parts.Add("LX=" + LX.ToString("0.00"));
@@ -176,7 +220,7 @@ namespace GamepadKeyboard.Input
 
         public static double Deadzone = 0.12;
 
-        public static GamepadSnapshot From(Windows.Gaming.Input.GamepadReading r)
+        public static GamepadSnapshot From(Windows.Gaming.Input.GamepadReading r, bool home = false)
         {
             double dz = Deadzone;
             double Axis(double v) => Math.Abs(v) < dz ? 0 : (v - Math.Sign(v) * dz) / (1.0 - dz);
@@ -198,7 +242,7 @@ namespace GamepadKeyboard.Input
                 (r.Buttons & Windows.Gaming.Input.GamepadButtons.DPadRight) != 0,
                 (r.Buttons & Windows.Gaming.Input.GamepadButtons.View) != 0,
                 (r.Buttons & Windows.Gaming.Input.GamepadButtons.Menu) != 0,
-                r.LeftTrigger, r.RightTrigger);
+                r.LeftTrigger, r.RightTrigger, home);
         }
 
         /// <summary>Reads a physical button by mapping-profile name (A, B, LB, RB, LT, RT, LS, RS, View, Menu, DUp…).</summary>
@@ -208,7 +252,7 @@ namespace GamepadKeyboard.Input
             "LB" => LB, "RB" => RB,
             "LT" => LeftTrigger > 0.5, "RT" => RightTrigger > 0.5,
             "LS" => LS, "RS" => RS,
-            "View" => View, "Menu" => Menu,
+            "View" => View, "Menu" => Menu, "Home" => Home,
             "DUp" => DUp, "DDown" => DDown, "DLeft" => DLeft, "DRight" => DRight,
             _ => false
         };
@@ -218,7 +262,7 @@ namespace GamepadKeyboard.Input
             A == other.A && B == other.B && X == other.X && Y == other.Y &&
             LB == other.LB && RB == other.RB && LS == other.LS && RS == other.RS &&
             DUp == other.DUp && DDown == other.DDown && DLeft == other.DLeft && DRight == other.DRight &&
-            View == other.View && Menu == other.Menu &&
+            View == other.View && Menu == other.Menu && Home == other.Home &&
             LeftTrigger == other.LeftTrigger && RightTrigger == other.RightTrigger;
     }
 }
