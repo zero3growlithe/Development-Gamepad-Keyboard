@@ -83,11 +83,14 @@ namespace GamepadKeyboard
             _mapper.MouseMode = Settings.AppSettings.Instance.StartInMouseMode;
         }
 
+        private bool _keyboardShown;
+
         private void ShowKeyboard()
         {
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             _keyboard.SetPointPositions();
             _keyboard.Show();
+            _keyboardShown = true;
         }
 
         private void BuildTray()
@@ -131,7 +134,7 @@ namespace GamepadKeyboard
                 bool show = overlayItem.Checked;
                 Settings.AppSettings.Instance.ShowOverlay = show;
                 Settings.AppSettings.Save();
-                if (show) ShowKeyboard(); else _keyboard.Hide();
+                if (show) ShowKeyboard(); else { _keyboardShown = false; _keyboard.Hide(); }
             };
             _overlayItem = overlayItem;
 
@@ -279,8 +282,16 @@ namespace GamepadKeyboard
 
             // overlay visibility follows the setting (ToggleOverlay action / tray)
             bool wantShown = Settings.AppSettings.Instance.ShowOverlay;
-            if (wantShown && !_keyboard.IsVisible) _keyboard.Show();
-            if (!wantShown && _keyboard.IsVisible) _keyboard.Hide();
+            if (wantShown && !_keyboardShown)
+            {
+                _keyboardShown = true;
+                _keyboard.Show();
+            }
+            if (!wantShown && _keyboardShown)
+            {
+                _keyboardShown = false;
+                _keyboard.Hide();
+            }
             // keep the tray checkmark in sync (mapped ToggleOverlay flips it too)
             var items = _tray?.ContextMenuStrip?.Items;
             if (items != null)

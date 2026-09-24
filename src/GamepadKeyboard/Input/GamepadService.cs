@@ -72,9 +72,18 @@ namespace GamepadKeyboard.Input
 
                 foreach (var raw in raws)
                 {
+                    GamepadSnapshot snap;
                     var gp = GetPad(raw);
-                    if (gp == null) continue;
-                    var snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
+                    if (gp != null)
+                    {
+                        snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
+                    }
+                    else
+                    {
+                        // no Gamepad wrapper for this device (e.g. DualSense outside
+                        // DS4Windows) — read the raw controller directly
+                        snap = GamepadSnapshot.FromRaw(raw, ReadHome(raw));
+                    }
                     if (snap.AnyInput)
                     {
                         chosen = snap; chosenName = raw.DisplayName; anyInput = true; wgiAnyInput = true;
@@ -179,6 +188,7 @@ namespace GamepadKeyboard.Input
                 return cached;
             var gp = Windows.Gaming.Input.Gamepad.FromGameController(raw);
             if (gp != null) _padCache[raw.DisplayName] = gp;
+            else App.Log("no Gamepad wrapper for \"" + raw.DisplayName + "\" -> raw reading path");
             return gp;
         }
 
@@ -327,6 +337,37 @@ namespace GamepadKeyboard.Input
         }
 
         public static double Deadzone = 0.12;
+
+        /// <summary>
+        /// Raw-controller reading for devices the Gamepad wrapper cannot wrap
+        /// (DualSense standalone). Layout follows the common XInput-compatible
+        /// raw ordering; axis min/max are read from the controller to normalize.
+        /// </summary>
+        public static GamepadSnapshot FromRaw(Windows.Gaming.Input.RawGameController raw, bool home)
+        {
+            var buttons = new bool[raw.ButtonCount];
+            var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
+            var axes = new double[raw.AxisCount];
+            raw.GetCurrentReading(buttons, switches, axes);
+
+            // GetCurrentReading axes arrive normalized -1..1 (triggers 0..1) per WinRT
+            double Axis(int i) => i < axes.Length ? axes[i] : 0;
+            double Clamp01(double v) => v < 0 ? 0 : v;
+
+            bool B(int i) => i < buttons.Length && buttons[i];
+            // XInput-compatible raw ordering (matches the virtual Xbox pad WGI exposes)
+            return new GamepadSnapshot(
+                Axis(0), -Axis(1),
+                Axis(3), -Axis(4),
+                B(0), B(1), B(2), B(3),
+                B(4), B(5),
+                B(8), B(9),
+                B(10), B(11), B(12), B(13),
+                B(6), B(7),
+                Clamp01(Axis(5)),                   // LT
+                Clamp01(Axis(2)),                   // RT
+                home);
+        }
 
         /// <summary>XInput fallback converter (virtual Xbox pad from DS4Windows/Steam).</summary>
         public static GamepadSnapshot FromXInput(Native.XInput.XINPUT_STATE st)
