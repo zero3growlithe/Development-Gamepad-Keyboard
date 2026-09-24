@@ -23,6 +23,17 @@ namespace GamepadKeyboard
         /// <summary>When disabled the pad is passed through untouched (game use).</summary>
         public bool InputEnabled { get; private set; } = true;
 
+        public void SetInputEnabled(bool enabled)
+        {
+            if (InputEnabled == enabled) return;
+            App.Log("input enabled -> " + enabled);
+            InputEnabled = enabled;
+            if (!enabled) ReleaseAllModifiers();
+            Notification?.Invoke(enabled ? "Input ENABLED — gamepad controls the PC"
+                                         : "Input DISABLED — gamepad free for games");
+            StateChanged?.Invoke();
+        }
+
         public KeyboardLayout.KeyDef? LeftHit { get; private set; }
         public KeyboardLayout.KeyDef? RightHit { get; private set; }
         public double LeftLen { get; private set; }
@@ -66,6 +77,7 @@ namespace GamepadKeyboard
             bool combo = c1 && c2;
             if (combo && !_pCombo)
             {
+                App.Log("input enabled -> true (enable combo)");
                 InputEnabled = true;
                 Notification?.Invoke("Input ENABLED — gamepad controls the PC");
                 StateChanged?.Invoke();
@@ -287,6 +299,7 @@ namespace GamepadKeyboard
                 case "MediaPrev": _sender.TapKey(Vk.MediaPrev); break;
 
                 case "DisableInput":
+                    App.Log("input enabled -> false (View button)");
                     InputEnabled = false;
                     ReleaseAllModifiers();
                     Notification?.Invoke("Input DISABLED — gamepad free for games");

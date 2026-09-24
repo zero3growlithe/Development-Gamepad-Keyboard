@@ -1,18 +1,23 @@
 using System;
-using System.Runtime.InteropServices;
+using System.Collections.Generic;
 
 namespace GamepadKeyboard.Input
 {
     /// <summary>
-    /// Gamepad polling service. Uses Windows.Gaming.Input.Gamepad, which covers
-    /// Xbox 360/One/Series and DualShock 4 / DualSense pads on Windows 10/11.
-    /// A dedicated thread polls at a fixed rate and raises a snapshot event.
+    /// Gamepad polling service. Uses Windows.Gaming.Input: RawGameController for
+    /// enumeration/names, Gamepad wrapper for readings. Multi-pad aware: the pad
+    /// with active input wins; otherwise the first idle pad provides zeros.
+    /// Every state transition and controller change is logged to crash.log.
     /// </summary>
     public sealed class GamepadService : IDisposable
     {
         private readonly System.Threading.Timer _pollTimer;
         private GamepadSnapshot _last = default;
-        private bool _hasLast;
+        private int _lastRawCount = -1;
+        private readonly Dictionary<string, Windows.Gaming.Input.Gamepad> _padCache = new();
+        private string _lastSummary = "";
+        private DateTime _lastLog = DateTime.MinValue;
+        private string _lastActivePad = "";
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -26,24 +31,89 @@ namespace GamepadKeyboard.Input
 
         private void Poll(object? state)
         {
-            var pad = Windows.Gaming.Input.Gamepad.Gamepads;
-            if (pad.Count == 0)
+            try
             {
-                if (_hasLast && _last.AnyInput)
-                {
-                    // pad unplugged mid-use — release everything
-                    var empty = default(GamepadSnapshot);
-                    _hasLast = false;
-                    StateChanged?.Invoke(empty);
-                }
-                return;
-            }
+                var raws = Windows.Gaming.Input.RawGameController.RawGameControllers;
 
-            var reading = pad[0].GetCurrentReading();
-            var snap = GamepadSnapshot.From(reading);
-            _last = snap;
-            _hasLast = true;
-            StateChanged?.Invoke(snap);
+                if (raws.Count != _lastRawCount)
+                {
+                    _lastRawCount = raws.Count;
+                    var names = new List<string>();
+                    foreach (var r in raws)
+                        names.Add("\"" + r.DisplayName + "\" (" + r.ButtonCount + " btn, " + r.AxisCount + " axes)");
+                    App.Log("controllers changed: " + raws.Count + (names.Count > 0 ? " -> " + string.Join(" | ", names) : ""));
+                }
+
+                GamepadSnapshot chosen = default;
+                string chosenName = "";
+                bool foundIdle = false;
+                bool anyInput = false;
+
+                foreach (var raw in raws)
+                {
+                    var gp = GetPad(raw);
+                    if (gp == null) continue;
+                    var snap = GamepadSnapshot.From(gp.GetCurrentReading());
+                    if (snap.AnyInput)
+                    {
+                        chosen = snap; chosenName = raw.DisplayName; anyInput = true;
+                        break;
+                    }
+                    if (!foundIdle)
+                    {
+                        chosen = snap; chosenName = raw.DisplayName; foundIdle = true;
+                    }
+                }
+
+                _last = chosen;
+
+                if (anyInput)
+                {
+                    var now = DateTime.UtcNow;
+                    var sum = chosen.Summary;
+                    if (sum != _lastSummary && (now - _lastLog).TotalMilliseconds > 1500)
+                    {
+                        _lastLog = now;
+                        _lastSummary = sum;
+                        if (chosenName != _lastActivePad)
+                        {
+                            _lastActivePad = chosenName;
+                            App.Log("active pad: \"" + chosenName + "\"");
+                        }
+                        App.Log("input: " + sum);
+                    }
+                }
+
+                StateChanged?.Invoke(chosen);
+            }
+            catch (Exception ex)
+            {
+                App.Log("poll error: " + ex.Message);
+            }
+        }
+
+        private Windows.Gaming.Input.Gamepad? GetPad(Windows.Gaming.Input.RawGameController raw)
+        {
+            if (_padCache.TryGetValue(raw.DisplayName, out var cached))
+                return cached;
+            var gp = Windows.Gaming.Input.Gamepad.FromGameController(raw);
+            if (gp != null) _padCache[raw.DisplayName] = gp;
+            return gp;
+        }
+
+        /// <summary>One-shot state dump for the tray diagnostics item.</summary>
+        public string[] Diagnostics()
+        {
+            var raws = Windows.Gaming.Input.RawGameController.RawGameControllers;
+            var lines = new List<string>
+            {
+                "RawGameControllers: " + raws.Count,
+                "Gamepad wrappers: " + Windows.Gaming.Input.Gamepad.Gamepads.Count
+            };
+            foreach (var r in raws)
+                lines.Add("  - \"" + r.DisplayName + "\" [" + r.ButtonCount + "btn/" + r.AxisCount + "ax]");
+            lines.Add("last snapshot: " + _last.Summary);
+            return lines.ToArray();
         }
 
         public void Dispose() => _pollTimer.Dispose();
@@ -81,7 +151,28 @@ namespace GamepadKeyboard.Input
             Math.Abs(LX) > 0.02 || Math.Abs(LY) > 0.02 || Math.Abs(RX) > 0.02 || Math.Abs(RY) > 0.02 ||
             A || B || X || Y || LB || RB || LS || RS ||
             DUp || DDown || DLeft || DRight || View || Menu ||
-            LeftTrigger > 0.5 || RightTrigger > 0.5;
+            LeftTrigger > 0.1 || RightTrigger > 0.1;
+
+        /// <summary>Compact one-line trace of everything currently active (for crash.log).</summary>
+        public string Summary
+        {
+            get
+            {
+                var parts = new List<string>();
+                void AddIf(string n, bool v) { if (v) parts.Add(n); }
+                AddIf("A", A); AddIf("B", B); AddIf("X", X); AddIf("Y", Y);
+                AddIf("LB", LB); AddIf("RB", RB); AddIf("LS", LS); AddIf("RS", RS);
+                AddIf("DUp", DUp); AddIf("DDown", DDown); AddIf("DLeft", DLeft); AddIf("DRight", DRight);
+                AddIf("View", View); AddIf("Menu", Menu);
+                if (LeftTrigger > 0.1) parts.Add("LT=" + LeftTrigger.ToString("0.0"));
+                if (RightTrigger > 0.1) parts.Add("RT=" + RightTrigger.ToString("0.0"));
+                if (Math.Abs(LX) > 0.05) parts.Add("LX=" + LX.ToString("0.00"));
+                if (Math.Abs(LY) > 0.05) parts.Add("LY=" + LY.ToString("0.00"));
+                if (Math.Abs(RX) > 0.05) parts.Add("RX=" + RX.ToString("0.00"));
+                if (Math.Abs(RY) > 0.05) parts.Add("RY=" + RY.ToString("0.00"));
+                return parts.Count == 0 ? "(idle)" : string.Join(" ", parts);
+            }
+        }
 
         public static double Deadzone = 0.12;
 
@@ -109,7 +200,6 @@ namespace GamepadKeyboard.Input
                 (r.Buttons & Windows.Gaming.Input.GamepadButtons.Menu) != 0,
                 r.LeftTrigger, r.RightTrigger);
         }
-
 
         /// <summary>Reads a physical button by mapping-profile name (A, B, LB, RB, LT, RT, LS, RS, View, Menu, DUp…).</summary>
         public bool Button(string name) => name switch

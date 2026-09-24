@@ -22,6 +22,10 @@ namespace GamepadKeyboard
         private readonly ToastOverlay _toast = new();
         private NotifyIcon? _tray;
         private ToolStripMenuItem? _overlayItem;
+        private ToolStripMenuItem? _enabledItem;
+
+        private static System.Windows.MessageBoxButton MessageBoxButton_OK() => System.Windows.MessageBoxButton.OK;
+        private static System.Windows.MessageBoxImage MessageBoxImage_Information() => System.Windows.MessageBoxImage.Information;
         private bool _settingsDirty;
         private readonly System.Windows.Threading.DispatcherTimer _saveTimer =
             new() { Interval = TimeSpan.FromSeconds(2) };
@@ -37,9 +41,13 @@ namespace GamepadKeyboard
             _mapper.StateChanged += RefreshUi;
             _mapper.Notification += msg =>
                 _keyboard.Dispatcher.BeginInvoke(() =>
+                {
                     _toast.Show(msg,
                         Settings.AppSettings.Instance.ProfileToastSeconds,
-                        Settings.AppSettings.Instance.ProfileToastPermanent));
+                        Settings.AppSettings.Instance.ProfileToastPermanent);
+                    if (_enabledItem != null)
+                        _enabledItem.Checked = _mapper.InputEnabled;
+                });
 
             // debounce settings writes while dragging with the sticks
             _saveTimer.Tick += (_, __) =>
@@ -94,6 +102,24 @@ namespace GamepadKeyboard
 
             var menu = new ContextMenuStrip();
 
+            var enabledItem = new ToolStripMenuItem("Input enabled");
+            enabledItem.CheckOnClick = true;
+            enabledItem.Checked = _mapper.InputEnabled;
+            enabledItem.Click += (_, __) => _mapper.SetInputEnabled(enabledItem.Checked);
+            _enabledItem = enabledItem;
+
+            var diagItem = new ToolStripMenuItem("Diagnostics…");
+            diagItem.Click += (_, __) =>
+            {
+                var lines = new System.Collections.Generic.List<string>(_pad.Diagnostics())
+                {
+                    "input enabled: " + _mapper.InputEnabled,
+                    "mouse mode: " + _mapper.MouseMode
+                };
+                System.Windows.MessageBox.Show(string.Join(Environment.NewLine, lines),
+                    "Gamepad diagnostics", MessageBoxButton_OK(), MessageBoxImage_Information());
+            };
+
             var overlayItem = new ToolStripMenuItem("Show keyboard");
             overlayItem.CheckOnClick = true;
             overlayItem.Checked = Settings.AppSettings.Instance.ShowOverlay;
@@ -145,7 +171,9 @@ namespace GamepadKeyboard
             var exitItem = new ToolStripMenuItem("Exit");
             exitItem.Click += (_, __) => Exit();
 
+            menu.Items.Add(enabledItem);
             menu.Items.Add(overlayItem);
+            menu.Items.Add(diagItem);
             menu.Items.Add(settingsItem);
             menu.Items.Add(aboutItem);
             menu.Items.Add(new ToolStripSeparator());
