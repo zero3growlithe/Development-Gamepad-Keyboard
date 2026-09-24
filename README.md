@@ -23,7 +23,9 @@ Background tray app for Xbox 360 / One / Series and DualShock 4 / DualSense cont
 dotnet build src/GamepadKeyboard/GamepadKeyboard.csproj -c Release
 ```
 
-Or grab a ready exe from [Actions](../../actions) (artifact `DevelopmentGamepadKeyboard-win-x64`, self-contained, single file).
+Or grab a ready build from [Actions](../../actions) (artifact `DevelopmentGamepadKeyboard-win-x64`).
+
+> **Requires the [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0) installed** — the app is framework-dependent to stay lightweight (~1 MB app + your system runtime, no bundled 100 MB payload).
 
 ## Roadmap
 

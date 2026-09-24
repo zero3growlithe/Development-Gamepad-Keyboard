@@ -20,12 +20,16 @@ jobs:
       - name: Build
         run: dotnet build src/GamepadKeyboard/GamepadKeyboard.csproj -c Release -p:NuGetAudit=false --nologo -v q
 
-      - name: Publish self-contained
-        run: dotnet publish src/GamepadKeyboard/GamepadKeyboard.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:NuGetAudit=false -o publish
+      - name: Publish framework-dependent (requires .NET 8 Desktop Runtime)
+        run: dotnet publish src/GamepadKeyboard/GamepadKeyboard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -p:NuGetAudit=false -o publish
+
+      - name: Zip publish output
+        shell: pwsh
+        run: Compress-Archive -Path publish/* -DestinationPath DevelopmentGamepadKeyboard-win-x64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: DevelopmentGamepadKeyboard-win-x64
-          path: publish/*
+          path: DevelopmentGamepadKeyboard-win-x64.zip
           retention-days: 30
