@@ -61,7 +61,7 @@ namespace GamepadKeyboard.UI
             _startMouse.IsChecked = s.StartInMouseMode;
 
             var grid = new Grid { Margin = new Thickness(12) };
-            for (int i = 0; i < 7; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int i = 0; i < 8; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -94,11 +94,8 @@ namespace GamepadKeyboard.UI
             kbBtn.Click += (_, __) => new BindingsEditorWindow(mouse: false).Show();
             var moBtn = new Button { Content = "Gamepad bindings (mouse mode)…", Padding = new Thickness(10, 3, 10, 3) };
             moBtn.Click += (_, __) => new BindingsEditorWindow(mouse: true).Show();
-            var ptsBtn = new Button { Content = "Stick center points…", Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(8, 0, 0, 0) };
-            ptsBtn.Click += (_, __) => new StickPointsEditorWindow().Show();
             editors.Children.Add(kbBtn);
             editors.Children.Add(moBtn);
-            editors.Children.Add(ptsBtn);
 
             var buttons = new StackPanel
             {

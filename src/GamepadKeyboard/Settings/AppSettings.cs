@@ -153,10 +153,10 @@ namespace GamepadKeyboard.Settings
         public string DRight { get; set; } = "ArrowRight";
 
         /// <summary>D-pad layer while Y is held (navigation).</summary>
-        public string YDUp { get; set; } = "PageUp";
-        public string YDDown { get; set; } = "PageDown";
-        public string YDLeft { get; set; } = "Home";
-        public string YDRight { get; set; } = "End";
+        public string YDUp { get; set; } = "None";
+        public string YDDown { get; set; } = "None";
+        public string YDLeft { get; set; } = "None";
+        public string YDRight { get; set; } = "None";
 
         /// <summary>
         /// Custom combo bindings: "A+B+X=Action" — all buttons held, the LAST one's

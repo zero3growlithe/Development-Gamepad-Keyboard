@@ -59,6 +59,19 @@ namespace GamepadKeyboard
         // hold-to-type state: key currently held down by the left/right commit activation
         private KeyboardLayout.KeyDef? _heldRayKeyL, _heldRayKeyR;
 
+        // pending move/scale toggles (armed on L3/R3 press, fired on release unless cancelled)
+        private bool _l3Pending, _r3Pending;
+
+        /// <summary>Keys currently held via hold-to-type (for UI tint; modifiers only tint).</summary>
+        public System.Collections.Generic.IEnumerable<ushort> HeldRayKeyVks
+        {
+            get
+            {
+                if (_heldRayKeyL != null) yield return _heldRayKeyL.Vk;
+                if (_heldRayKeyR != null) yield return _heldRayKeyR.Vk;
+            }
+        }
+
         /// <summary>Virtual modifier keys currently active (toggled on or held) — for UI tint.</summary>
         public IReadOnlyCollection<ushort> HeldModifierVks => _heldModifiers;
 
@@ -140,20 +153,36 @@ namespace GamepadKeyboard
             if (HandleProfileSwitch(s))
                 return;
 
-            // ── overlay adjust TOGGLES: press L3 once = move mode, press again = off ──
-            if (s.LS && !_pLS)
+            // ── overlay adjust TOGGLES: toggle happens on button RELEASE, unless another
+            //    button was pressed while L3/R3 was held (that press belonged to a combo) ──
+            if (s.LS && !_pLS) _l3Pending = true;
+            if (s.RS && !_pRS) _r3Pending = true;
+            if (_l3Pending || _r3Pending)
             {
-                AdjustMove = !AdjustMove;
-                MoveDX = MoveDY = 0;
-                Notification?.Invoke(AdjustMove ? "Move mode ON — left stick moves the keyboard"
-                                                : "Move mode OFF");
+                // any other button edge this tick cancels the pending toggle
+                if (AnyOtherButtonEdge(s)) { _l3Pending = false; _r3Pending = false; }
             }
-            if (s.RS && !_pRS)
+            if (!s.LS && _pLS)   // L3 released
             {
-                AdjustScale = !AdjustScale;
-                ScaleDelta = 0;
-                Notification?.Invoke(AdjustScale ? "Scale mode ON — right stick up/down scales"
-                                                 : "Scale mode OFF");
+                if (_l3Pending)
+                {
+                    AdjustMove = !AdjustMove;
+                    MoveDX = MoveDY = 0;
+                    Notification?.Invoke(AdjustMove ? "Move mode ON — left stick moves the keyboard"
+                                                    : "Move mode OFF");
+                }
+                _l3Pending = false;
+            }
+            if (!s.RS && _pRS)   // R3 released
+            {
+                if (_r3Pending)
+                {
+                    AdjustScale = !AdjustScale;
+                    ScaleDelta = 0;
+                    Notification?.Invoke(AdjustScale ? "Scale mode ON — right stick up/down scales"
+                                                     : "Scale mode OFF");
+                }
+                _r3Pending = false;
             }
             if (AdjustMove)
             {
@@ -435,6 +464,16 @@ namespace GamepadKeyboard
             }
         }
 
+        /// <summary>True when any button OTHER than L3/R3 had a press edge this tick.</summary>
+        private bool AnyOtherButtonEdge(in GamepadSnapshot s)
+        {
+            bool Edge(bool now, bool prev) => now && !prev;
+            return Edge(s.A, _pA) || Edge(s.B, _pB) || Edge(s.X, _pX) || Edge(s.Y, _pY)
+                || Edge(s.LB, _pLB) || Edge(s.RB, _pRB) || Edge(s.View, _pView) || Edge(s.Menu, _pMenu)
+                || Edge(s.DUp, _pDUp) || Edge(s.DDown, _pDDown) || Edge(s.DLeft, _pDLeft) || Edge(s.DRight, _pDRight)
+                || s.LeftTrigger > 0.5 && _pLT <= 0.5 || s.RightTrigger > 0.5 && _pRT <= 0.5;
+        }
+
         private void ReleaseHeldRayKeys()
         {
             if (_heldRayKeyL != null) { _sender.KeyUp(_heldRayKeyL.Vk, _heldRayKeyL.Extended); _heldRayKeyL = null; }
@@ -531,6 +570,9 @@ namespace GamepadKeyboard
 
                 case "SwitchKeyboardProfile":
                     SwitchProfile(+1);
+                    break;
+                case "SwitchStickPointsProfile":
+                    SwitchProfile(+1);   // stick center points share keyboard profiles
                     break;
                 case "SwitchMouseProfile":
                     SwitchMouseProfile(+1);

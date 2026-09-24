@@ -24,6 +24,13 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _nameBox = new() { MinWidth = 170 };
         private readonly StackPanel _rowsPanel = new();
         private readonly StackPanel _comboPanel = new();
+        private readonly System.Windows.Controls.TextBlock _stickProfileLabel = new()
+        {
+            Text = "",
+            Foreground = System.Windows.Media.Brushes.Gray,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            Margin = new System.Windows.Thickness(10, 0, 0, 0)
+        };
 
         private sealed class Row
         {
@@ -64,8 +71,20 @@ namespace GamepadKeyboard.UI
             nameBar.Children.Add(new TextBlock { Text = "Name:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
             nameBar.Children.Add(_nameBox);
             _nameBox.LostFocus += (_, __) => CommitName();
+
             DockPanel.SetDock(nameBar, Dock.Top);
             root.Children.Add(nameBar);
+
+            // Reset + Close row directly under the name field — a bottom bar didn't fit
+            var actionRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 0, 6) };
+            var resetBtn = new Button { Content = "Reset to defaults", Padding = new Thickness(10, 3, 10, 3) };
+            resetBtn.Click += (_, __) => ResetToDefaults();
+            var closeBtn = new Button { Content = "Close", Padding = new Thickness(14, 3, 14, 3), Margin = new Thickness(8, 0, 0, 0) };
+            closeBtn.Click += (_, __) => Close();
+            actionRow.Children.Add(resetBtn);
+            actionRow.Children.Add(closeBtn);
+            DockPanel.SetDock(actionRow, Dock.Top);
+            root.Children.Add(actionRow);
 
             // ── hint ──
             var hint = new TextBlock
@@ -82,16 +101,16 @@ namespace GamepadKeyboard.UI
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _rowsPanel };
             root.Children.Add(scroll);
 
-            // ── bottom: reset + close ──
-            var bottom = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 8, 0, 0) };
-            var reset = new Button { Content = "Reset to defaults", Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(0, 0, 8, 0) };
-            reset.Click += (_, __) => ResetToDefaults();
-            var close = new Button { Content = "Close", Padding = new Thickness(16, 4, 16, 4) };
-            close.Click += (_, __) => Close();
-            bottom.Children.Add(reset);
-            bottom.Children.Add(close);
-            DockPanel.SetDock(bottom, Dock.Top);   // added last, dock order matters
-            root.Children.Add(bottom);
+            if (!_mouse)
+            {
+                // keyboard-mode only: stick center points editor shortcut
+                var ptsBar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+                var ptsBtn = new Button { Content = "Stick center points…", Padding = new Thickness(10, 3, 10, 3) };
+                ptsBtn.Click += (_, __) => new StickPointsEditorWindow { Owner = this }.Show();
+                ptsBar.Children.Add(ptsBtn);
+                DockPanel.SetDock(ptsBar, Dock.Top);   // docked after scroll -> bottom strip
+                root.Children.Add(ptsBar);
+            }
 
             Content = root;
 
@@ -143,6 +162,7 @@ namespace GamepadKeyboard.UI
             if (idx < 0) return;
             ActiveIndex = idx;
             _nameBox.Text = ProfileNameOf(idx);
+            if (!_mouse) _stickProfileLabel.Text = "(stick points: " + ProfileNameOf(idx) + ")";
 
             BuildRows();
             AppSettings.Save();
@@ -575,7 +595,7 @@ namespace GamepadKeyboard.UI
             // app control
             "DisableInput", "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode",
             "ToggleKeyboard", "ToggleLegend",
-            "SwitchKeyboardProfile", "SwitchMouseProfile",
+            "SwitchKeyboardProfile", "SwitchMouseProfile", "SwitchStickPointsProfile",
             // media
             "VolumeUp", "VolumeDown", "VolumeMute",
             "MediaPlayPause", "MediaNext", "MediaPrev",

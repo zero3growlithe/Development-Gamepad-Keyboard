@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Drawing;
 using System.Windows.Forms;
 using GamepadKeyboard.Native;
@@ -273,7 +274,7 @@ namespace GamepadKeyboard
         private void RefreshUiCore()
         {
             _keyboard.ClearHighlights();
-            _keyboard.SetToggledKeys(_mapper.HeldModifierVks);
+            _keyboard.SetToggledKeys(_mapper.HeldModifierVks.Concat(_mapper.HeldRayKeyVks));
             RefreshLegend();
 
             // ── stick-driven overlay adjust: L3 hold = move (left stick), R3 hold = scale (right stick) ──

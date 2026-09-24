@@ -278,7 +278,7 @@ namespace GamepadKeyboard.Overlay
         }
 
         /// <summary>Tints the background of keys whose virtual modifiers are toggled on.</summary>
-        public void SetToggledKeys(System.Collections.Generic.IReadOnlyCollection<ushort> vks)
+        public void SetToggledKeys(System.Collections.Generic.IEnumerable<ushort> vks)
         {
             // modifier VKs only — never tint regular keys
             _toggledVks = new HashSet<ushort>(vks.Where(IsModifierVk));
