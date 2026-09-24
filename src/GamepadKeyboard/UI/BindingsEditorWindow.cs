@@ -23,6 +23,7 @@ namespace GamepadKeyboard.UI
         private readonly ComboBox _profileBox = new() { MinWidth = 170 };
         private readonly TextBox _nameBox = new() { MinWidth = 170 };
         private readonly StackPanel _rowsPanel = new();
+        private readonly StackPanel _comboPanel = new();
 
         private sealed class Row
         {
@@ -81,10 +82,13 @@ namespace GamepadKeyboard.UI
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _rowsPanel };
             root.Children.Add(scroll);
 
-            // ── bottom: close ──
+            // ── bottom: reset + close ──
             var bottom = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 8, 0, 0) };
+            var reset = new Button { Content = "Reset to defaults", Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(0, 0, 8, 0) };
+            reset.Click += (_, __) => ResetToDefaults();
             var close = new Button { Content = "Close", Padding = new Thickness(16, 4, 16, 4) };
             close.Click += (_, __) => Close();
+            bottom.Children.Add(reset);
             bottom.Children.Add(close);
             DockPanel.SetDock(bottom, Dock.Top);   // added last, dock order matters
             root.Children.Add(bottom);
@@ -220,6 +224,7 @@ namespace GamepadKeyboard.UI
         {
             _rows.Clear();
             _rowsPanel.Children.Clear();
+            _comboPanel.Children.Clear();
 
             void Add(string label, Func<string> get, Action<string> set)
             {
@@ -247,6 +252,7 @@ namespace GamepadKeyboard.UI
                 Add("D-pad Down", () => p.DDown, v => p.DDown = v);
                 Add("D-pad Left", () => p.DLeft, v => p.DLeft = v);
                 Add("D-pad Right", () => p.DRight, v => p.DRight = v);
+                BuildComboSection(() => p.ComboBindings, v => p.ComboBindings = v);
             }
             else
             {
@@ -271,6 +277,7 @@ namespace GamepadKeyboard.UI
                 Add("Y+D-pad Down", () => p.YDDown, v => p.YDDown = v);
                 Add("Y+D-pad Left", () => p.YDLeft, v => p.YDLeft = v);
                 Add("Y+D-pad Right", () => p.YDRight, v => p.YDRight = v);
+                BuildComboSection(() => p.ComboBindings, v => p.ComboBindings = v);
             }
         }
 
@@ -344,6 +351,204 @@ namespace GamepadKeyboard.UI
             }
             Persist();
         }
+
+        // ── custom combos ────────────────────────────────────────────────────
+
+        private void BuildComboSection(Func<List<string>> get, Action<List<string>> set)
+        {
+            var list = get();
+            _comboPanel.Children.Add(new Separator { Margin = new Thickness(0, 10, 0, 6) });
+            _comboPanel.Children.Add(new TextBlock
+            {
+                Text = "Custom combos — hold modifiers, last button press triggers:",
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                string entry = list[i];
+                var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var label = new TextBlock { Text = FormatCombo(entry), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                Grid.SetColumn(label, 0);
+
+                var del = new Button { Content = "✕", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(6, 0, 0, 0) };
+                string captured = entry;
+                del.Click += (_, __) =>
+                {
+                    var l = get();
+                    l.Remove(captured);
+                    set(l);
+                    Persist();
+                    BuildRows();
+                };
+                Grid.SetColumn(del, 1);
+
+                row.Children.Add(label);
+                row.Children.Add(del);
+                _comboPanel.Children.Add(row);
+            }
+
+            var addBtn = new Button
+            {
+                Content = "+ Add new custom binding",
+                Padding = new Thickness(10, 3, 10, 3),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            addBtn.Click += (_, __) => ShowComboBuilder(get, set);
+            _comboPanel.Children.Add(addBtn);
+
+            _rowsPanel.Children.Add(_comboPanel);
+        }
+
+        private static string ButtonLabel(string b) => b switch
+        {
+            "LT" => "LT (trigger)", "RT" => "RT (trigger)",
+            "LS" => "L3", "RS" => "R3",
+            "View" => "View/Select", "Menu" => "Menu/Options",
+            "DUp" => "D-pad Up", "DDown" => "D-pad Down",
+            "DLeft" => "D-pad Left", "DRight" => "D-pad Right",
+            _ => b
+        };
+
+        private static string ButtonLabelShort(string b) => b switch
+        {
+            "LT" => "LT", "RT" => "RT", "LS" => "L3", "RS" => "R3",
+            "View" => "View", "Menu" => "Menu",
+            "DUp" => "↑", "DDown" => "↓", "DLeft" => "←", "DRight" => "→",
+            _ => b
+        };
+
+        private static string FormatActionForList(string action) =>
+            action.StartsWith("Key:", StringComparison.Ordinal) ? action[4..] + " (key)" : action;
+
+        private static string FormatCombo(string entry)
+        {
+            int eq = entry.IndexOf('=');
+            if (eq <= 0) return entry;
+            string buttons = entry[..eq];
+            string action = entry[(eq + 1)..];
+            var parts = buttons.Split('+');
+            string text = string.Join(" + ", parts.Select(ButtonLabelShort));
+            return text + "  →  " + FormatActionForList(action);
+        }
+
+        private void ShowComboBuilder(Func<List<string>> get, Action<List<string>> set)
+        {
+            const string Empty = "(none)";
+
+            var dlg = new Window
+            {
+                Title = "Add custom binding",
+                Width = 640,
+                SizeToContent = SizeToContent.Height,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ShowInTaskbar = false
+            };
+            var root = new StackPanel { Margin = new Thickness(12) };
+            root.Children.Add(new TextBlock
+            {
+                Text = "Fill 2–5 buttons: the earlier ones are held as modifiers, the LAST press triggers the action.",
+                Foreground = Brushes.Gray,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            var boxes = new ComboBox[5];
+            for (int i = 0; i < 5; i++)
+            {
+                var cb = new ComboBox { MinWidth = 86, Margin = new Thickness(3, 0, 3, 0) };
+                cb.Items.Add(Empty);
+                foreach (var b in ComboButtonCatalog.All) cb.Items.Add(b);
+                cb.SelectedIndex = 0;
+                boxes[i] = cb;
+                panel.Children.Add(cb);
+            }
+            root.Children.Add(panel);
+
+            root.Children.Add(new TextBlock { Text = "↓ action triggered by the last button:", Margin = new Thickness(0, 10, 0, 4) });
+            var actionBox = new ComboBox { MinWidth = 300, HorizontalAlignment = HorizontalAlignment.Center };
+            foreach (var a in ActionCatalog.All) actionBox.Items.Add(a);
+            actionBox.Items.Add(PoolItem);
+            actionBox.SelectedIndex = 0;
+            root.Children.Add(actionBox);
+
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
+            var cancel = new Button { Content = "Cancel", Padding = new Thickness(14, 3, 14, 3), Margin = new Thickness(0, 0, 8, 0) };
+            var confirm = new Button { Content = "Confirm", Padding = new Thickness(14, 3, 14, 3) };
+            buttons.Children.Add(cancel);
+            buttons.Children.Add(confirm);
+            root.Children.Add(buttons);
+            dlg.Content = root;
+
+            cancel.Click += (_, __) => dlg.Close();
+
+            confirm.Click += (_, __) =>
+            {
+                string action = actionBox.SelectedItem as string ?? "";
+                if (action == PoolItem)
+                {
+                    var cap = KeyCaptureDialog.Capture("Press a keyboard key for the combo...");
+                    if (cap == null) return;
+                    action = cap;
+                }
+                if (action == "") return;
+
+                var picked = boxes.Select(b => b.SelectedItem as string ?? Empty)
+                                  .Where(x => x != Empty)
+                                  .ToList();
+                if (picked.Count < 2) { MessageBox.Show(dlg, "Pick at least 2 buttons (modifier + trigger).", "Custom binding"); return; }
+
+                string entry = string.Join("+", picked) + "=" + action;
+                var l = get();
+                if (!l.Contains(entry)) l.Add(entry);
+                set(l);
+                Persist();
+                BuildRows();
+                dlg.Close();
+            };
+
+            actionBox.SelectionChanged += (_, __) =>
+            {
+                if (Equals(actionBox.SelectedItem, PoolItem))
+                {
+                    var cap = KeyCaptureDialog.Capture("Press a keyboard key for the combo...");
+                    _suppress++;
+                    if (cap != null) { actionBox.Items[^1] = cap; actionBox.SelectedItem = cap; }
+                    else actionBox.SelectedIndex = 0;
+                    _suppress--;
+                }
+            };
+
+            dlg.ShowDialog();
+        }
+
+        private void ResetToDefaults()
+        {
+            int idx = ActiveIndex;
+            if (idx < 0) return;
+            var mb = MessageBox.Show(this,
+                "Reset ALL button bindings and custom combos of this profile to defaults?",
+                "Reset to defaults", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            if (mb != MessageBoxResult.OK) return;
+
+            if (_mouse) { string name = Mo[idx].Name; var d = new MouseProfile(); d.Name = name; Mo[idx] = d; }
+            else { string name = Kb[idx].Name; var d = new KeyboardProfile(); d.Name = name; Kb[idx] = d; }
+            Persist();
+            BuildRows();
+        }
+    }
+
+    /// <summary>Buttons available for custom combos (Home excluded — enable combo).</summary>
+    internal static class ComboButtonCatalog
+    {
+        public static readonly string[] All = { "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "LS", "RS", "View", "Menu", "DUp", "DDown", "DLeft", "DRight" };
     }
 
     /// <summary>Full action vocabulary shown in the dropdowns.</summary>

@@ -59,6 +59,9 @@ namespace GamepadKeyboard
         /// <summary>Virtual modifier keys currently active (toggled on or held) — for UI tint.</summary>
         public IReadOnlyCollection<ushort> HeldModifierVks => _heldModifiers;
 
+        // custom combo bindings ("A+B+X=Action"): per-combo last-button edge tracking
+        private readonly Dictionary<string, bool> _comboPrev = new();
+
         // previous physical state (edge detection)
         private bool _pA, _pB, _pX, _pY, _pLB, _pRB, _pLS, _pRS;
         private bool _pDUp, _pDDown, _pDLeft, _pDRight;
@@ -116,6 +119,19 @@ namespace GamepadKeyboard
         private void ProcessKeyboardMode(in GamepadSnapshot s)
         {
             var p = AppSettings.Instance.Profile;
+            var comboSup = EvaluateCombos(s, p.ComboBindings);
+            bool Sup(string b) => comboSup.Contains(b);
+
+            // fixed mode-switch: B returns to mouse mode if keyboard was opened via Y in mouse mode
+            if (KeyboardFromMouse && !Sup("B") && s.B && !_pB)
+            {
+                KeyboardFromMouse = false;
+                MouseMode = true;
+                App.Log("mode: keyboard -> mouse (B)");
+                Notification?.Invoke("Mouse mode");
+                StateChanged?.Invoke();
+                return;
+            }
 
             // origin-point edit mode is intentionally NOT here; profile switch first
             if (HandleProfileSwitch(s))
@@ -146,50 +162,40 @@ namespace GamepadKeyboard
                 ScaleDelta = s.RY;   // up (+RY) = bigger, down = smaller
             }
 
-            // fixed mode-switch: B returns to mouse mode if keyboard was opened via Y in mouse mode
-            if (KeyboardFromMouse && s.B && !_pB)
-            {
-                KeyboardFromMouse = false;
-                MouseMode = true;
-                App.Log("mode: keyboard -> mouse (B)");
-                Notification?.Invoke("Mouse mode");
-                StateChanged?.Invoke();
-                return;
-            }
+            // dispatch mapped actions for every button (edge or hold semantics);
+            // buttons used as combo LAST button are suppressed while combo modifiers held
+            if (!Sup("A")) DispatchButton(p.A, s.A, ref _pA);
+            if (!Sup("B")) DispatchButton(p.B, s.B, ref _pB);
+            if (!Sup("X")) DispatchButton(p.X, s.X, ref _pX);
+            if (!Sup("Y")) DispatchButton(p.Y, s.Y, ref _pY);
 
-            // dispatch mapped actions for every button (edge or hold semantics)
-            DispatchButton(p.A, s.A, ref _pA);
-            DispatchButton(p.B, s.B, ref _pB);
-            DispatchButton(p.X, s.X, ref _pX);
-            DispatchButton(p.Y, s.Y, ref _pY);
-
-            DispatchButton(p.LB, s.LB, ref _pLB);
-            DispatchButton(p.RB, s.RB, ref _pRB);
+            if (!Sup("LB")) DispatchButton(p.LB, s.LB, ref _pLB);
+            if (!Sup("RB")) DispatchButton(p.RB, s.RB, ref _pRB);
 
             // L3/R3 are dedicated to overlay move/scale toggles — not mappable here
 
-            DispatchButton(p.View, s.View, ref _pView);
-            DispatchButton(p.Menu, s.Menu, ref _pMenu);
+            if (!Sup("View")) DispatchButton(p.View, s.View, ref _pView);
+            if (!Sup("Menu")) DispatchButton(p.Menu, s.Menu, ref _pMenu);
 
             // dpad layer: Y-held layer or plain layer
             if (s.Y)
             {
-                DispatchButton(p.YDUp, s.DUp, ref _pDUp);
-                DispatchButton(p.YDDown, s.DDown, ref _pDDown);
-                DispatchButton(p.YDLeft, s.DLeft, ref _pDLeft);
-                DispatchButton(p.YDRight, s.DRight, ref _pDRight);
+                if (!Sup("DUp")) DispatchButton(p.YDUp, s.DUp, ref _pDUp);
+                if (!Sup("DDown")) DispatchButton(p.YDDown, s.DDown, ref _pDDown);
+                if (!Sup("DLeft")) DispatchButton(p.YDLeft, s.DLeft, ref _pDLeft);
+                if (!Sup("DRight")) DispatchButton(p.YDRight, s.DRight, ref _pDRight);
             }
             else
             {
-                DispatchButton(p.DUp, s.DUp, ref _pDUp);
-                DispatchButton(p.DDown, s.DDown, ref _pDDown);
-                DispatchButton(p.DLeft, s.DLeft, ref _pDLeft);
-                DispatchButton(p.DRight, s.DRight, ref _pDRight);
+                if (!Sup("DUp")) DispatchButton(p.DUp, s.DUp, ref _pDUp);
+                if (!Sup("DDown")) DispatchButton(p.DDown, s.DDown, ref _pDDown);
+                if (!Sup("DLeft")) DispatchButton(p.DLeft, s.DLeft, ref _pDLeft);
+                if (!Sup("DRight")) DispatchButton(p.DRight, s.DRight, ref _pDRight);
             }
 
             // hold modifiers from triggers (LT/RT mapped as HoldShift/HoldCtrl)
-            ApplyTriggerModifier(p.LT, s.LeftTrigger);
-            ApplyTriggerModifier(p.RT, s.RightTrigger);
+            if (!Sup("LT")) ApplyTriggerModifier(p.LT, s.LeftTrigger);
+            if (!Sup("RT")) ApplyTriggerModifier(p.RT, s.RightTrigger);
 
             // stick rays (max length = origin point -> Esc / F12, not layout corner)
             LastLeftX = s.LX; LastLeftY = s.LY;
@@ -246,21 +252,34 @@ namespace GamepadKeyboard
             if (Math.Abs(s.LX) > 0.05)
                 _sender.MouseHWheel((int)Math.Sign(s.LX) * (int)Math.Round(ApplyCurve(Math.Abs(s.LX)) * 120 * sc / 3.0));
 
+            var comboSup = EvaluateCombos(s, profile.ComboBindings);
+            bool Sup(string b) => comboSup.Contains(b);
+
             // dpad scroll (unless remapped to something else)
-            if (profile.DUp == "ScrollUp") { if (s.DUp) _sender.MouseWheel(120); }
-            else DispatchButton(profile.DUp, s.DUp, ref _pDUp);
-
-            if (profile.DDown == "ScrollDown") { if (s.DDown) _sender.MouseWheel(-120); }
-            else DispatchButton(profile.DDown, s.DDown, ref _pDDown);
-
-            if (profile.DLeft == "ScrollLeft") { if (s.DLeft) _sender.MouseHWheel(-120); }
-            else DispatchButton(profile.DLeft, s.DLeft, ref _pDLeft);
-
-            if (profile.DRight == "ScrollRight") { if (s.DRight) _sender.MouseHWheel(120); }
-            else DispatchButton(profile.DRight, s.DRight, ref _pDRight);
+            if (!Sup("DUp"))
+            {
+                if (profile.DUp == "ScrollUp") { if (s.DUp) _sender.MouseWheel(120); }
+                else DispatchButton(profile.DUp, s.DUp, ref _pDUp);
+            }
+            if (!Sup("DDown"))
+            {
+                if (profile.DDown == "ScrollDown") { if (s.DDown) _sender.MouseWheel(-120); }
+                else DispatchButton(profile.DDown, s.DDown, ref _pDDown);
+            }
+            if (!Sup("DLeft"))
+            {
+                if (profile.DLeft == "ScrollLeft") { if (s.DLeft) _sender.MouseHWheel(-120); }
+                else DispatchButton(profile.DLeft, s.DLeft, ref _pDLeft);
+            }
+            if (!Sup("DRight"))
+            {
+                if (profile.DRight == "ScrollRight") { if (s.DRight) _sender.MouseHWheel(120); }
+                else DispatchButton(profile.DRight, s.DRight, ref _pDRight);
+            }
 
             // fixed mode-switch: Y press in mouse mode enables the keyboard overlay
-            if (s.Y && !_pY && MouseMode)
+            // (suppressed while Y is a combo last-button with modifiers held)
+            if (!Sup("Y") && s.Y && !_pY && MouseMode)
             {
                 MouseMode = false;
                 KeyboardFromMouse = true;
@@ -269,20 +288,75 @@ namespace GamepadKeyboard
                 StateChanged?.Invoke();
             }
 
-            // buttons
-            DispatchButton(profile.A, s.A, ref _pA);
-            DispatchButton(profile.B, s.B, ref _pB);
-            DispatchButton(profile.X, s.X, ref _pX);
+            // buttons (combo last-button suppressed while its modifiers held)
+            if (!Sup("A")) DispatchButton(profile.A, s.A, ref _pA);
+            if (!Sup("B")) DispatchButton(profile.B, s.B, ref _pB);
+            if (!Sup("X")) DispatchButton(profile.X, s.X, ref _pX);
             if (!MouseMode) return;   // switched to keyboard this tick: skip mouse Y dispatch
-            DispatchButton(profile.Y, s.Y, ref _pY);
-            DispatchButton(profile.LB, s.LB, ref _pLB);
-            DispatchButton(profile.RB, s.RB, ref _pRB);
-            DispatchButton(profile.LS, s.LS, ref _pLS);
-            DispatchButton(profile.RS, s.RS, ref _pRS);
-            DispatchButton(profile.View, s.View, ref _pView);
-            DispatchButton(profile.Menu, s.Menu, ref _pMenu);
-            DispatchButton(profile.LT, s.LeftTrigger > 0.5, ref _pLTHeld);
-            DispatchButton(profile.RT, s.RightTrigger > 0.5, ref _pRTHeld);
+            if (!Sup("Y")) DispatchButton(profile.Y, s.Y, ref _pY);
+            if (!Sup("LB")) DispatchButton(profile.LB, s.LB, ref _pLB);
+            if (!Sup("RB")) DispatchButton(profile.RB, s.RB, ref _pRB);
+            if (!Sup("LS")) DispatchButton(profile.LS, s.LS, ref _pLS);
+            if (!Sup("RS")) DispatchButton(profile.RS, s.RS, ref _pRS);
+            if (!Sup("View")) DispatchButton(profile.View, s.View, ref _pView);
+            if (!Sup("Menu")) DispatchButton(profile.Menu, s.Menu, ref _pMenu);
+            if (!Sup("LT")) DispatchButton(profile.LT, s.LeftTrigger > 0.5, ref _pLTHeld);
+            if (!Sup("RT")) DispatchButton(profile.RT, s.RightTrigger > 0.5, ref _pRTHeld);
+        }
+
+        // ── Custom combo bindings ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Evaluates the profile's custom combos. Returns the set of last buttons whose
+        /// mapped dispatch must be suppressed this tick (combo modifiers are held).
+        /// "A+B+X=Act": A+B held = modifiers; X edge = trigger.
+        /// </summary>
+        private HashSet<string> EvaluateCombos(in GamepadSnapshot s, List<string> combos)
+        {
+            var suppress = new HashSet<string>();
+            if (combos.Count == 0) { _comboPrev.Clear(); return suppress; }
+
+            var seen = new HashSet<string>();
+            foreach (var raw in combos)
+            {
+                int eq = raw.IndexOf('=');
+                if (eq <= 0) continue;
+                string action = raw[(eq + 1)..].Trim();
+                string key = raw[..eq].Trim();
+                if (key.Length == 0 || action.Length == 0) continue;
+                seen.Add(raw);
+
+                var parts = key.Split('+');
+                bool allHeld = true;
+                for (int i = 0; i < parts.Length - 1; i++)
+                    if (!s.Button(parts[i].Trim())) { allHeld = false; break; }
+                if (!allHeld) { _comboPrev[raw] = false; continue; }
+
+                string last = parts[^1].Trim();
+                suppress.Add(last);          // mods held: last button belongs to the combo
+                bool held = s.Button(last);
+                bool prev = _comboPrev.TryGetValue(raw, out var p) && p;
+                if (held && !prev)
+                {
+                    App.Log("combo binding: " + key + " -> " + action);
+                    RunActionOnce(action);
+                }
+                _comboPrev[raw] = held;
+            }
+
+            // drop stale entries for removed combos
+            var stale = new List<string>();
+            foreach (var k in _comboPrev.Keys)
+                if (!seen.Contains(k)) stale.Add(k);
+            foreach (var k in stale) _comboPrev.Remove(k);
+            return suppress;
+        }
+
+        /// <summary>Runs an action once for a combo trigger (hold semantics preserved).</summary>
+        private void RunActionOnce(string action)
+        {
+            bool dummy = false;   // prev=false -> DispatchButton sees a press edge
+            DispatchButton(action, true, ref dummy);
         }
 
         // ── Action dispatch ───────────────────────────────────────────────────

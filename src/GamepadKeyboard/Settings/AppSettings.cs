@@ -155,6 +155,12 @@ namespace GamepadKeyboard.Settings
         public string YDDown { get; set; } = "PageDown";
         public string YDLeft { get; set; } = "Home";
         public string YDRight { get; set; } = "End";
+
+        /// <summary>
+        /// Custom combo bindings: "A+B+X=Action" — all buttons held, the LAST one's
+        /// press edge triggers the action (earlier buttons are modifiers).
+        /// </summary>
+        public List<string> ComboBindings { get; set; } = new();
     }
 
     public sealed class MouseProfile
@@ -181,5 +187,8 @@ namespace GamepadKeyboard.Settings
 
         public string View { get; set; } = "DisableInput";
         public string Menu { get; set; } = "ToggleKeyboardMouseMode";
+
+        /// <summary>Custom combo bindings: "A+B=Action" (mods held, last press triggers).</summary>
+        public List<string> ComboBindings { get; set; } = new();
     }
 }
