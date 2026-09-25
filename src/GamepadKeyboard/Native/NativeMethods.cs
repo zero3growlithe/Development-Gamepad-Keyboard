@@ -94,6 +94,31 @@ namespace GamepadKeyboard.Native
         [DllImport("user32.dll")]
         public static extern bool SetCursorPos(int X, int Y);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+        [DllImport("shcore.dll")]
+        private static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
+
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+        private const int MDT_EFFECTIVE_DPI = 0;
+
+        public static (double x, double y) EffectiveMonitorDpi(int x, int y)
+        {
+            try
+            {
+                IntPtr monitor = MonitorFromPoint(new POINT { X = x, Y = y }, MONITOR_DEFAULTTONEAREST);
+                if (monitor != IntPtr.Zero
+                    && GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, out uint dpiX, out uint dpiY) == 0)
+                {
+                    return (Math.Max(1u, dpiX), Math.Max(1u, dpiY));
+                }
+            }
+            catch (DllNotFoundException) { }
+            catch (EntryPointNotFoundException) { }
+            return (96, 96);
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT { public int X; public int Y; }
 

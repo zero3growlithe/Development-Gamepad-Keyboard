@@ -22,20 +22,21 @@ namespace GamepadKeyboard.Util
             return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
         }
 
-        public static void RestartElevated()
+        public static bool RestartElevated()
         {
             var exe = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(exe)) return;
+            if (string.IsNullOrEmpty(exe)) return false;
             try
             {
-                Process.Start(new ProcessStartInfo
+                return Process.Start(new ProcessStartInfo
                 {
                     FileName = exe,
+                    Arguments = "--elevated-restart",
                     UseShellExecute = true,
                     Verb = "runas"
-                });
+                }) != null;
             }
-            catch { /* user cancelled UAC */ }
+            catch { return false; /* user cancelled UAC */ }
         }
 
         public static void RestartAsUser()

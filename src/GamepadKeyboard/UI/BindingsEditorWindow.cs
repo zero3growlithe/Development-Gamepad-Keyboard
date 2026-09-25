@@ -35,10 +35,11 @@ namespace GamepadKeyboard.UI
         private sealed class Row
         {
             public string Label = "";
-            public Func<string> Get = () => "None";
-            public Action<string> Set = _ => { };
+            public Func<ButtonBinding> Get = () => new ButtonBinding();
             public ComboBox Box = new() { MinWidth = 240 };
+            public CheckBox Modifier = new() { Content = "Modifier", VerticalAlignment = VerticalAlignment.Center };
             public string Last = "None";
+            public bool AllowModifier = true;
         }
 
         private readonly List<Row> _rows = new();
@@ -48,9 +49,9 @@ namespace GamepadKeyboard.UI
         {
             _mouse = mouse;
             Title = (mouse ? "Mouse" : "Keyboard") + " mode — gamepad bindings";
-            Width = 560;
+            Width = 700;
             Height = 660;
-            MinWidth = 560;
+            MinWidth = 650;
             MinHeight = 500;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             ShowInTaskbar = false;
@@ -186,6 +187,8 @@ namespace GamepadKeyboard.UI
                     var json = JsonSerializer.Serialize(Mo[ActiveIndex]);
                     np = JsonSerializer.Deserialize<MouseProfile>(json) ?? new MouseProfile();
                     np.Name = np.Name + " copy";
+                    foreach (var combo in np.ComboBindings)
+                        combo.Id = Guid.NewGuid().ToString("N");
                 }
                 else np = new MouseProfile { Name = "Mouse profile " + (Mo.Count + 1) };
                 int insert = Math.Min(ActiveIndex + 1, Mo.Count);
@@ -200,6 +203,8 @@ namespace GamepadKeyboard.UI
                     var json = JsonSerializer.Serialize(Kb[ActiveIndex]);
                     np = JsonSerializer.Deserialize<KeyboardProfile>(json) ?? new KeyboardProfile();
                     np.Name = np.Name + " copy";
+                    foreach (var combo in np.ComboBindings)
+                        combo.Id = Guid.NewGuid().ToString("N");
                 }
                 else np = new KeyboardProfile { Name = "Keyboard profile " + (Kb.Count + 1) };
                 int insert = Math.Min(ActiveIndex + 1, Kb.Count);
@@ -253,9 +258,9 @@ namespace GamepadKeyboard.UI
             _rowsPanel.Children.Clear();
             _comboPanel.Children.Clear();
 
-            void Add(string label, Func<string> get, Action<string> set)
+            void Add(string label, Func<ButtonBinding> get, bool allowModifier = true)
             {
-                var row = new Row { Label = label, Get = get, Set = set, Last = get() };
+                var row = new Row { Label = label, Get = get, Last = get().Action, AllowModifier = allowModifier };
                 _rows.Add(row);
                 _rowsPanel.Children.Add(MakeRow(row));
             }
@@ -263,44 +268,54 @@ namespace GamepadKeyboard.UI
             if (_mouse)
             {
                 var p = Mo[Math.Clamp(ActiveIndex, 0, Mo.Count - 1)];
-                Add("A", () => p.A, v => p.A = v);
-                Add("B", () => p.B, v => p.B = v);
-                Add("X", () => p.X, v => p.X = v);
-                Add("Y", () => p.Y, v => p.Y = v);
-                Add("LB", () => p.LB, v => p.LB = v);
-                Add("RB", () => p.RB, v => p.RB = v);
-                Add("LT (trigger)", () => p.LT, v => p.LT = v);
-                Add("RT (trigger)", () => p.RT, v => p.RT = v);
-                Add("LS (L3)", () => p.LS, v => p.LS = v);
-                Add("RS (R3)", () => p.RS, v => p.RS = v);
-                Add("View (Select)", () => p.View, v => p.View = v);
-                Add("Menu (Options)", () => p.Menu, v => p.Menu = v);
-                Add("D-pad Up", () => p.DUp, v => p.DUp = v);
-                Add("D-pad Down", () => p.DDown, v => p.DDown = v);
-                Add("D-pad Left", () => p.DLeft, v => p.DLeft = v);
-                Add("D-pad Right", () => p.DRight, v => p.DRight = v);
-                BuildComboSection(() => p.ComboBindings, v => p.ComboBindings = v);
+                Add("A", () => p.A);
+                Add("B", () => p.B);
+                Add("X", () => p.X);
+                Add("Y", () => p.Y);
+                Add("LB", () => p.LB);
+                Add("RB", () => p.RB);
+                Add("LT (trigger)", () => p.LT);
+                Add("RT (trigger)", () => p.RT);
+                Add("LS (L3)", () => p.LS);
+                Add("RS (R3)", () => p.RS);
+                Add("View (Select)", () => p.View);
+                Add("Menu (Options)", () => p.Menu);
+                Add("D-pad Up", () => p.DUp);
+                Add("D-pad Down", () => p.DDown);
+                Add("D-pad Left", () => p.DLeft);
+                Add("D-pad Right", () => p.DRight);
+                _rowsPanel.Children.Add(new Separator { Margin = new Thickness(0, 8, 0, 4) });
+                _rowsPanel.Children.Add(new TextBlock { Text = "Analog stick directions", FontWeight = FontWeights.SemiBold });
+                Add("Left stick Up", () => p.LUp, false);
+                Add("Left stick Down", () => p.LDown, false);
+                Add("Left stick Left", () => p.LLeft, false);
+                Add("Left stick Right", () => p.LRight, false);
+                Add("Right stick Up", () => p.RUp, false);
+                Add("Right stick Down", () => p.RDown, false);
+                Add("Right stick Left", () => p.RLeft, false);
+                Add("Right stick Right", () => p.RRight, false);
+                BuildComboSection(() => p.ComboBindings);
             }
             else
             {
                 var p = Kb[Math.Clamp(ActiveIndex, 0, Kb.Count - 1)];
-                Add("A", () => p.A, v => p.A = v);
-                Add("B", () => p.B, v => p.B = v);
-                Add("X", () => p.X, v => p.X = v);
-                Add("Y", () => p.Y, v => p.Y = v);
-                Add("LB", () => p.LB, v => p.LB = v);
-                Add("RB", () => p.RB, v => p.RB = v);
-                Add("LT (trigger)", () => p.LT, v => p.LT = v);
-                Add("RT (trigger)", () => p.RT, v => p.RT = v);
-                Add("LS (L3)", () => p.LS, v => p.LS = v);
-                Add("RS (R3)", () => p.RS, v => p.RS = v);
-                Add("View (Select)", () => p.View, v => p.View = v);
-                Add("Menu (Options)", () => p.Menu, v => p.Menu = v);
-                Add("D-pad Up", () => p.DUp, v => p.DUp = v);
-                Add("D-pad Down", () => p.DDown, v => p.DDown = v);
-                Add("D-pad Left", () => p.DLeft, v => p.DLeft = v);
-                Add("D-pad Right", () => p.DRight, v => p.DRight = v);
-                BuildComboSection(() => p.ComboBindings, v => p.ComboBindings = v);
+                Add("A", () => p.A);
+                Add("B", () => p.B);
+                Add("X", () => p.X);
+                Add("Y", () => p.Y);
+                Add("LB", () => p.LB);
+                Add("RB", () => p.RB);
+                Add("LT (trigger)", () => p.LT);
+                Add("RT (trigger)", () => p.RT);
+                Add("LS (L3)", () => p.LS);
+                Add("RS (R3)", () => p.RS);
+                Add("View (Select)", () => p.View);
+                Add("Menu (Options)", () => p.Menu);
+                Add("D-pad Up", () => p.DUp);
+                Add("D-pad Down", () => p.DDown);
+                Add("D-pad Left", () => p.DLeft);
+                Add("D-pad Right", () => p.DRight);
+                BuildComboSection(() => p.ComboBindings);
             }
         }
 
@@ -309,6 +324,7 @@ namespace GamepadKeyboard.UI
             var grid = new Grid { Margin = new Thickness(0, 2, 0, 2) };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
 
             var label = new TextBlock { Text = row.Label, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(label, 0);
@@ -316,10 +332,17 @@ namespace GamepadKeyboard.UI
             FillChoices(row.Box, row.Last);
             row.Box.SelectedIndex = IndexOfAction(row.Box, row.Last);
             row.Box.SelectionChanged += (_, __) => OnRowChanged(row);
+            row.Modifier.IsChecked = row.Get().Modifier;
+            row.Modifier.Visibility = row.AllowModifier ? Visibility.Visible : Visibility.Collapsed;
+            row.Modifier.ToolTip = "Run this standalone action on release only, and only if no other gamepad button was used while it was held.";
+            row.Modifier.Checked += (_, __) => { row.Get().Modifier = true; Persist(); };
+            row.Modifier.Unchecked += (_, __) => { row.Get().Modifier = false; Persist(); };
 
             Grid.SetColumn(row.Box, 1);
+            Grid.SetColumn(row.Modifier, 2);
             grid.Children.Add(label);
             grid.Children.Add(row.Box);
+            grid.Children.Add(row.Modifier);
             return grid;
         }
 
@@ -352,7 +375,7 @@ namespace GamepadKeyboard.UI
                 var captured = KeyCaptureDialog.Capture("Press a keyboard key for [" + row.Label + "]...");
                 if (captured != null)
                 {
-                    row.Set(captured);
+                    row.Get().Action = captured;
                     row.Last = captured;
                     FillChoices(row.Box, captured);
                     row.Box.SelectedIndex = IndexOfAction(row.Box, captured);
@@ -366,7 +389,7 @@ namespace GamepadKeyboard.UI
                 return;
             }
 
-            row.Set(sel);
+            row.Get().Action = sel;
             row.Last = sel;
             if (IndexOfAction(row.Box, sel) < 0)
             {
@@ -378,7 +401,7 @@ namespace GamepadKeyboard.UI
 
         // ── custom combos ────────────────────────────────────────────────────
 
-        private void BuildComboSection(Func<List<string>> get, Action<List<string>> set)
+        private void BuildComboSection(Func<List<CustomComboBinding>> get)
         {
             var list = get();
             _comboPanel.Children.Add(new Separator { Margin = new Thickness(0, 10, 0, 6) });
@@ -391,7 +414,7 @@ namespace GamepadKeyboard.UI
 
             for (int i = 0; i < list.Count; i++)
             {
-                string entry = list[i];
+                CustomComboBinding entry = list[i];
                 var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -399,20 +422,29 @@ namespace GamepadKeyboard.UI
                 var label = new TextBlock { Text = FormatCombo(entry), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
                 Grid.SetColumn(label, 0);
 
-                string captured = entry;
+                string capturedId = entry.Id;
                 var actions = new StackPanel { Orientation = Orientation.Horizontal };
                 var edit = new Button { Content = "Edit", Padding = new Thickness(7, 0, 7, 0), Margin = new Thickness(6, 0, 0, 0) };
-                edit.Click += (_, __) => ShowComboBuilder(get, set, captured);
+                edit.Click += (_, __) => ShowComboBuilder(get, get().FirstOrDefault(x => x.Id == capturedId));
+                var duplicate = new Button { Content = "Duplicate", Padding = new Thickness(7, 0, 7, 0), Margin = new Thickness(4, 0, 0, 0) };
+                duplicate.Click += (_, __) =>
+                {
+                    var source = get().FirstOrDefault(x => x.Id == capturedId);
+                    if (source == null) return;
+                    get().Add(CloneCombo(source));
+                    Persist();
+                    BuildRows();
+                };
                 var del = new Button { Content = "✕", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(4, 0, 0, 0) };
                 del.Click += (_, __) =>
                 {
                     var l = get();
-                    l.Remove(captured);
-                    set(l);
+                    l.RemoveAll(x => x.Id == capturedId);
                     Persist();
                     BuildRows();
                 };
                 actions.Children.Add(edit);
+                actions.Children.Add(duplicate);
                 actions.Children.Add(del);
                 Grid.SetColumn(actions, 1);
 
@@ -428,7 +460,7 @@ namespace GamepadKeyboard.UI
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 4, 0, 0)
             };
-            addBtn.Click += (_, __) => ShowComboBuilder(get, set, null);
+            addBtn.Click += (_, __) => ShowComboBuilder(get, null);
             _comboPanel.Children.Add(addBtn);
 
             _rowsPanel.Children.Add(_comboPanel);
@@ -455,32 +487,34 @@ namespace GamepadKeyboard.UI
         private static string FormatActionForList(string action) =>
             action.StartsWith("Key:", StringComparison.Ordinal) ? action[4..] + " (key)" : action;
 
-        private static string FormatCombo(string entry)
+        private static string FormatCombo(CustomComboBinding entry)
         {
-            int eq = entry.IndexOf('=');
-            if (eq <= 0) return entry;
-            string buttons = entry[..eq];
-            string action = entry[(eq + 1)..];
-            var parts = buttons.Split('+');
-            string text = string.Join(" + ", parts.Select(ButtonLabelShort));
-            return text + "  →  " + FormatActionForList(action);
+            string text = string.Join(" + ", entry.Buttons.Select(ButtonLabelShort));
+            var modifiers = new List<string>();
+            if (entry.Ctrl) modifiers.Add("Ctrl");
+            if (entry.Shift) modifiers.Add("Shift");
+            if (entry.Alt) modifiers.Add("Alt");
+            string action = (modifiers.Count > 0 ? string.Join("+", modifiers) + "+" : "")
+                + FormatActionForList(entry.Action);
+            return text + "  →  " + action + (entry.HoldLast ? "  [hold last]" : "");
         }
 
-        private void ShowComboBuilder(Func<List<string>> get, Action<List<string>> set, string? existingEntry)
+        private static CustomComboBinding CloneCombo(CustomComboBinding source) => new()
+        {
+            Buttons = source.Buttons.ToList(),
+            Action = source.Action,
+            HoldLast = source.HoldLast,
+            Ctrl = source.Ctrl,
+            Shift = source.Shift,
+            Alt = source.Alt
+        };
+
+        private void ShowComboBuilder(Func<List<CustomComboBinding>> get, CustomComboBinding? existingEntry)
         {
             const string Empty = "(none)";
 
-            string[] existingButtons = Array.Empty<string>();
-            string existingAction = "";
-            if (!string.IsNullOrEmpty(existingEntry))
-            {
-                int equals = existingEntry.IndexOf('=');
-                if (equals > 0)
-                {
-                    existingButtons = existingEntry[..equals].Split('+').Select(x => x.Trim()).ToArray();
-                    existingAction = existingEntry[(equals + 1)..].Trim();
-                }
-            }
+            string[] existingButtons = existingEntry?.Buttons.ToArray() ?? Array.Empty<string>();
+            string existingAction = existingEntry?.Action ?? "";
 
             var dlg = new Window
             {
@@ -522,6 +556,28 @@ namespace GamepadKeyboard.UI
             actionBox.SelectedItem = existingAction.Length > 0 ? existingAction : ActionCatalog.All[0];
             root.Children.Add(actionBox);
 
+            var options = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
+            var ctrl = new CheckBox { Content = "Ctrl", IsChecked = existingEntry?.Ctrl == true, Margin = new Thickness(0, 0, 14, 0) };
+            var shift = new CheckBox { Content = "Shift", IsChecked = existingEntry?.Shift == true, Margin = new Thickness(0, 0, 14, 0) };
+            var alt = new CheckBox { Content = "Alt", IsChecked = existingEntry?.Alt == true, Margin = new Thickness(0, 0, 14, 0) };
+            var holdLast = new CheckBox
+            {
+                Content = "Hold action while the last gamepad button is held",
+                IsChecked = existingEntry?.HoldLast == true
+            };
+            options.Children.Add(ctrl);
+            options.Children.Add(shift);
+            options.Children.Add(alt);
+            options.Children.Add(holdLast);
+            root.Children.Add(options);
+            root.Children.Add(new TextBlock
+            {
+                Text = "Selected keyboard modifiers stay down until a gamepad modifier button in this binding is released.",
+                Foreground = Brushes.Gray,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
             var cancel = new Button { Content = "Cancel", Padding = new Thickness(14, 3, 14, 3), Margin = new Thickness(0, 0, 8, 0) };
             var confirm = new Button { Content = "Confirm", Padding = new Thickness(14, 3, 14, 3) };
@@ -548,15 +604,28 @@ namespace GamepadKeyboard.UI
                                   .ToList();
                 if (picked.Count < 2) { MessageBox.Show(dlg, "Pick at least 2 buttons (modifier + trigger).", "Custom binding"); return; }
 
-                string entry = string.Join("+", picked) + "=" + action;
                 var l = get();
                 if (existingEntry != null)
                 {
-                    int index = l.IndexOf(existingEntry);
-                    if (index >= 0) l[index] = entry;
+                    existingEntry.Buttons = picked;
+                    existingEntry.Action = action;
+                    existingEntry.Ctrl = ctrl.IsChecked == true;
+                    existingEntry.Shift = shift.IsChecked == true;
+                    existingEntry.Alt = alt.IsChecked == true;
+                    existingEntry.HoldLast = holdLast.IsChecked == true;
                 }
-                else if (!l.Contains(entry)) l.Add(entry);
-                set(l);
+                else
+                {
+                    l.Add(new CustomComboBinding
+                    {
+                        Buttons = picked,
+                        Action = action,
+                        Ctrl = ctrl.IsChecked == true,
+                        Shift = shift.IsChecked == true,
+                        Alt = alt.IsChecked == true,
+                        HoldLast = holdLast.IsChecked == true
+                    });
+                }
                 Persist();
                 BuildRows();
                 dlg.Close();
@@ -618,10 +687,13 @@ namespace GamepadKeyboard.UI
             // mouse
             "LeftClick", "RightClick", "MiddleClick", "XButton1", "XButton2",
             "ScrollUp", "ScrollDown", "ScrollLeft", "ScrollRight", "SpeedBoost",
+            "MouseMoveUp", "MouseMoveDown", "MouseMoveLeft", "MouseMoveRight",
+            "AnalogScrollUp", "AnalogScrollDown", "AnalogScrollLeft", "AnalogScrollRight",
             // virtual keyboard control
             "SubmitLeft", "SubmitRight",
             // app control
-            "EnableInput", "DisableInput", "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode",
+            "EnableInput", "DisableInput", "ToggleInput",
+            "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode",
             "ToggleMoveScaleKeyboard",
             "ToggleKeyboard", "ToggleLegend",
             "SwitchKeyboardProfile", "SwitchMouseProfile", "SwitchStickPointsProfile",

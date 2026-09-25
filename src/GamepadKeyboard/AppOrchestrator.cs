@@ -133,8 +133,38 @@ namespace GamepadKeyboard
             _mapper.ResetKeyboardCursors();
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             _keyboard.SetPointPositions();
+            if (Settings.AppSettings.Instance.AlwaysShowKeyboardAtCursorPosition)
+                PositionKeyboardAtCursor();
             _keyboard.Show();
             _keyboardShown = true;
+        }
+
+        private void PositionKeyboardAtCursor()
+        {
+            var cursor = Cursor.Position;
+            var screen = Screen.FromPoint(cursor);
+            var dpi = NativeMethods.EffectiveMonitorDpi(cursor.X, cursor.Y);
+            double scaleX = 96.0 / dpi.x;
+            double scaleY = 96.0 / dpi.y;
+            double workLeft = screen.WorkingArea.Left * scaleX;
+            double workTop = screen.WorkingArea.Top * scaleY;
+            double workRight = screen.WorkingArea.Right * scaleX;
+            double workBottom = screen.WorkingArea.Bottom * scaleY;
+            double maxLeft = Math.Max(workLeft, workRight - _keyboard.Width);
+            double maxTop = Math.Max(workTop, workBottom - _keyboard.Height);
+            _keyboard.Left = Math.Clamp(cursor.X * scaleX, workLeft, maxLeft);
+            _keyboard.Top = Math.Clamp(cursor.Y * scaleY, workTop, maxTop);
+        }
+
+        private void ResetKeyboardPosition()
+        {
+            const double defaultLeft = 100;
+            const double defaultTop = 100;
+            _keyboard.Left = defaultLeft;
+            _keyboard.Top = defaultTop;
+            Settings.AppSettings.Instance.OverlayLeft = defaultLeft;
+            Settings.AppSettings.Instance.OverlayTop = defaultTop;
+            Settings.AppSettings.Save();
         }
 
         private void BuildTray()
@@ -186,12 +216,17 @@ namespace GamepadKeyboard
             };
             _overlayItem = overlayItem;
 
+            var resetKeyboardPositionItem = new ToolStripMenuItem("Reset keyboard position");
+            resetKeyboardPositionItem.Click += (_, __) => ResetKeyboardPosition();
+
             var adminItem = new ToolStripMenuItem();
             adminItem.Text = Util.LaunchUtil.IsAdmin() ? "Run as User" : "Run as Administrator";
             adminItem.Click += (_, __) =>
             {
                 if (Util.LaunchUtil.IsAdmin())
                 {
+                    Settings.AppSettings.Instance.AdminLaunch = false;
+                    Settings.AppSettings.Save();
                     Util.LaunchUtil.RestartAsUser();
                 }
                 else
@@ -205,13 +240,19 @@ namespace GamepadKeyboard
 
             var startupItem = new ToolStripMenuItem("Run on Windows startup");
             startupItem.CheckOnClick = true;
-            startupItem.Checked = Util.LaunchUtil.StartupShortcutExists();
+            startupItem.Checked = Util.LaunchUtil.StartupShortcutExists()
+                || Util.LaunchUtil.AdminStartupExists();
             startupItem.Click += (_, __) =>
             {
                 bool on = startupItem.Checked;
                 Settings.AppSettings.Instance.RunOnStartup = on;
                 Settings.AppSettings.Save();
-                if (on) Util.LaunchUtil.CreateStartupShortcut();
+                bool elevatedStartup = on
+                    && Settings.AppSettings.Instance.AdminLaunch
+                    && Util.LaunchUtil.IsAdmin();
+                if (Util.LaunchUtil.IsAdmin())
+                    Util.LaunchUtil.SetAdminStartup(elevatedStartup);
+                if (on && !elevatedStartup) Util.LaunchUtil.CreateStartupShortcut();
                 else Util.LaunchUtil.RemoveStartupShortcut();
             };
 
@@ -227,6 +268,7 @@ namespace GamepadKeyboard
 
             menu.Items.Add(enabledItem);
             menu.Items.Add(overlayItem);
+            menu.Items.Add(resetKeyboardPositionItem);
             menu.Items.Add(monitorItem);
             menu.Items.Add(diagItem);
             menu.Items.Add(settingsItem);
@@ -477,20 +519,22 @@ namespace GamepadKeyboard
                 var p = Settings.AppSettings.Instance.MouseProfile;
                 return new (string, string)[]
                 {
-                    ("A", p.A), ("B", p.B), ("X", p.X), ("Y", p.Y),
-                    ("LB", p.LB), ("RB", p.RB), ("LT", p.LT), ("RT", p.RT),
-                    ("DUp", p.DUp), ("DDown", p.DDown), ("DLeft", p.DLeft), ("DRight", p.DRight)
+                    ("A", p.A.Action), ("B", p.B.Action), ("X", p.X.Action), ("Y", p.Y.Action),
+                    ("LB", p.LB.Action), ("RB", p.RB.Action), ("LT", p.LT.Action), ("RT", p.RT.Action),
+                    ("Left stick", p.LUp.Action + "/" + p.LDown.Action + "/" + p.LLeft.Action + "/" + p.LRight.Action),
+                    ("Right stick", p.RUp.Action + "/" + p.RDown.Action + "/" + p.RLeft.Action + "/" + p.RRight.Action),
+                    ("DUp", p.DUp.Action), ("DDown", p.DDown.Action),
+                    ("DLeft", p.DLeft.Action), ("DRight", p.DRight.Action)
                 };
             }
             var k = Settings.AppSettings.Instance.Profile;
             return new (string, string)[]
             {
-                ("A", k.A), ("B", k.B), ("X", k.X), ("Y", k.Y),
-                ("LB", k.LB), ("RB", k.RB), ("LT", k.LT), ("RT", k.RT),
-                ("LStick", k.LS), ("RStick", k.RS),
-                ("D-pad", k.DUp + "/" + k.DDown + "/" + k.DLeft + "/" + k.DRight),
-                ("Y+D-pad", k.YDUp + "/" + k.YDDown + "/" + k.YDLeft + "/" + k.YDRight),
-                ("View", k.View), ("Menu", k.Menu)
+                ("A", k.A.Action), ("B", k.B.Action), ("X", k.X.Action), ("Y", k.Y.Action),
+                ("LB", k.LB.Action), ("RB", k.RB.Action), ("LT", k.LT.Action), ("RT", k.RT.Action),
+                ("LStick", k.LS.Action), ("RStick", k.RS.Action),
+                ("D-pad", k.DUp.Action + "/" + k.DDown.Action + "/" + k.DLeft.Action + "/" + k.DRight.Action),
+                ("View", k.View.Action), ("Menu", k.Menu.Action)
             };
         }
 

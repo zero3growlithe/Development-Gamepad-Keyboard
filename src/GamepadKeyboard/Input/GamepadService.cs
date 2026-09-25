@@ -21,6 +21,7 @@ namespace GamepadKeyboard.Input
         private DateTime _lastPollErrorLog = DateTime.MinValue;
         private int _resetCachesRequested;
         private int _preferredXInputSlot = -1;
+        private int _preferredXInputFailures;
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -122,6 +123,7 @@ namespace GamepadKeyboard.Input
                     {
                         if (!TryReadXInput(i, out var snap) || !snap.AnyInput) continue;
                         _preferredXInputSlot = i;
+                        _preferredXInputFailures = 0;
                         chosen = snap;
                         chosenName = "XInput slot " + i;
                         foundIdle = anyInput = sourceSelected = true;
@@ -204,10 +206,24 @@ namespace GamepadKeyboard.Input
             if (_preferredXInputSlot < 0) return false;
             if (!TryReadXInput(_preferredXInputSlot, out var snap))
             {
+                _preferredXInputFailures++;
+                if (_preferredXInputFailures <= Math.Max(30, PollHz * 2))
+                {
+                    // Some XInput stacks briefly return DEVICE_NOT_CONNECTED while
+                    // a synthetic mouse button is injected or a hidden device node
+                    // is refreshed. Keep ownership of this slot and retry instead of
+                    // permanently falling over to a stale WGI/raw source.
+                    chosen = default;
+                    chosenName = "XInput slot " + _preferredXInputSlot;
+                    foundIdle = true;
+                    return true;
+                }
                 _preferredXInputSlot = -1;
+                _preferredXInputFailures = 0;
                 return false;
             }
 
+            _preferredXInputFailures = 0;
             chosen = snap;
             chosenName = "XInput slot " + _preferredXInputSlot;
             foundIdle = true;
@@ -334,7 +350,9 @@ namespace GamepadKeyboard.Input
             _calibrations.Clear();
             _buttonMaps.Clear();
             _rawBuffers.Clear();
-            _preferredXInputSlot = -1;
+            // Raw/WGI device-list churn (including HidHide refreshes) must not
+            // discard a healthy XInput source. TryReadPreferredXInput owns its
+            // disconnect grace period and clears the slot only after sustained failure.
         }
 
         private void ForgetRawController(Windows.Gaming.Input.RawGameController raw)

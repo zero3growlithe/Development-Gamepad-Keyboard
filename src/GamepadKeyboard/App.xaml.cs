@@ -24,7 +24,22 @@ namespace GamepadKeyboard
 
             base.OnStartup(e);
 
+            Settings.AppSettings.Load();
+            if (Settings.AppSettings.Instance.AdminLaunch
+                && !Util.LaunchUtil.IsAdmin()
+                && Util.LaunchUtil.RestartElevated())
+            {
+                Shutdown();
+                return;
+            }
+
             _singleInstanceMutex = new Mutex(true, "DevelopmentGamepadKeyboard_SingleInstance", out bool isNew);
+            if (!isNew && Array.Exists(e.Args,
+                    arg => string.Equals(arg, "--elevated-restart", StringComparison.OrdinalIgnoreCase)))
+            {
+                try { isNew = _singleInstanceMutex.WaitOne(TimeSpan.FromSeconds(3)); }
+                catch (AbandonedMutexException) { isNew = true; }
+            }
             if (!isNew)
             {
                 Shutdown();
@@ -33,7 +48,6 @@ namespace GamepadKeyboard
 
             Log("=== launch ===");
 
-            Settings.AppSettings.Load();
             Input.GamepadSnapshot.Deadzone = Settings.AppSettings.Instance.StickDeadzone;
             // overlay position is restored in KeyboardOverlay ctor via OverlayLeft/Top
 

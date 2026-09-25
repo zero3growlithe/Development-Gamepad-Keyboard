@@ -12,17 +12,19 @@ namespace GamepadKeyboard.Input
     {
         public void TapKey(ushort vk, bool extended = false)
         {
-            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
+            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[2];
             inputs[0] = KeyInput(vk, true, extended);
+            inputs[1] = KeyInput(vk, false, extended);
             Dispatch(inputs);
         }
 
         public void TapKey(ushort vk, ushort modifier)
         {
-            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[3];
+            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[4];
             inputs[0] = KeyInput(modifier, true);
             inputs[1] = KeyInput(vk, true);
             inputs[2] = KeyInput(vk, false);
+            inputs[3] = KeyInput(modifier, false);
             Dispatch(inputs);
         }
 
