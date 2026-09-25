@@ -35,6 +35,7 @@ namespace GamepadKeyboard
             App.Log("input enabled -> " + enabled);
             InputEnabled = enabled;
             if (!enabled) ReleaseAllModifiers();
+            InputEnabledChanged?.Invoke(enabled);
             Notification?.Invoke(enabled ? "Input ENABLED — gamepad controls the PC"
                                          : "Input DISABLED — gamepad free for games");
             StateChanged?.Invoke();
@@ -98,6 +99,7 @@ namespace GamepadKeyboard
         /// <summary>Raised when disable/enable happens or profile changes (UI toast).</summary>
         public event Action<string>? Notification;
         public event Action? StateChanged;
+        public event Action<bool>? InputEnabledChanged;
 
         public ControllerMapper(KeyboardLayout layout)
         {

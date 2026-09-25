@@ -49,6 +49,9 @@ namespace GamepadKeyboard.UI
         private readonly CheckBox _runAdmin = new() { Content = "Run as Administrator every launch (UAC on startup)" };
         private readonly CheckBox _startup = new() { Content = "Run on Windows startup" };
         private readonly CheckBox _startMouse = new() { Content = "Start in mouse mode" };
+        private readonly CheckBox _hidHideSession = new() { Content = "Reserve selected controllers while input is enabled" };
+        private readonly TextBlock _hidHideSelection = new() { VerticalAlignment = VerticalAlignment.Center };
+        private List<string> _hidHidePaths = new();
         private readonly List<Action> _numericValidators = new();
 
         public SettingsWindow()
@@ -79,6 +82,9 @@ namespace GamepadKeyboard.UI
             _runAdmin.IsChecked = s.AdminLaunch;
             _startup.IsChecked = s.RunOnStartup;
             _startMouse.IsChecked = s.StartInMouseMode;
+            _hidHideSession.IsChecked = s.HidHideSessionEnabled;
+            _hidHidePaths = s.HidHideDeviceInstancePaths.ToList();
+            UpdateHidHideSelectionText();
 
             var grid = new Grid { Margin = new Thickness(12) };
             ConfigureNumericValidation(_spacing, value => value >= 0, "0.#");
@@ -155,6 +161,7 @@ namespace GamepadKeyboard.UI
             _runAdmin.Margin = new Thickness(12, 8, 12, 0);
             _startup.Margin = new Thickness(12, 4, 12, 0);
             _startMouse.Margin = new Thickness(12, 4, 12, 0);
+            outer.Children.Add(BuildHidHideSection());
             outer.Children.Add(editors);
             outer.Children.Add(buttons);
             buttons.Margin = new Thickness(0, 12, 12, 12);
@@ -183,6 +190,10 @@ namespace GamepadKeyboard.UI
             s.ShowButtonLegend = _legend.IsChecked == true;
             s.ProfileToastPermanent = _toastPermanent.IsChecked == true;
             s.StartInMouseMode = _startMouse.IsChecked == true;
+            s.HidHideSessionEnabled = _hidHideSession.IsChecked == true;
+            s.HidHideDeviceInstancePaths = _hidHidePaths
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             bool wantAdmin = _runAdmin.IsChecked == true;
             bool wantStartup = _startup.IsChecked == true;
@@ -202,6 +213,65 @@ namespace GamepadKeyboard.UI
             }
 
             Settings.AppSettings.Save();
+            AppOrchestrator.NotifyHidHideSettingsChanged();
+        }
+
+        private FrameworkElement BuildHidHideSection()
+        {
+            var select = new Button
+            {
+                Content = "Select controllers…",
+                Padding = new Thickness(10, 3, 10, 3),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            select.Click += (_, __) =>
+            {
+                var dialog = new HidHideDevicesWindow(_hidHidePaths) { Owner = this };
+                if (dialog.ShowDialog() == true)
+                {
+                    _hidHidePaths = dialog.SelectedPaths.ToList();
+                    UpdateHidHideSelectionText();
+                }
+            };
+
+            var configure = new Button
+            {
+                Content = "Open HidHide configuration…",
+                Padding = new Thickness(10, 3, 10, 3)
+            };
+            configure.Click += (_, __) =>
+            {
+                if (!Input.HidHideDeviceCatalog.TryOpenConfiguration(out string error))
+                    MessageBox.Show(this, error, "HidHide", MessageBoxButton.OK, MessageBoxImage.Warning);
+            };
+
+            var controls = new WrapPanel { Margin = new Thickness(0, 6, 0, 4) };
+            controls.Children.Add(select);
+            controls.Children.Add(configure);
+            controls.Children.Add(_hidHideSelection);
+            _hidHideSelection.Margin = new Thickness(10, 4, 0, 0);
+
+            var instructions = new TextBlock
+            {
+                Text = "Session-only safety mode. In HidHide, add this app to Applications, enable device hiding, " +
+                       "and leave inverse cloak off. An unsupported driver fails open; persistent hiding is never used.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brushes.DimGray,
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+
+            var panel = new StackPanel { Margin = new Thickness(12, 12, 12, 4) };
+            panel.Children.Add(_hidHideSession);
+            panel.Children.Add(controls);
+            panel.Children.Add(instructions);
+            return new GroupBox { Header = "HidHide controller reservation", Content = panel, Margin = new Thickness(12, 10, 12, 0) };
+        }
+
+        private void UpdateHidHideSelectionText()
+        {
+            _hidHideSelection.Text = _hidHidePaths.Count == 0
+                ? "No controller selected"
+                : $"{_hidHidePaths.Count} device path{(_hidHidePaths.Count == 1 ? "" : "s")} selected";
         }
 
         private void ConfigureNumericValidation(TextBox input, Func<double, bool> inRange, string format)

@@ -18,6 +18,7 @@ namespace GamepadKeyboard
     {
         private readonly Input.GamepadService _pad = new();
         private readonly ControllerMapper _mapper;
+        private readonly HidHideSession _hidHide = new();
         private readonly KeyboardOverlay _keyboard;
         private readonly StatusToastOverlay _toast = new();
         private readonly LegendOverlay _legend = new();
@@ -42,6 +43,7 @@ namespace GamepadKeyboard
 
             _pad.StateChanged += OnPad;
             _mapper.StateChanged += RefreshUi;
+            _mapper.InputEnabledChanged += OnInputEnabledChanged;
             _mapper.Notification += msg =>
                 _keyboard.Dispatcher.BeginInvoke(() =>
                 {
@@ -104,6 +106,13 @@ namespace GamepadKeyboard
             NotifyMappingsChanged();
         }
 
+        public static void NotifyHidHideSettingsChanged()
+        {
+            var o = _current;
+            if (o == null) return;
+            o.ApplyHidHideState(o._mapper.InputEnabled, refresh: true);
+        }
+
         private static AppOrchestrator? _current;
 
         private bool _keyboardShown;
@@ -144,7 +153,11 @@ namespace GamepadKeyboard
                 var lines = new System.Collections.Generic.List<string>(_pad.Diagnostics())
                 {
                     "input enabled: " + _mapper.InputEnabled,
-                    "mouse mode: " + _mapper.MouseMode
+                    "mouse mode: " + _mapper.MouseMode,
+                    "HidHide session reservation: " +
+                        (Settings.AppSettings.Instance.HidHideSessionEnabled
+                            ? (_hidHide.IsClaimed ? "claimed" : "enabled, not claimed")
+                            : "disabled")
                 };
                 System.Windows.MessageBox.Show(string.Join(Environment.NewLine, lines),
                     "Gamepad diagnostics", MessageBoxButton_OK(), MessageBoxImage_Information());
@@ -264,6 +277,48 @@ namespace GamepadKeyboard
                 // rays move every reading — refresh on the UI thread
                 _keyboard.Dispatcher.BeginInvoke(RefreshUiCore);
             }
+        }
+
+        private void OnInputEnabledChanged(bool enabled)
+        {
+            ApplyHidHideState(enabled, refresh: false);
+        }
+
+        private void ApplyHidHideState(bool inputEnabled, bool refresh)
+        {
+            HidHideResult result;
+            try
+            {
+                result = HidHideResult.Ok;
+                if (refresh && _hidHide.IsClaimed)
+                    result = _hidHide.Release();
+
+                if (result.Success)
+                {
+                    var settings = Settings.AppSettings.Instance;
+                    result = inputEnabled && settings.HidHideSessionEnabled
+                        ? _hidHide.Claim(settings.HidHideDeviceInstancePaths)
+                        : _hidHide.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                result = HidHideResult.Failure("session reservation failed unexpectedly (" + ex.Message + "). No persistent fallback was used.");
+            }
+
+            if (result.Success)
+            {
+                App.Log("HidHide session reservation: " + (_hidHide.IsClaimed ? "claimed" : "released"));
+                return;
+            }
+
+            string message = "HidHide: " + result.Error;
+            App.Log(message);
+            _keyboard.Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => _toast.ShowStatus(message,
+                    Settings.AppSettings.Instance.ProfileToastSeconds,
+                    permanent: false)));
         }
 
         private void RefreshUi()
@@ -387,6 +442,10 @@ namespace GamepadKeyboard
         public void Dispose()
         {
             if (_current == this) _current = null;
+            _mapper.InputEnabledChanged -= OnInputEnabledChanged;
+            var release = _hidHide.Release();
+            if (!release.Success) App.Log("HidHide shutdown release: " + release.Error);
+            _hidHide.Dispose();
             _pad.Dispose();
             _toast.Close();
             if (_tray != null)

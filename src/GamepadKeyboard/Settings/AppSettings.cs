@@ -43,6 +43,8 @@ namespace GamepadKeyboard.Settings
         public int ProfileToastSeconds { get; set; } = 3;
         public bool ProfileToastPermanent { get; set; } = false;
         public bool StartInMouseMode { get; set; } = true;
+        public bool HidHideSessionEnabled { get; set; } = false;
+        public List<string> HidHideDeviceInstancePaths { get; set; } = new();
         public int ActiveProfile { get; set; } = 0;
         public int ActiveMouseProfile { get; set; } = 0;
         public int ActiveStickPointsProfile { get; set; } = 0;
@@ -130,6 +132,11 @@ namespace GamepadKeyboard.Settings
             KeyboardProfiles ??= new List<KeyboardProfile>();
             MouseProfiles ??= new List<MouseProfile>();
             StickPointsProfiles ??= new List<StickPointsProfile>();
+            HidHideDeviceInstancePaths ??= new List<string>();
+            HidHideDeviceInstancePaths = HidHideDeviceInstancePaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
             if (KeyboardProfiles.Count == 0) KeyboardProfiles.Add(new KeyboardProfile());
             if (MouseProfiles.Count == 0) MouseProfiles.Add(new MouseProfile());
             foreach (var profile in KeyboardProfiles) profile.ComboBindings ??= new List<string>();

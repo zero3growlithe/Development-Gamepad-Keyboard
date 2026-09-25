@@ -16,6 +16,13 @@ Background tray app for Xbox 360 / One / Series and DualShock 4 / DualSense cont
 - **Button legend overlay** for new users, position/size adjustable
 - Tray icon: Settings / About / Run as Administrator or User / Run on startup / Exit
 - Starts as a normal user; optional admin mode (Task Scheduler entry = no UAC prompt at logon)
+- Optional **session-only HidHide reservation** keeps selected controllers exclusive to this app while input is enabled and releases them on `DisableInput` or process exit
+
+## Optional HidHide controller reservation
+
+In Settings, enable **Reserve selected controllers while input is enabled** and choose the controller(s). In HidHide Configuration Client, add this app to the Applications list, enable device hiding, and leave inverse cloak disabled.
+
+This integration requires a HidHide driver that implements the process-lifetime session blacklist IOCTLs (functions 2056/2057). It never edits HidHide's persistent device list. Missing, older, inactive, inversely configured, or otherwise incompatible drivers fail open and show a toast instead of hiding the controller.
 
 ## Building
 
