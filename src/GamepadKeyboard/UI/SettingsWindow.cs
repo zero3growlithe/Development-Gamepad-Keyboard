@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace GamepadKeyboard.UI
@@ -37,6 +40,7 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _mouseDeadzone = new() { Text = "" };
         private readonly CheckBox _cursorLag = new() { Content = "Enable cursor lag" };
         private readonly TextBox _cursorLagSeconds = new() { Text = "" };
+        private readonly CheckBox _hideLagRays = new() { Content = "Hide rays in cursor lag mode" };
         private readonly CheckBox _freeCursor = new() { Content = "Enable free cursor" };
         private readonly TextBox _freeCursorSpeed = new() { Text = "" };
         private readonly CheckBox _hideCentersAndRays = new() { Content = "Hide center points and rays in free cursor mode" };
@@ -45,6 +49,7 @@ namespace GamepadKeyboard.UI
         private readonly CheckBox _runAdmin = new() { Content = "Run as Administrator every launch (UAC on startup)" };
         private readonly CheckBox _startup = new() { Content = "Run on Windows startup" };
         private readonly CheckBox _startMouse = new() { Content = "Start in mouse mode" };
+        private readonly List<Action> _numericValidators = new();
 
         public SettingsWindow()
         {
@@ -65,6 +70,7 @@ namespace GamepadKeyboard.UI
             _mouseDeadzone.Text = s.MouseStickDeadzone.ToString("0.###");
             _cursorLag.IsChecked = s.CursorLagEnabled;
             _cursorLagSeconds.Text = s.CursorLagSeconds.ToString("0.###");
+            _hideLagRays.IsChecked = s.HideRaysInCursorLag;
             _freeCursor.IsChecked = s.FreeCursorEnabled;
             _freeCursorSpeed.Text = s.FreeCursorSpeed.ToString("0.#");
             _hideCentersAndRays.IsChecked = s.HideCenterPointsAndRaysInFreeCursor;
@@ -75,7 +81,16 @@ namespace GamepadKeyboard.UI
             _startMouse.IsChecked = s.StartInMouseMode;
 
             var grid = new Grid { Margin = new Thickness(12) };
-            for (int i = 0; i < 15; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            ConfigureNumericValidation(_spacing, value => value >= 0, "0.#");
+            ConfigureNumericValidation(_mouseSpeed, value => value > 0, "0.#");
+            ConfigureNumericValidation(_boost, value => value >= 1, "0.##");
+            ConfigureNumericValidation(_scroll, value => value > 0, "0.#");
+            ConfigureNumericValidation(_deadzone, value => value is >= 0 and <= 0.5, "0.###");
+            ConfigureNumericValidation(_mouseDeadzone, value => value is >= 0 and <= 0.5, "0.###");
+            ConfigureNumericValidation(_cursorLagSeconds, value => value >= 0, "0.###");
+            ConfigureNumericValidation(_freeCursorSpeed, value => value > 0, "0.#");
+
+            for (int i = 0; i < 16; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(285) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -99,11 +114,12 @@ namespace GamepadKeyboard.UI
             AddRow(7, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
             AddRow(8, "", _cursorLag);
             AddRow(9, "Cursor lag (seconds; 0 = instant):", _cursorLagSeconds);
-            AddRow(10, "", _freeCursor);
-            AddRow(11, "Free cursor speed (px/second):", _freeCursorSpeed);
-            AddRow(12, "", _hideCentersAndRays);
-            AddRow(13, "", _legend);
-            AddRow(14, "", _toastPermanent);
+            AddRow(10, "", _hideLagRays);
+            AddRow(11, "", _freeCursor);
+            AddRow(12, "Free cursor speed (px/second):", _freeCursorSpeed);
+            AddRow(13, "", _hideCentersAndRays);
+            AddRow(14, "", _legend);
+            AddRow(15, "", _toastPermanent);
 
             // WrapPanel: three wide buttons wrap to the next line instead of
             // being clipped off the 460 px window edge
@@ -148,19 +164,21 @@ namespace GamepadKeyboard.UI
 
         private void Save()
         {
+            ValidateNumericFields();
             var s = Settings.AppSettings.Instance;
-            if (double.TryParse(_spacing.Text, out var spacing) && spacing >= 0) s.KeySpacing = spacing;
-            if (double.TryParse(_mouseSpeed.Text, out var ms) && ms > 0) s.MouseSpeed = ms;
-            if (double.TryParse(_boost.Text, out var boost) && boost >= 1) s.MouseSpeedBoostMultiplier = boost;
-            if (double.TryParse(_scroll.Text, out var scroll) && scroll > 0) s.ScrollSpeed = scroll;
+            s.KeySpacing = ReadValidatedNumber(_spacing);
+            s.MouseSpeed = ReadValidatedNumber(_mouseSpeed);
+            s.MouseSpeedBoostMultiplier = ReadValidatedNumber(_boost);
+            s.ScrollSpeed = ReadValidatedNumber(_scroll);
             s.InvertVerticalScroll = _invertScroll.IsChecked == true;
             s.InvertHorizontalScroll = _invertHorizontalScroll.IsChecked == true;
-            if (double.TryParse(_deadzone.Text, out var dz) && dz >= 0 && dz <= 0.5) s.StickDeadzone = dz;
-            if (double.TryParse(_mouseDeadzone.Text, out var mdz) && mdz >= 0 && mdz <= 0.5) s.MouseStickDeadzone = mdz;
+            s.StickDeadzone = ReadValidatedNumber(_deadzone);
+            s.MouseStickDeadzone = ReadValidatedNumber(_mouseDeadzone);
             s.CursorLagEnabled = _cursorLag.IsChecked == true;
-            if (double.TryParse(_cursorLagSeconds.Text, out var lag) && lag >= 0) s.CursorLagSeconds = lag;
+            s.CursorLagSeconds = ReadValidatedNumber(_cursorLagSeconds);
+            s.HideRaysInCursorLag = _hideLagRays.IsChecked == true;
             s.FreeCursorEnabled = _freeCursor.IsChecked == true;
-            if (double.TryParse(_freeCursorSpeed.Text, out var cursorSpeed) && cursorSpeed > 0) s.FreeCursorSpeed = cursorSpeed;
+            s.FreeCursorSpeed = ReadValidatedNumber(_freeCursorSpeed);
             s.HideCenterPointsAndRaysInFreeCursor = _hideCentersAndRays.IsChecked == true;
             s.ShowButtonLegend = _legend.IsChecked == true;
             s.ProfileToastPermanent = _toastPermanent.IsChecked == true;
@@ -185,6 +203,40 @@ namespace GamepadKeyboard.UI
 
             Settings.AppSettings.Save();
         }
+
+        private void ConfigureNumericValidation(TextBox input, Func<double, bool> inRange, string format)
+        {
+            string previousValue = input.Text;
+
+            void Validate()
+            {
+                if (double.TryParse(input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value)
+                    && double.IsFinite(value)
+                    && inRange(value))
+                {
+                    previousValue = value.ToString(format, CultureInfo.CurrentCulture);
+                }
+                input.Text = previousValue;
+            }
+
+            input.LostKeyboardFocus += (_, __) => Validate();
+            input.KeyDown += (_, e) =>
+            {
+                if (e.Key != Key.Enter) return;
+                Validate();
+                e.Handled = true;
+            };
+            _numericValidators.Add(Validate);
+        }
+
+        private void ValidateNumericFields()
+        {
+            foreach (var validate in _numericValidators)
+                validate();
+        }
+
+        private static double ReadValidatedNumber(TextBox input) =>
+            double.Parse(input.Text, NumberStyles.Float, CultureInfo.CurrentCulture);
 
         protected override void OnClosed(EventArgs e)
         {

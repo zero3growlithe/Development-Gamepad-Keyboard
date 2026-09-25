@@ -271,7 +271,9 @@ namespace GamepadKeyboard.Overlay
             }
 
             bool showRay = !(AppSettings.Instance.FreeCursorEnabled
-                && AppSettings.Instance.HideCenterPointsAndRaysInFreeCursor);
+                && AppSettings.Instance.HideCenterPointsAndRaysInFreeCursor)
+                && !(AppSettings.Instance.CursorLagEnabled
+                    && AppSettings.Instance.HideRaysInCursorLag);
             ray.Visibility = showRay ? Visibility.Visible : Visibility.Collapsed;
             ray.X1 = ox; ray.Y1 = oy;
             ray.X2 = rayX;

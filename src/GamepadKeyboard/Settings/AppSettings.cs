@@ -27,6 +27,7 @@ namespace GamepadKeyboard.Settings
         public bool InvertHorizontalScroll { get; set; } = false;
         public bool CursorLagEnabled { get; set; } = false;
         public double CursorLagSeconds { get; set; } = 0.15;
+        public bool HideRaysInCursorLag { get; set; } = false;
         public bool FreeCursorEnabled { get; set; } = false;
         public double FreeCursorSpeed { get; set; } = 420.0;
         public bool HideCenterPointsAndRaysInFreeCursor { get; set; } = false;
