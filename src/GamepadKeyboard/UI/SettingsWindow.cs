@@ -32,6 +32,7 @@ namespace GamepadKeyboard.UI
         }
 
         private readonly TextBox _spacing = new() { Text = "" };
+        private readonly TextBox _keyboardMoveSpeed = new() { Text = "" };
         private readonly TextBox _mouseSpeed = new() { Text = "" };
         private readonly TextBox _boost = new() { Text = "" };
         private readonly TextBox _scroll = new() { Text = "" };
@@ -39,6 +40,16 @@ namespace GamepadKeyboard.UI
         private readonly CheckBox _invertHorizontalScroll = new() { Content = "Invert horizontal mouse scroll direction" };
         private readonly TextBox _deadzone = new() { Text = "" };
         private readonly TextBox _mouseDeadzone = new() { Text = "" };
+        private readonly TextBox _curveExponent = new()
+        {
+            Text = "",
+            ToolTip = "Below 1 responds quickly near the center; 1 is linear; above 1 starts gently and rises toward the edge."
+        };
+        private readonly CheckBox _swapSticks = new()
+        {
+            Content = "Swap left/right analog stick roles",
+            ToolTip = "Keyboard adjustment: left moves and right scales. Mouse mode: left moves the cursor and right scrolls."
+        };
         private readonly CheckBox _cursorLag = new() { Content = "Enable cursor lag" };
         private readonly TextBox _cursorLagSeconds = new() { Text = "" };
         private readonly CheckBox _hideLagRays = new() { Content = "Hide rays in cursor lag mode" };
@@ -61,11 +72,13 @@ namespace GamepadKeyboard.UI
             Title = "Development Gamepad Keyboard — Settings";
             Width = 560;
             SizeToContent = SizeToContent.Height;
+            MaxHeight = SystemParameters.WorkArea.Height * 0.9;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
             var s = Settings.AppSettings.Instance;
             _spacing.Text = s.KeySpacing.ToString("0.#");
+            _keyboardMoveSpeed.Text = s.OverlayMoveSpeed.ToString("0.#");
             _mouseSpeed.Text = s.MouseSpeed.ToString("0.#");
             _boost.Text = s.MouseSpeedBoostMultiplier.ToString("0.##");
             _scroll.Text = s.ScrollSpeed.ToString("0.#");
@@ -73,6 +86,8 @@ namespace GamepadKeyboard.UI
             _invertHorizontalScroll.IsChecked = s.InvertHorizontalScroll;
             _deadzone.Text = s.StickDeadzone.ToString("0.###");
             _mouseDeadzone.Text = s.MouseStickDeadzone.ToString("0.###");
+            _curveExponent.Text = s.AnalogStickCurveExponent.ToString("0.##");
+            _swapSticks.IsChecked = s.SwapAnalogSticks;
             _cursorLag.IsChecked = s.CursorLagEnabled;
             _cursorLagSeconds.Text = s.CursorLagSeconds.ToString("0.###");
             _hideLagRays.IsChecked = s.HideRaysInCursorLag;
@@ -91,15 +106,17 @@ namespace GamepadKeyboard.UI
 
             var grid = new Grid { Margin = new Thickness(12) };
             ConfigureNumericValidation(_spacing, value => value >= 0, "0.#");
+            ConfigureNumericValidation(_keyboardMoveSpeed, value => value > 0, "0.#");
             ConfigureNumericValidation(_mouseSpeed, value => value > 0, "0.#");
             ConfigureNumericValidation(_boost, value => value >= 1, "0.##");
             ConfigureNumericValidation(_scroll, value => value > 0, "0.#");
             ConfigureNumericValidation(_deadzone, value => value is >= 0 and <= 0.5, "0.###");
             ConfigureNumericValidation(_mouseDeadzone, value => value is >= 0 and <= 0.5, "0.###");
+            ConfigureNumericValidation(_curveExponent, value => value is >= 0.1 and <= 5, "0.##");
             ConfigureNumericValidation(_cursorLagSeconds, value => value >= 0, "0.###");
             ConfigureNumericValidation(_freeCursorSpeed, value => value > 0, "0.#");
 
-            for (int i = 0; i < 16; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int i = 0; i < 19; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(285) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -114,21 +131,24 @@ namespace GamepadKeyboard.UI
             }
 
             AddRow(0, "Key spacing (px gap between keys):", _spacing);
-            AddRow(1, "Mouse speed (px per stick unit):", _mouseSpeed);
-            AddRow(2, "Mouse speed boost multiplier:", _boost);
-            AddRow(3, "Scroll speed:", _scroll);
-            AddRow(4, "", _invertScroll);
-            AddRow(5, "", _invertHorizontalScroll);
-            AddRow(6, "Stick deadzone keyboard mode (0.000–0.5):", _deadzone);
-            AddRow(7, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
-            AddRow(8, "", _cursorLag);
-            AddRow(9, "Cursor lag (seconds; 0 = instant):", _cursorLagSeconds);
-            AddRow(10, "", _hideLagRays);
-            AddRow(11, "", _freeCursor);
-            AddRow(12, "Free cursor speed (px/second):", _freeCursorSpeed);
-            AddRow(13, "", _hideCentersAndRays);
-            AddRow(14, "", _legend);
-            AddRow(15, "", _toastPermanent);
+            AddRow(1, "Keyboard move speed:", _keyboardMoveSpeed);
+            AddRow(2, "Mouse speed (px per stick unit):", _mouseSpeed);
+            AddRow(3, "Mouse speed boost multiplier:", _boost);
+            AddRow(4, "Scroll speed:", _scroll);
+            AddRow(5, "", _invertScroll);
+            AddRow(6, "", _invertHorizontalScroll);
+            AddRow(7, "Stick deadzone keyboard mode (0.000–0.5):", _deadzone);
+            AddRow(8, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
+            AddRow(9, "Analog sensitivity curve (0.1–5; 1 = linear):", _curveExponent);
+            AddRow(10, "", _swapSticks);
+            AddRow(11, "", _cursorLag);
+            AddRow(12, "Cursor lag (seconds; 0 = instant):", _cursorLagSeconds);
+            AddRow(13, "", _hideLagRays);
+            AddRow(14, "", _freeCursor);
+            AddRow(15, "Free cursor speed (px/second):", _freeCursorSpeed);
+            AddRow(16, "", _hideCentersAndRays);
+            AddRow(17, "", _legend);
+            AddRow(18, "", _toastPermanent);
 
             // WrapPanel: three wide buttons wrap to the next line instead of
             // being clipped off the 460 px window edge
@@ -169,14 +189,28 @@ namespace GamepadKeyboard.UI
             outer.Children.Add(buttons);
             buttons.Margin = new Thickness(0, 12, 12, 12);
 
-            Content = outer;
+            Content = new ScrollViewer
+            {
+                Content = outer,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
         }
 
         private void Save()
         {
             ValidateNumericFields();
             var s = Settings.AppSettings.Instance;
+            var selectedHidHidePaths = _hidHidePaths
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            bool hidHideChanged = s.HidHideSessionEnabled != (_hidHideSession.IsChecked == true)
+                || s.HidHideLegacyFallbackEnabled != (_hidHideLegacy.IsChecked == true)
+                || !new HashSet<string>(s.HidHideDeviceInstancePaths, StringComparer.OrdinalIgnoreCase)
+                    .SetEquals(selectedHidHidePaths);
+
             s.KeySpacing = ReadValidatedNumber(_spacing);
+            s.OverlayMoveSpeed = ReadValidatedNumber(_keyboardMoveSpeed);
             s.MouseSpeed = ReadValidatedNumber(_mouseSpeed);
             s.MouseSpeedBoostMultiplier = ReadValidatedNumber(_boost);
             s.ScrollSpeed = ReadValidatedNumber(_scroll);
@@ -184,6 +218,8 @@ namespace GamepadKeyboard.UI
             s.InvertHorizontalScroll = _invertHorizontalScroll.IsChecked == true;
             s.StickDeadzone = ReadValidatedNumber(_deadzone);
             s.MouseStickDeadzone = ReadValidatedNumber(_mouseDeadzone);
+            s.AnalogStickCurveExponent = ReadValidatedNumber(_curveExponent);
+            s.SwapAnalogSticks = _swapSticks.IsChecked == true;
             s.CursorLagEnabled = _cursorLag.IsChecked == true;
             s.CursorLagSeconds = ReadValidatedNumber(_cursorLagSeconds);
             s.HideRaysInCursorLag = _hideLagRays.IsChecked == true;
@@ -195,9 +231,7 @@ namespace GamepadKeyboard.UI
             s.StartInMouseMode = _startMouse.IsChecked == true;
             s.HidHideSessionEnabled = _hidHideSession.IsChecked == true;
             s.HidHideLegacyFallbackEnabled = _hidHideLegacy.IsChecked == true;
-            s.HidHideDeviceInstancePaths = _hidHidePaths
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            s.HidHideDeviceInstancePaths = selectedHidHidePaths;
 
             bool wantAdmin = _runAdmin.IsChecked == true;
             bool wantStartup = _startup.IsChecked == true;
@@ -217,7 +251,9 @@ namespace GamepadKeyboard.UI
             }
 
             Settings.AppSettings.Save();
-            AppOrchestrator.NotifyHidHideSettingsChanged();
+            AppOrchestrator.NotifyStickPointsChanged();
+            if (hidHideChanged)
+                AppOrchestrator.NotifyHidHideSettingsChanged();
         }
 
         private FrameworkElement BuildHidHideSection()

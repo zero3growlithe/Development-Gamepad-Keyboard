@@ -13,13 +13,15 @@ namespace GamepadKeyboard.Settings
         private static readonly object SaveLock = new();
         private static string? _lastSavedJson;
 
-        public int SettingsVersion { get; set; } = 2;
+        public int SettingsVersion { get; set; } = 3;
 
         public double KeySpacing { get; set; } = 6.0;
         public double StickDeadzone { get; set; } = 0.005;
         public double MouseStickDeadzone { get; set; } = 0.005;   // separate deadzone for mouse mode
         public double OverlayScale { get; set; } = 1.0;
         public double OverlayMoveSpeed { get; set; } = 6.0;
+        public bool SwapAnalogSticks { get; set; } = false;
+        public double AnalogStickCurveExponent { get; set; } = 1.0;
         public double OverlayLeft { get; set; } = 100;
         public double OverlayTop { get; set; } = 100;
         public double MouseSpeed { get; set; } = 12.0;
@@ -166,7 +168,6 @@ namespace GamepadKeyboard.Settings
                             LeftY = ReadDouble(old, nameof(StickPointsProfile.LeftY), 0.553),
                             RightX = ReadDouble(old, nameof(StickPointsProfile.RightX), 0.51),
                             RightY = ReadDouble(old, nameof(StickPointsProfile.RightY), 0.53),
-                            CurveExponent = ReadDouble(old, nameof(StickPointsProfile.CurveExponent), 1.0),
                             LeftRayLength = ReadDouble(old, nameof(StickPointsProfile.LeftRayLength), 0.4),
                             RightRayLength = ReadDouble(old, nameof(StickPointsProfile.RightRayLength), 0.4)
                         };
@@ -186,7 +187,45 @@ namespace GamepadKeyboard.Settings
                 MigrateLegacyBindings();
             if (settingsVersion < 2)
                 MigrateMoveScaleAction();
-            SettingsVersion = 2;
+            if (settingsVersion < 3)
+                MigrateSensitivityCurve(root);
+            if (!double.IsFinite(AnalogStickCurveExponent) || AnalogStickCurveExponent <= 0)
+                AnalogStickCurveExponent = 1.0;
+            AnalogStickCurveExponent = Math.Clamp(AnalogStickCurveExponent, 0.1, 5.0);
+            SettingsVersion = 3;
+        }
+
+        private void MigrateSensitivityCurve(JsonElement root)
+        {
+            if (TryReadProfileCurve(root, nameof(StickPointsProfiles), ActiveStickPointsProfile, out double curve)
+                || TryReadProfileCurve(root, nameof(KeyboardProfiles), ActiveProfile, out curve))
+            {
+                AnalogStickCurveExponent = curve;
+            }
+        }
+
+        private static bool TryReadProfileCurve(
+            JsonElement root, string propertyName, int activeIndex, out double curve)
+        {
+            curve = 1.0;
+            if (!root.TryGetProperty(propertyName, out var profiles)
+                || profiles.ValueKind != JsonValueKind.Array
+                || profiles.GetArrayLength() == 0)
+            {
+                return false;
+            }
+
+            int index = Math.Clamp(activeIndex, 0, profiles.GetArrayLength() - 1);
+            var profile = profiles[index];
+            if (!profile.TryGetProperty("CurveExponent", out var value)
+                || !value.TryGetDouble(out curve)
+                || !double.IsFinite(curve)
+                || curve <= 0)
+            {
+                curve = 1.0;
+                return false;
+            }
+            return true;
         }
 
         private void MigrateLegacyBindings()
@@ -338,7 +377,6 @@ namespace GamepadKeyboard.Settings
         public double LeftY { get; set; } = 0.553;
         public double RightX { get; set; } = 0.51;
         public double RightY { get; set; } = 0.53;
-        public double CurveExponent { get; set; } = 1.0;
         public double LeftRayLength { get; set; } = 0.4;
         public double RightRayLength { get; set; } = 0.4;
     }

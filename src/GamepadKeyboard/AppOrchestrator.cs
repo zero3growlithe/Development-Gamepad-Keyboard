@@ -411,9 +411,9 @@ namespace GamepadKeyboard
                     Settings.AppSettings.Instance.OverlayTop = _keyboard.Top;
                     _settingsDirty = true;
                 }
-                if (Math.Abs(_mapper.ScaleDelta) > 0.15)
+                if (Math.Abs(_mapper.ScaleDelta) > 0.01)
                 {
-                    _keyboard.SetScale(_keyboard.Scale + Math.Sign(_mapper.ScaleDelta) * 0.02);
+                    _keyboard.SetScale(_keyboard.Scale + _mapper.ScaleDelta * 0.02);
                     Settings.AppSettings.Instance.OverlayScale = _keyboard.Scale;
                     _settingsDirty = true;
                 }

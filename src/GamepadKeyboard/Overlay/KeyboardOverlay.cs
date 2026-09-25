@@ -335,6 +335,8 @@ namespace GamepadKeyboard.Overlay
 
         private static string VisibleKeyLabel(KeyboardLayout.KeyDef key, bool shiftActive)
         {
+            if (key.Vk >= 'A' && key.Vk <= 'Z')
+                return shiftActive ? key.Label.ToUpperInvariant() : key.Label.ToLowerInvariant();
             if (!shiftActive) return key.Label;
             return key.Vk switch
             {

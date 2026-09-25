@@ -175,9 +175,15 @@ namespace GamepadKeyboard
             MoveDX = MoveDY = ScaleDelta = 0;
             if (AdjustMoveScaleKeyboard)
             {
-                MoveDX = s.LX;
-                MoveDY = s.LY;
-                ScaleDelta = s.RY;   // up (+RY) = bigger, down = smaller
+                // Default: left stick scales, right stick moves. The global swap
+                // option reverses these roles here and in mouse mode.
+                bool swap = AppSettings.Instance.SwapAnalogSticks;
+                double moveX = swap ? s.LX : s.RX;
+                double moveY = swap ? s.LY : s.RY;
+                ApplyRadialStickCurve(moveX, moveY, out double curvedMoveX, out double curvedMoveY);
+                MoveDX = curvedMoveX;
+                MoveDY = curvedMoveY;
+                ScaleDelta = ApplyStickCurve(swap ? s.RY : s.LY);
             }
             else
             {
@@ -231,17 +237,24 @@ namespace GamepadKeyboard
             bool boost = IsActionHeld(profile, "SpeedBoost", s);
             double speed = st.MouseSpeed * (boost ? st.MouseSpeedBoostMultiplier : 1.0);
 
-            // right stick: cursor
-            double rx = ApplyCurve(s.RX);
-            double ry = ApplyCurve(s.RY);
-            _sender.MouseMove((int)Math.Round(rx * speed), (int)Math.Round(-ry * speed));
+            // Default: right stick moves the cursor, left stick scrolls. The
+            // global swap option reverses the complete stick roles.
+            bool swap = st.SwapAnalogSticks;
+            double cursorX = swap ? s.LX : s.RX;
+            double cursorY = swap ? s.LY : s.RY;
+            double scrollX = swap ? s.RX : s.LX;
+            double scrollY = swap ? s.RY : s.LY;
+            ApplyRadialStickCurve(cursorX, cursorY, out double curvedCursorX, out double curvedCursorY);
+            ApplyRadialStickCurve(scrollX, scrollY, out double curvedScrollX, out double curvedScrollY);
+            _sender.MouseMove(
+                (int)Math.Round(curvedCursorX * speed),
+                (int)Math.Round(-curvedCursorY * speed));
 
-            // left stick: scroll (vertical + horizontal)
             double sc = st.ScrollSpeed;
-            if (Math.Abs(s.LY) > 0.05)
-                SendVerticalScroll((int)Math.Sign(s.LY) * -(int)Math.Round(ApplyCurve(Math.Abs(s.LY)) * 120 * sc / 3.0));
-            if (Math.Abs(s.LX) > 0.05)
-                SendHorizontalScroll((int)Math.Sign(s.LX) * (int)Math.Round(ApplyCurve(Math.Abs(s.LX)) * 120 * sc / 3.0));
+            if (Math.Abs(scrollY) > 0.05)
+                SendVerticalScroll(-(int)Math.Round(curvedScrollY * 120 * sc / 3.0));
+            if (Math.Abs(scrollX) > 0.05)
+                SendHorizontalScroll((int)Math.Round(curvedScrollX * 120 * sc / 3.0));
 
             var comboParticipants = EvaluateCombos(s, profile.ComboBindings, _mouseComboCache);
             if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
@@ -717,8 +730,10 @@ namespace GamepadKeyboard
                         LeftHit = RightHit = null;
                         ReleaseHeldRayKeys();
                     }
+                    bool swapped = AppSettings.Instance.SwapAnalogSticks;
                     Notification?.Invoke(AdjustMoveScaleKeyboard
-                        ? "Keyboard move/scale ON — left stick moves, right stick scales"
+                        ? "Keyboard move/scale ON — " +
+                          (swapped ? "left stick moves, right stick scales" : "right stick moves, left stick scales")
                         : "Keyboard move/scale OFF");
                     break;
 
@@ -1017,10 +1032,12 @@ namespace GamepadKeyboard
             if (settings.FreeCursorEnabled)
             {
                 double speed = Math.Max(0, settings.FreeCursorSpeed);
-                _leftTargetX = Math.Clamp(_leftTargetX + s.LX * speed * dt, 4, 4 + KeyboardWidth());
-                _leftTargetY = Math.Clamp(_leftTargetY - s.LY * speed * dt, 4, 4 + KeyboardHeight());
-                _rightTargetX = Math.Clamp(_rightTargetX + s.RX * speed * dt, 4, 4 + KeyboardWidth());
-                _rightTargetY = Math.Clamp(_rightTargetY - s.RY * speed * dt, 4, 4 + KeyboardHeight());
+                ApplyRadialStickCurve(s.LX, s.LY, out double leftX, out double leftY);
+                ApplyRadialStickCurve(s.RX, s.RY, out double rightX, out double rightY);
+                _leftTargetX = Math.Clamp(_leftTargetX + leftX * speed * dt, 4, 4 + KeyboardWidth());
+                _leftTargetY = Math.Clamp(_leftTargetY - leftY * speed * dt, 4, 4 + KeyboardHeight());
+                _rightTargetX = Math.Clamp(_rightTargetX + rightX * speed * dt, 4, 4 + KeyboardWidth());
+                _rightTargetY = Math.Clamp(_rightTargetY - rightY * speed * dt, 4, 4 + KeyboardHeight());
                 LeftCursorActive = RightCursorActive = true;
             }
             else
@@ -1028,12 +1045,12 @@ namespace GamepadKeyboard
                 double leftMagnitude = Math.Sqrt(s.LX * s.LX + s.LY * s.LY);
                 double rightMagnitude = Math.Sqrt(s.RX * s.RX + s.RY * s.RY);
                 double maxRay = MaxRayLength();
-                double leftLength = maxRay * points.LeftRayLength * Math.Pow(leftMagnitude, points.CurveExponent);
-                double rightLength = maxRay * points.RightRayLength * Math.Pow(rightMagnitude, points.CurveExponent);
-                _leftTargetX = leftOriginX + s.LX * leftLength;
-                _leftTargetY = leftOriginY - s.LY * leftLength;
-                _rightTargetX = rightOriginX + s.RX * rightLength;
-                _rightTargetY = rightOriginY - s.RY * rightLength;
+                ApplyRadialStickCurve(s.LX, s.LY, out double leftX, out double leftY);
+                ApplyRadialStickCurve(s.RX, s.RY, out double rightX, out double rightY);
+                _leftTargetX = leftOriginX + leftX * maxRay * points.LeftRayLength;
+                _leftTargetY = leftOriginY - leftY * maxRay * points.LeftRayLength;
+                _rightTargetX = rightOriginX + rightX * maxRay * points.RightRayLength;
+                _rightTargetY = rightOriginY - rightY * maxRay * points.RightRayLength;
                 LeftCursorActive = settings.CursorLagEnabled || leftMagnitude >= 0.08;
                 RightCursorActive = settings.CursorLagEnabled || rightMagnitude >= 0.08;
             }
@@ -1096,11 +1113,25 @@ namespace GamepadKeyboard
             return Math.Sqrt(dx * dx + dy * dy) * Pitch();
         }
 
-        private double ApplyCurve(double v)
+        private static double ApplyStickCurve(double value)
         {
-            double exp = AppSettings.Instance.StickPointsProfile.CurveExponent;
-            double sign = Math.Sign(v);
-            return sign * Math.Pow(Math.Abs(v), exp);
+            double exponent = AppSettings.Instance.AnalogStickCurveExponent;
+            return Math.Sign(value) * Math.Pow(Math.Abs(value), exponent);
+        }
+
+        private static void ApplyRadialStickCurve(double x, double y, out double curvedX, out double curvedY)
+        {
+            double magnitude = Math.Min(1.0, Math.Sqrt(x * x + y * y));
+            if (magnitude <= double.Epsilon)
+            {
+                curvedX = curvedY = 0;
+                return;
+            }
+
+            double curvedMagnitude = Math.Pow(magnitude, AppSettings.Instance.AnalogStickCurveExponent);
+            double scale = curvedMagnitude / magnitude;
+            curvedX = x * scale;
+            curvedY = y * scale;
         }
 
         // ── edge bookkeeping ──────────────────────────────────────────────────
