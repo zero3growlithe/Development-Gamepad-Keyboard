@@ -254,7 +254,7 @@ namespace GamepadKeyboard.Overlay
         /// <summary>
         /// Update a stick's ray and independent unfilled cursor circle.
         /// </summary>
-        public void UpdateCursor(bool left, double cursorX, double cursorY, bool active)
+        public void UpdateCursor(bool left, double rayX, double rayY, double cursorX, double cursorY, bool active)
         {
             var point = left ? _leftPoint : _rightPoint;
             var ray = left ? _leftRay : _rightRay;
@@ -274,8 +274,8 @@ namespace GamepadKeyboard.Overlay
                 && AppSettings.Instance.HideCenterPointsAndRaysInFreeCursor);
             ray.Visibility = showRay ? Visibility.Visible : Visibility.Collapsed;
             ray.X1 = ox; ray.Y1 = oy;
-            ray.X2 = cursorX;
-            ray.Y2 = cursorY;
+            ray.X2 = rayX;
+            ray.Y2 = rayY;
 
             Canvas.SetLeft(cursor, cursorX - 13);
             Canvas.SetTop(cursor, cursorY - 13);

@@ -11,7 +11,7 @@ namespace GamepadKeyboard.Settings
     {
         public static AppSettings Instance { get; private set; } = new();
 
-        public int SettingsVersion { get; set; } = 1;
+        public int SettingsVersion { get; set; } = 2;
 
         public double KeySpacing { get; set; } = 6.0;
         public double StickDeadzone { get; set; } = 0.005;
@@ -24,6 +24,7 @@ namespace GamepadKeyboard.Settings
         public double MouseSpeedBoostMultiplier { get; set; } = 2.5;
         public double ScrollSpeed { get; set; } = 3.0;
         public bool InvertVerticalScroll { get; set; } = false;
+        public bool InvertHorizontalScroll { get; set; } = false;
         public bool CursorLagEnabled { get; set; } = false;
         public double CursorLagSeconds { get; set; } = 0.15;
         public bool FreeCursorEnabled { get; set; } = false;
@@ -98,8 +99,9 @@ namespace GamepadKeyboard.Settings
                         using var document = JsonDocument.Parse(json);
                         var root = document.RootElement;
                         bool hasStickProfiles = root.TryGetProperty(nameof(StickPointsProfiles), out _);
-                        bool hasSettingsVersion = root.TryGetProperty(nameof(SettingsVersion), out _);
-                        loaded.Normalize(root, hasStickProfiles, hasSettingsVersion);
+                        int settingsVersion = root.TryGetProperty(nameof(SettingsVersion), out var versionElement)
+                            && versionElement.TryGetInt32(out var version) ? version : 0;
+                        loaded.Normalize(root, hasStickProfiles, settingsVersion);
                         Instance = loaded;
                     }
                 }
@@ -122,7 +124,7 @@ namespace GamepadKeyboard.Settings
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        private void Normalize(JsonElement root, bool hasStickProfiles, bool hasSettingsVersion)
+        private void Normalize(JsonElement root, bool hasStickProfiles, int settingsVersion)
         {
             KeyboardProfiles ??= new List<KeyboardProfile>();
             MouseProfiles ??= new List<MouseProfile>();
@@ -162,9 +164,11 @@ namespace GamepadKeyboard.Settings
                 ? Math.Clamp(ActiveStickPointsProfile, 0, StickPointsProfiles.Count - 1)
                 : Math.Clamp(ActiveProfile, 0, StickPointsProfiles.Count - 1);
 
-            if (!hasSettingsVersion)
+            if (settingsVersion < 1)
                 MigrateLegacyBindings();
-            SettingsVersion = 1;
+            if (settingsVersion < 2)
+                MigrateMoveScaleAction();
+            SettingsVersion = 2;
         }
 
         private void MigrateLegacyBindings()
@@ -189,6 +193,34 @@ namespace GamepadKeyboard.Settings
         {
             const string enableBinding = "LS+RS+LB+RB=EnableInput";
             if (!bindings.Contains(enableBinding)) bindings.Add(enableBinding);
+        }
+
+        private void MigrateMoveScaleAction()
+        {
+            foreach (var profile in KeyboardProfiles)
+            {
+                bool defaultMove = profile.LS == "ToggleMoveMode";
+                bool defaultScale = profile.RS == "ToggleScaleMode";
+                if (defaultMove) profile.LS = "ToggleMoveScaleKeyboard";
+                if (defaultScale) profile.RS = defaultMove ? "None" : "ToggleMoveScaleKeyboard";
+                ReplaceComboAction(profile.ComboBindings, "ToggleMoveMode", "ToggleMoveScaleKeyboard");
+                ReplaceComboAction(profile.ComboBindings, "ToggleScaleMode", "ToggleMoveScaleKeyboard");
+            }
+            foreach (var profile in MouseProfiles)
+            {
+                ReplaceComboAction(profile.ComboBindings, "ToggleMoveMode", "ToggleMoveScaleKeyboard");
+                ReplaceComboAction(profile.ComboBindings, "ToggleScaleMode", "ToggleMoveScaleKeyboard");
+            }
+        }
+
+        private static void ReplaceComboAction(List<string> bindings, string oldAction, string newAction)
+        {
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                int equals = bindings[i].IndexOf('=');
+                if (equals > 0 && bindings[i][(equals + 1)..].Trim() == oldAction)
+                    bindings[i] = bindings[i][..(equals + 1)] + newAction;
+            }
         }
 
         private static double ReadDouble(JsonElement element, string name, double fallback) =>
@@ -221,8 +253,8 @@ namespace GamepadKeyboard.Settings
         /// <summary>Hold-type modifier (tap = toggle): HoldShift / HoldCtrl / HoldAlt / HoldWin, or any action.</summary>
         public string LT { get; set; } = "HoldShift";
         public string RT { get; set; } = "HoldCtrl";
-        public string LS { get; set; } = "ToggleMoveMode";
-        public string RS { get; set; } = "ToggleScaleMode";
+        public string LS { get; set; } = "ToggleMoveScaleKeyboard";
+        public string RS { get; set; } = "None";
 
         public string View { get; set; } = "DisableInput";
         public string Menu { get; set; } = "ToggleKeyboardMouseMode";

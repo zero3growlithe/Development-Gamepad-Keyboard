@@ -32,6 +32,7 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _boost = new() { Text = "" };
         private readonly TextBox _scroll = new() { Text = "" };
         private readonly CheckBox _invertScroll = new() { Content = "Invert vertical mouse scroll direction" };
+        private readonly CheckBox _invertHorizontalScroll = new() { Content = "Invert horizontal mouse scroll direction" };
         private readonly TextBox _deadzone = new() { Text = "" };
         private readonly TextBox _mouseDeadzone = new() { Text = "" };
         private readonly CheckBox _cursorLag = new() { Content = "Enable cursor lag" };
@@ -59,6 +60,7 @@ namespace GamepadKeyboard.UI
             _boost.Text = s.MouseSpeedBoostMultiplier.ToString("0.##");
             _scroll.Text = s.ScrollSpeed.ToString("0.#");
             _invertScroll.IsChecked = s.InvertVerticalScroll;
+            _invertHorizontalScroll.IsChecked = s.InvertHorizontalScroll;
             _deadzone.Text = s.StickDeadzone.ToString("0.###");
             _mouseDeadzone.Text = s.MouseStickDeadzone.ToString("0.###");
             _cursorLag.IsChecked = s.CursorLagEnabled;
@@ -73,7 +75,7 @@ namespace GamepadKeyboard.UI
             _startMouse.IsChecked = s.StartInMouseMode;
 
             var grid = new Grid { Margin = new Thickness(12) };
-            for (int i = 0; i < 14; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int i = 0; i < 15; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(285) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -92,15 +94,16 @@ namespace GamepadKeyboard.UI
             AddRow(2, "Mouse speed boost multiplier:", _boost);
             AddRow(3, "Scroll speed:", _scroll);
             AddRow(4, "", _invertScroll);
-            AddRow(5, "Stick deadzone keyboard mode (0.000–0.5):", _deadzone);
-            AddRow(6, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
-            AddRow(7, "", _cursorLag);
-            AddRow(8, "Cursor lag (seconds; 0 = instant):", _cursorLagSeconds);
-            AddRow(9, "", _freeCursor);
-            AddRow(10, "Free cursor speed (px/second):", _freeCursorSpeed);
-            AddRow(11, "", _hideCentersAndRays);
-            AddRow(12, "", _legend);
-            AddRow(13, "", _toastPermanent);
+            AddRow(5, "", _invertHorizontalScroll);
+            AddRow(6, "Stick deadzone keyboard mode (0.000–0.5):", _deadzone);
+            AddRow(7, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
+            AddRow(8, "", _cursorLag);
+            AddRow(9, "Cursor lag (seconds; 0 = instant):", _cursorLagSeconds);
+            AddRow(10, "", _freeCursor);
+            AddRow(11, "Free cursor speed (px/second):", _freeCursorSpeed);
+            AddRow(12, "", _hideCentersAndRays);
+            AddRow(13, "", _legend);
+            AddRow(14, "", _toastPermanent);
 
             // WrapPanel: three wide buttons wrap to the next line instead of
             // being clipped off the 460 px window edge
@@ -151,8 +154,9 @@ namespace GamepadKeyboard.UI
             if (double.TryParse(_boost.Text, out var boost) && boost >= 1) s.MouseSpeedBoostMultiplier = boost;
             if (double.TryParse(_scroll.Text, out var scroll) && scroll > 0) s.ScrollSpeed = scroll;
             s.InvertVerticalScroll = _invertScroll.IsChecked == true;
-            if (double.TryParse(_deadzone.Text, System.Globalization.CultureInfo.InvariantCulture, out var dz) && dz >= 0 && dz <= 0.5) s.StickDeadzone = dz;
-            if (double.TryParse(_mouseDeadzone.Text, System.Globalization.CultureInfo.InvariantCulture, out var mdz) && mdz >= 0 && mdz <= 0.5) s.MouseStickDeadzone = mdz;
+            s.InvertHorizontalScroll = _invertHorizontalScroll.IsChecked == true;
+            if (double.TryParse(_deadzone.Text, out var dz) && dz >= 0 && dz <= 0.5) s.StickDeadzone = dz;
+            if (double.TryParse(_mouseDeadzone.Text, out var mdz) && mdz >= 0 && mdz <= 0.5) s.MouseStickDeadzone = mdz;
             s.CursorLagEnabled = _cursorLag.IsChecked == true;
             if (double.TryParse(_cursorLagSeconds.Text, out var lag) && lag >= 0) s.CursorLagSeconds = lag;
             s.FreeCursorEnabled = _freeCursor.IsChecked == true;

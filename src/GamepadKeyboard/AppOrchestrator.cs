@@ -19,6 +19,7 @@ namespace GamepadKeyboard
         private readonly Input.GamepadService _pad = new();
         private readonly ControllerMapper _mapper;
         private readonly KeyboardOverlay _keyboard;
+        private readonly StatusToastOverlay _toast = new();
         private readonly LegendOverlay _legend = new();
         private NotifyIcon? _tray;
         private ToolStripMenuItem? _overlayItem;
@@ -44,7 +45,7 @@ namespace GamepadKeyboard
             _mapper.Notification += msg =>
                 _keyboard.Dispatcher.BeginInvoke(() =>
                 {
-                    _keyboard.ShowStatus(msg,
+                    _toast.ShowStatus(msg,
                         Settings.AppSettings.Instance.ProfileToastSeconds,
                         Settings.AppSettings.Instance.ProfileToastPermanent);
                     if (_enabledItem != null)
@@ -286,7 +287,7 @@ namespace GamepadKeyboard
             RefreshLegend();
 
             // ── stick-driven overlay adjust (buttons are profile-defined actions) ──
-            if (_mapper.AdjustMove)
+            if (_mapper.AdjustMoveScaleKeyboard)
             {
                 var spd = Settings.AppSettings.Instance.OverlayMoveSpeed;
                 _keyboard.Left = Math.Clamp(_keyboard.Left + _mapper.MoveDX * spd, -_keyboard.Width + 80, System.Windows.SystemParameters.WorkArea.Width - 40);
@@ -294,9 +295,6 @@ namespace GamepadKeyboard
                 Settings.AppSettings.Instance.OverlayLeft = _keyboard.Left;
                 Settings.AppSettings.Instance.OverlayTop = _keyboard.Top;
                 _settingsDirty = true;
-            }
-            if (_mapper.AdjustScale)
-            {
                 if (Math.Abs(_mapper.ScaleDelta) > 0.15)
                 {
                     _keyboard.SetScale(_keyboard.Scale + Math.Sign(_mapper.ScaleDelta) * 0.02);
@@ -325,8 +323,10 @@ namespace GamepadKeyboard
                         mi.Checked = wantShown;
             if (!_mapper.MouseMode)
             {
-                _keyboard.UpdateCursor(true, _mapper.LeftCursorX, _mapper.LeftCursorY, _mapper.LeftCursorActive);
-                _keyboard.UpdateCursor(false, _mapper.RightCursorX, _mapper.RightCursorY, _mapper.RightCursorActive);
+                _keyboard.UpdateCursor(true, _mapper.LeftRayX, _mapper.LeftRayY,
+                    _mapper.LeftCursorX, _mapper.LeftCursorY, _mapper.LeftCursorActive);
+                _keyboard.UpdateCursor(false, _mapper.RightRayX, _mapper.RightRayY,
+                    _mapper.RightCursorX, _mapper.RightCursorY, _mapper.RightCursorActive);
                 if (_mapper.LeftHit != null)
                 {
                     _keyboard.HighlightKey(_mapper.LeftHit, false, left: true);
@@ -388,6 +388,7 @@ namespace GamepadKeyboard
         {
             if (_current == this) _current = null;
             _pad.Dispose();
+            _toast.Close();
             if (_tray != null)
             {
                 _tray.Visible = false;

@@ -52,12 +52,15 @@ namespace GamepadKeyboard
         public double LeftCursorY { get; private set; }
         public double RightCursorX { get; private set; }
         public double RightCursorY { get; private set; }
+        public double LeftRayX { get; private set; }
+        public double LeftRayY { get; private set; }
+        public double RightRayX { get; private set; }
+        public double RightRayY { get; private set; }
         public bool LeftCursorActive { get; private set; }
         public bool RightCursorActive { get; private set; }
 
-        /// <summary>L3/R3 press toggles (sticky until toggled off or input disabled).</summary>
-        public bool AdjustMove { get; set; }
-        public bool AdjustScale { get; set; }
+        /// <summary>Profile-defined keyboard move/scale mode.</summary>
+        public bool AdjustMoveScaleKeyboard { get; set; }
         public double MoveDX { get; private set; }
         public double MoveDY { get; private set; }
         public double ScaleDelta { get; private set; }   // per-tick, up/down = +/-
@@ -65,6 +68,8 @@ namespace GamepadKeyboard
 
         // currently held virtual modifier keys (toggle or hold)
         private readonly HashSet<ushort> _heldModifiers = new();
+        private readonly HashSet<ushort> _toggledModifiers = new();
+        private readonly Dictionary<ushort, int> _heldModifierCounts = new();
 
         // hold-to-type state: key currently held down by the left/right commit activation
         private KeyboardLayout.KeyDef? _heldRayKeyL, _heldRayKeyR;
@@ -84,6 +89,7 @@ namespace GamepadKeyboard
 
         // custom combo bindings ("A+B+X=Action"): per-combo last-button edge tracking
         private readonly Dictionary<string, bool> _comboPrev = new();
+        private readonly HashSet<string> _comboConsumedButtons = new();
 
         // previous physical state (edge detection)
         private bool _pA, _pB, _pX, _pY, _pLB, _pRB, _pLS, _pRS;
@@ -107,6 +113,10 @@ namespace GamepadKeyboard
             LeftCursorY = _leftTargetY = 4 + p.LeftY * height;
             RightCursorX = _rightTargetX = 4 + p.RightX * width;
             RightCursorY = _rightTargetY = 4 + p.RightY * height;
+            LeftRayX = LeftCursorX;
+            LeftRayY = LeftCursorY;
+            RightRayX = RightCursorX;
+            RightRayY = RightCursorY;
             LeftCursorActive = RightCursorActive = AppSettings.Instance.FreeCursorEnabled;
             LeftHit = RightHit = null;
             _cursorInitialized = true;
@@ -131,7 +141,7 @@ namespace GamepadKeyboard
                 }
 
                 // pass-through: app injects nothing, game sees the pad natively
-                AdjustMove = AdjustScale = false;
+                AdjustMoveScaleKeyboard = false;
                 MoveDX = MoveDY = ScaleDelta = 0;
                 ClearAllEdges(s);
                 return;
@@ -150,56 +160,56 @@ namespace GamepadKeyboard
         private void ProcessKeyboardMode(in GamepadSnapshot s)
         {
             var p = AppSettings.Instance.Profile;
-            var comboSup = EvaluateCombos(s, p.ComboBindings);
-            bool Sup(string b) => comboSup.Contains(b);
+            var comboParticipants = EvaluateCombos(s, p.ComboBindings);
+            if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
 
             MoveDX = MoveDY = ScaleDelta = 0;
-            if (AdjustMove)
+            if (AdjustMoveScaleKeyboard)
             {
                 MoveDX = s.LX;
                 MoveDY = s.LY;
-            }
-            if (AdjustScale)
-            {
                 ScaleDelta = s.RY;   // up (+RY) = bigger, down = smaller
             }
+            else
+            {
+                UpdateKeyboardCursors(s);
+            }
 
-            UpdateKeyboardCursors(s);
+            DispatchProfileButton("LT", p.LT, s.LeftTrigger > 0.5, ref _pLTHeld, comboParticipants);
+            DispatchProfileButton("RT", p.RT, s.RightTrigger > 0.5, ref _pRTHeld, comboParticipants);
 
-            if (!Sup("LT")) DispatchButton(p.LT, s.LeftTrigger > 0.5, ref _pLTHeld);
-            if (!Sup("RT")) DispatchButton(p.RT, s.RightTrigger > 0.5, ref _pRTHeld);
+            // Combo participants defer standalone actions to release; a fired combo
+            // consumes those releases. Continuous modifier holds remain immediate.
+            DispatchProfileButton("A", p.A, s.A, ref _pA, comboParticipants);
+            DispatchProfileButton("B", p.B, s.B, ref _pB, comboParticipants);
+            if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
+            DispatchProfileButton("X", p.X, s.X, ref _pX, comboParticipants);
+            DispatchProfileButton("Y", p.Y, s.Y, ref _pY, comboParticipants);
 
-            // dispatch mapped actions for every button (edge or hold semantics);
-            // buttons used as combo LAST button are suppressed while combo modifiers held
-            if (!Sup("A")) DispatchButton(p.A, s.A, ref _pA);
-            if (!Sup("B")) DispatchButton(p.B, s.B, ref _pB);
-            if (MouseMode) return;
-            if (!Sup("X")) DispatchButton(p.X, s.X, ref _pX);
-            if (!Sup("Y")) DispatchButton(p.Y, s.Y, ref _pY);
+            DispatchProfileButton("LB", p.LB, s.LB, ref _pLB, comboParticipants);
+            DispatchProfileButton("RB", p.RB, s.RB, ref _pRB, comboParticipants);
+            DispatchProfileButton("LS", p.LS, s.LS, ref _pLS, comboParticipants);
+            DispatchProfileButton("RS", p.RS, s.RS, ref _pRS, comboParticipants);
 
-            if (!Sup("LB")) DispatchButton(p.LB, s.LB, ref _pLB);
-            if (!Sup("RB")) DispatchButton(p.RB, s.RB, ref _pRB);
-            if (!Sup("LS")) DispatchButton(p.LS, s.LS, ref _pLS);
-            if (!Sup("RS")) DispatchButton(p.RS, s.RS, ref _pRS);
-
-            if (!Sup("View")) DispatchButton(p.View, s.View, ref _pView);
-            if (!Sup("Menu")) DispatchButton(p.Menu, s.Menu, ref _pMenu);
+            DispatchProfileButton("View", p.View, s.View, ref _pView, comboParticipants);
+            DispatchProfileButton("Menu", p.Menu, s.Menu, ref _pMenu, comboParticipants);
 
             // dpad layer: Y-held layer or plain layer
             if (s.Y)
             {
-                if (!Sup("DUp")) DispatchButton(p.YDUp, s.DUp, ref _pDUp);
-                if (!Sup("DDown")) DispatchButton(p.YDDown, s.DDown, ref _pDDown);
-                if (!Sup("DLeft")) DispatchButton(p.YDLeft, s.DLeft, ref _pDLeft);
-                if (!Sup("DRight")) DispatchButton(p.YDRight, s.DRight, ref _pDRight);
+                DispatchProfileButton("DUp", p.YDUp, s.DUp, ref _pDUp, comboParticipants);
+                DispatchProfileButton("DDown", p.YDDown, s.DDown, ref _pDDown, comboParticipants);
+                DispatchProfileButton("DLeft", p.YDLeft, s.DLeft, ref _pDLeft, comboParticipants);
+                DispatchProfileButton("DRight", p.YDRight, s.DRight, ref _pDRight, comboParticipants);
             }
             else
             {
-                if (!Sup("DUp")) DispatchButton(p.DUp, s.DUp, ref _pDUp);
-                if (!Sup("DDown")) DispatchButton(p.DDown, s.DDown, ref _pDDown);
-                if (!Sup("DLeft")) DispatchButton(p.DLeft, s.DLeft, ref _pDLeft);
-                if (!Sup("DRight")) DispatchButton(p.DRight, s.DRight, ref _pDRight);
+                DispatchProfileButton("DUp", p.DUp, s.DUp, ref _pDUp, comboParticipants);
+                DispatchProfileButton("DDown", p.DDown, s.DDown, ref _pDDown, comboParticipants);
+                DispatchProfileButton("DLeft", p.DLeft, s.DLeft, ref _pDLeft, comboParticipants);
+                DispatchProfileButton("DRight", p.DRight, s.DRight, ref _pDRight, comboParticipants);
             }
+            FinishComboFrame(s);
         }
 
         // ── Mouse mode ────────────────────────────────────────────────────────
@@ -222,47 +232,56 @@ namespace GamepadKeyboard
             if (Math.Abs(s.LY) > 0.05)
                 SendVerticalScroll((int)Math.Sign(s.LY) * -(int)Math.Round(ApplyCurve(Math.Abs(s.LY)) * 120 * sc / 3.0));
             if (Math.Abs(s.LX) > 0.05)
-                _sender.MouseHWheel((int)Math.Sign(s.LX) * (int)Math.Round(ApplyCurve(Math.Abs(s.LX)) * 120 * sc / 3.0));
+                SendHorizontalScroll((int)Math.Sign(s.LX) * (int)Math.Round(ApplyCurve(Math.Abs(s.LX)) * 120 * sc / 3.0));
 
-            var comboSup = EvaluateCombos(s, profile.ComboBindings);
-            bool Sup(string b) => comboSup.Contains(b);
+            var comboParticipants = EvaluateCombos(s, profile.ComboBindings);
+            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
 
             // dpad scroll (unless remapped to something else)
-            if (!Sup("DUp"))
+            if (comboParticipants.Contains("DUp"))
+                DispatchProfileButton("DUp", profile.DUp, s.DUp, ref _pDUp, comboParticipants);
+            else
             {
                 if (profile.DUp == "ScrollUp") { if (s.DUp) SendVerticalScroll(120); }
                 else DispatchButton(profile.DUp, s.DUp, ref _pDUp);
             }
-            if (!Sup("DDown"))
+            if (comboParticipants.Contains("DDown"))
+                DispatchProfileButton("DDown", profile.DDown, s.DDown, ref _pDDown, comboParticipants);
+            else
             {
                 if (profile.DDown == "ScrollDown") { if (s.DDown) SendVerticalScroll(-120); }
                 else DispatchButton(profile.DDown, s.DDown, ref _pDDown);
             }
-            if (!Sup("DLeft"))
+            if (comboParticipants.Contains("DLeft"))
+                DispatchProfileButton("DLeft", profile.DLeft, s.DLeft, ref _pDLeft, comboParticipants);
+            else
             {
-                if (profile.DLeft == "ScrollLeft") { if (s.DLeft) _sender.MouseHWheel(-120); }
+                if (profile.DLeft == "ScrollLeft") { if (s.DLeft) SendHorizontalScroll(-120); }
                 else DispatchButton(profile.DLeft, s.DLeft, ref _pDLeft);
             }
-            if (!Sup("DRight"))
+            if (comboParticipants.Contains("DRight"))
+                DispatchProfileButton("DRight", profile.DRight, s.DRight, ref _pDRight, comboParticipants);
+            else
             {
-                if (profile.DRight == "ScrollRight") { if (s.DRight) _sender.MouseHWheel(120); }
+                if (profile.DRight == "ScrollRight") { if (s.DRight) SendHorizontalScroll(120); }
                 else DispatchButton(profile.DRight, s.DRight, ref _pDRight);
             }
 
-            // buttons (combo last-button suppressed while its modifiers held)
-            if (!Sup("A")) DispatchButton(profile.A, s.A, ref _pA);
-            if (!Sup("B")) DispatchButton(profile.B, s.B, ref _pB);
-            if (!Sup("X")) DispatchButton(profile.X, s.X, ref _pX);
-            if (!Sup("Y")) DispatchButton(profile.Y, s.Y, ref _pY);
-            if (!MouseMode) return;
-            if (!Sup("LB")) DispatchButton(profile.LB, s.LB, ref _pLB);
-            if (!Sup("RB")) DispatchButton(profile.RB, s.RB, ref _pRB);
-            if (!Sup("LS")) DispatchButton(profile.LS, s.LS, ref _pLS);
-            if (!Sup("RS")) DispatchButton(profile.RS, s.RS, ref _pRS);
-            if (!Sup("View")) DispatchButton(profile.View, s.View, ref _pView);
-            if (!Sup("Menu")) DispatchButton(profile.Menu, s.Menu, ref _pMenu);
-            if (!Sup("LT")) DispatchButton(profile.LT, s.LeftTrigger > 0.5, ref _pLTHeld);
-            if (!Sup("RT")) DispatchButton(profile.RT, s.RightTrigger > 0.5, ref _pRTHeld);
+            // buttons (combo participants use release-only standalone actions)
+            DispatchProfileButton("A", profile.A, s.A, ref _pA, comboParticipants);
+            DispatchProfileButton("B", profile.B, s.B, ref _pB, comboParticipants);
+            DispatchProfileButton("X", profile.X, s.X, ref _pX, comboParticipants);
+            DispatchProfileButton("Y", profile.Y, s.Y, ref _pY, comboParticipants);
+            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
+            DispatchProfileButton("LB", profile.LB, s.LB, ref _pLB, comboParticipants);
+            DispatchProfileButton("RB", profile.RB, s.RB, ref _pRB, comboParticipants);
+            DispatchProfileButton("LS", profile.LS, s.LS, ref _pLS, comboParticipants);
+            DispatchProfileButton("RS", profile.RS, s.RS, ref _pRS, comboParticipants);
+            DispatchProfileButton("View", profile.View, s.View, ref _pView, comboParticipants);
+            DispatchProfileButton("Menu", profile.Menu, s.Menu, ref _pMenu, comboParticipants);
+            DispatchProfileButton("LT", profile.LT, s.LeftTrigger > 0.5, ref _pLTHeld, comboParticipants);
+            DispatchProfileButton("RT", profile.RT, s.RightTrigger > 0.5, ref _pRTHeld, comboParticipants);
+            FinishComboFrame(s);
         }
 
         private static bool IsActionHeld(MouseProfile profile, string action, in GamepadSnapshot s)
@@ -288,6 +307,11 @@ namespace GamepadKeyboard
         private void SendVerticalScroll(int delta)
         {
             _sender.MouseWheel(AppSettings.Instance.InvertVerticalScroll ? -delta : delta);
+        }
+
+        private void SendHorizontalScroll(int delta)
+        {
+            _sender.MouseHWheel(AppSettings.Instance.InvertHorizontalScroll ? -delta : delta);
         }
 
         // ── Custom combo bindings ─────────────────────────────────────────────
@@ -363,6 +387,8 @@ namespace GamepadKeyboard
                 _comboPrev[raw] = held;
                 if (held && !previous)
                 {
+                    foreach (var part in parts)
+                        _comboConsumedButtons.Add(part.Trim());
                     App.Log("input enabled by profile binding: " + key);
                     SetInputEnabled(true);
                     return true;
@@ -372,14 +398,14 @@ namespace GamepadKeyboard
         }
 
         /// <summary>
-        /// Evaluates the profile's custom combos. Returns the set of last buttons whose
-        /// mapped dispatch must be suppressed this tick (combo modifiers are held).
+        /// Evaluates the profile's custom combos. Returns every physical button that
+        /// participates in a combo so its standalone action can be deferred to release.
         /// "A+B+X=Act": A+B held = modifiers; X edge = trigger.
         /// </summary>
         private HashSet<string> EvaluateCombos(in GamepadSnapshot s, List<string> combos)
         {
-            var suppress = new HashSet<string>();
-            if (combos.Count == 0) { _comboPrev.Clear(); return suppress; }
+            var participants = new HashSet<string>();
+            if (combos.Count == 0) { _comboPrev.Clear(); _comboConsumedButtons.Clear(); return participants; }
 
             var seen = new HashSet<string>();
             foreach (var raw in combos)
@@ -392,17 +418,20 @@ namespace GamepadKeyboard
                 seen.Add(raw);
 
                 var parts = key.Split('+');
+                foreach (var part in parts)
+                    participants.Add(part.Trim());
                 bool allHeld = true;
                 for (int i = 0; i < parts.Length - 1; i++)
                     if (!s.Button(parts[i].Trim())) { allHeld = false; break; }
                 if (!allHeld) { _comboPrev[raw] = false; continue; }
 
                 string last = parts[^1].Trim();
-                suppress.Add(last);          // mods held: last button belongs to the combo
                 bool held = s.Button(last);
                 bool prev = _comboPrev.TryGetValue(raw, out var p) && p;
                 if (held && !prev)
                 {
+                    foreach (var part in parts)
+                        _comboConsumedButtons.Add(part.Trim());
                     App.Log("combo binding: " + key + " -> " + action);
                     RunActionOnce(action);
                 }
@@ -414,15 +443,46 @@ namespace GamepadKeyboard
             foreach (var k in _comboPrev.Keys)
                 if (!seen.Contains(k)) stale.Add(k);
             foreach (var k in stale) _comboPrev.Remove(k);
-            return suppress;
+            return participants;
         }
 
-        /// <summary>Runs an action once for a combo trigger (hold semantics preserved).</summary>
+        /// <summary>Runs a complete press/release pulse for a combo or deferred single action.</summary>
         private void RunActionOnce(string action)
         {
-            bool dummy = false;   // prev=false -> DispatchButton sees a press edge
-            DispatchButton(action, true, ref dummy);
+            bool previous = false;
+            DispatchButton(action, true, ref previous);
+            previous = true;
+            DispatchButton(action, false, ref previous);
         }
+
+        private void DispatchProfileButton(
+            string button,
+            string action,
+            bool held,
+            ref bool previous,
+            HashSet<string> comboParticipants)
+        {
+            if (!comboParticipants.Contains(button) || IsContinuousModifier(action))
+            {
+                DispatchButton(action, held, ref previous);
+                return;
+            }
+
+            if (!held && previous && !_comboConsumedButtons.Contains(button))
+                RunActionOnce(action);
+
+            // Deferred buttons still need their physical edge recorded; otherwise
+            // a release can be missed when this method is used outside Process().
+            previous = held;
+        }
+
+        private void FinishComboFrame(in GamepadSnapshot s)
+        {
+            _comboConsumedButtons.RemoveWhere(button => !s.Button(button));
+        }
+
+        private static bool IsContinuousModifier(string action) => action is
+            "HoldShift" or "HoldCtrl" or "HoldAlt" or "HoldWin";
 
         // ── Action dispatch ───────────────────────────────────────────────────
 
@@ -512,7 +572,7 @@ namespace GamepadKeyboard
                 case "HoldCtrl":
                 case "HoldAlt":
                 case "HoldWin":
-                    ApplyHeld(action, held);
+                    ApplyHeld(action, held, prev);
                     return;
                 case "ToggleShift":
                 case "ToggleCtrl":
@@ -587,23 +647,36 @@ namespace GamepadKeyboard
                     break;
 
                 case "ToggleKeyboardMouseMode":
+                    ReleaseAllModifiers();
                     MouseMode = !MouseMode;
                     StateChanged?.Invoke();
                     break;
-                case "KeyboardMode": MouseMode = false; StateChanged?.Invoke(); break;
-                case "MouseMode": MouseMode = true; StateChanged?.Invoke(); break;
-
-                case "ToggleMoveMode":
-                    AdjustMove = !AdjustMove;
-                    MoveDX = MoveDY = 0;
-                    Notification?.Invoke(AdjustMove ? "Move mode ON — left stick moves the keyboard"
-                                                    : "Move mode OFF");
+                case "KeyboardMode":
+                    if (MouseMode) ReleaseAllModifiers();
+                    MouseMode = false;
+                    StateChanged?.Invoke();
                     break;
-                case "ToggleScaleMode":
-                    AdjustScale = !AdjustScale;
+                case "MouseMode":
+                    if (!MouseMode) ReleaseAllModifiers();
+                    MouseMode = true;
+                    StateChanged?.Invoke();
+                    break;
+
+                case "ToggleMoveScaleKeyboard":
+                case "ToggleMoveMode": // legacy saved profile
+                case "ToggleScaleMode": // legacy saved profile
+                    AdjustMoveScaleKeyboard = !AdjustMoveScaleKeyboard;
+                    MoveDX = MoveDY = 0;
                     ScaleDelta = 0;
-                    Notification?.Invoke(AdjustScale ? "Scale mode ON — right stick up/down scales"
-                                                     : "Scale mode OFF");
+                    if (AdjustMoveScaleKeyboard)
+                    {
+                        LeftCursorActive = RightCursorActive = false;
+                        LeftHit = RightHit = null;
+                        ReleaseHeldRayKeys();
+                    }
+                    Notification?.Invoke(AdjustMoveScaleKeyboard
+                        ? "Keyboard move/scale ON — left stick moves, right stick scales"
+                        : "Keyboard move/scale OFF");
                     break;
 
                 case "SwitchKeyboardProfile":
@@ -633,8 +706,8 @@ namespace GamepadKeyboard
                 // mouse actions (also valid in keyboard-mode mappings if wanted)
                 case "ScrollUp": SendVerticalScroll(120); break;
                 case "ScrollDown": SendVerticalScroll(-120); break;
-                case "ScrollLeft": _sender.MouseHWheel(-120); break;
-                case "ScrollRight": _sender.MouseHWheel(120); break;
+                case "ScrollLeft": SendHorizontalScroll(-120); break;
+                case "ScrollRight": SendHorizontalScroll(120); break;
 
                 case "SpeedBoost":
                 case "PointerMode":
@@ -654,24 +727,39 @@ namespace GamepadKeyboard
             }
         }
 
-        private void ApplyHeld(string action, bool held)
+        private void ApplyHeld(string action, bool held, bool previous)
         {
             ushort vk = ActionToVk(action);
-            if (held) { if (_heldModifiers.Add(vk)) { _sender.KeyDown(vk); StateChanged?.Invoke(); } }
-            else { if (_heldModifiers.Remove(vk)) { _sender.KeyUp(vk); StateChanged?.Invoke(); } }
+            if (held && !previous)
+            {
+                int count = _heldModifierCounts.TryGetValue(vk, out var current) ? current + 1 : 1;
+                _heldModifierCounts[vk] = count;
+                if (_heldModifiers.Add(vk)) _sender.KeyDown(vk);
+                StateChanged?.Invoke();
+            }
+            else if (!held && previous)
+            {
+                int count = _heldModifierCounts.TryGetValue(vk, out var current) ? Math.Max(0, current - 1) : 0;
+                if (count == 0) _heldModifierCounts.Remove(vk);
+                else _heldModifierCounts[vk] = count;
+
+                if (count == 0 && !_toggledModifiers.Contains(vk) && _heldModifiers.Remove(vk))
+                    _sender.KeyUp(vk);
+                StateChanged?.Invoke();
+            }
         }
 
-                private void ToggleModifier(ushort vk)
+        private void ToggleModifier(ushort vk)
         {
-            if (_heldModifiers.Contains(vk))
+            if (_toggledModifiers.Remove(vk))
             {
-                _heldModifiers.Remove(vk);
-                _sender.KeyUp(vk);
+                if (!_heldModifierCounts.ContainsKey(vk) && _heldModifiers.Remove(vk))
+                    _sender.KeyUp(vk);
             }
             else
             {
-                _heldModifiers.Add(vk);
-                _sender.KeyDown(vk);
+                _toggledModifiers.Add(vk);
+                if (_heldModifiers.Add(vk)) _sender.KeyDown(vk);
             }
             StateChanged?.Invoke();   // refresh toggle tint immediately (both modes)
         }
@@ -681,6 +769,8 @@ namespace GamepadKeyboard
             foreach (var vk in _heldModifiers)
                 _sender.KeyUp(vk);
             _heldModifiers.Clear();
+            _toggledModifiers.Clear();
+            _heldModifierCounts.Clear();
             ReleaseHeldClick();   // no stuck mouse buttons on disable / mode switch
             ReleaseHeldRayKeys(); // no stuck held-typed keys
         }
@@ -857,9 +947,14 @@ namespace GamepadKeyboard
                 _leftTargetY = leftOriginY - s.LY * leftLength;
                 _rightTargetX = rightOriginX + s.RX * rightLength;
                 _rightTargetY = rightOriginY - s.RY * rightLength;
-                LeftCursorActive = leftMagnitude >= 0.08;
-                RightCursorActive = rightMagnitude >= 0.08;
+                LeftCursorActive = settings.CursorLagEnabled || leftMagnitude >= 0.08;
+                RightCursorActive = settings.CursorLagEnabled || rightMagnitude >= 0.08;
             }
+
+            LeftRayX = _leftTargetX;
+            LeftRayY = _leftTargetY;
+            RightRayX = _rightTargetX;
+            RightRayY = _rightTargetY;
 
             if (!settings.CursorLagEnabled || settings.CursorLagSeconds <= 0)
             {

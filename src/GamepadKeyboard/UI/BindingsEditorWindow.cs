@@ -29,7 +29,7 @@ namespace GamepadKeyboard.UI
             Text = "",
             Foreground = System.Windows.Media.Brushes.Gray,
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
-            Margin = new System.Windows.Thickness(10, 0, 0, 0)
+            Margin = new System.Windows.Thickness(8, 0, 10, 0)
         };
 
         private sealed class Row
@@ -77,6 +77,18 @@ namespace GamepadKeyboard.UI
 
             // Reset + Close row directly under the name field — a bottom bar didn't fit
             var actionRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 0, 6) };
+            if (!_mouse)
+            {
+                var pointsBtn = new Button { Content = "Stick center points…", Padding = new Thickness(10, 3, 10, 3) };
+                pointsBtn.Click += (_, __) =>
+                {
+                    var editor = new StickPointsEditorWindow { Owner = this };
+                    editor.Closed += (_, __) => UpdateStickProfileLabel();
+                    editor.Show();
+                };
+                actionRow.Children.Add(pointsBtn);
+                actionRow.Children.Add(_stickProfileLabel);
+            }
             var resetBtn = new Button { Content = "Reset to defaults", Padding = new Thickness(10, 3, 10, 3) };
             resetBtn.Click += (_, __) => ResetToDefaults();
             var closeBtn = new Button { Content = "Close", Padding = new Thickness(14, 3, 14, 3), Margin = new Thickness(8, 0, 0, 0) };
@@ -100,18 +112,6 @@ namespace GamepadKeyboard.UI
             // ── scrolling rows ──
             var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _rowsPanel };
             root.Children.Add(scroll);
-
-            if (!_mouse)
-            {
-                // keyboard-mode only: stick center points editor shortcut
-                var ptsBar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-                var ptsBtn = new Button { Content = "Stick center points…", Padding = new Thickness(10, 3, 10, 3) };
-                ptsBtn.Click += (_, __) => new StickPointsEditorWindow { Owner = this }.Show();
-                ptsBar.Children.Add(ptsBtn);
-                ptsBar.Children.Add(_stickProfileLabel);
-                DockPanel.SetDock(ptsBar, Dock.Top);   // docked after scroll -> bottom strip
-                root.Children.Add(ptsBar);
-            }
 
             Content = root;
 
@@ -163,11 +163,17 @@ namespace GamepadKeyboard.UI
             if (idx < 0) return;
             ActiveIndex = idx;
             _nameBox.Text = ProfileNameOf(idx);
-            if (!_mouse) _stickProfileLabel.Text = "(active: " + AppSettings.Instance.StickPointsProfile.Name + ")";
+            UpdateStickProfileLabel();
 
             BuildRows();
             AppSettings.Save();
             AppOrchestrator.NotifyMappingsChanged();
+        }
+
+        private void UpdateStickProfileLabel()
+        {
+            if (!_mouse)
+                _stickProfileLabel.Text = "Active: " + AppSettings.Instance.StickPointsProfile.Name;
         }
 
         private void AddProfile(bool dup)
@@ -393,8 +399,11 @@ namespace GamepadKeyboard.UI
                 var label = new TextBlock { Text = FormatCombo(entry), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
                 Grid.SetColumn(label, 0);
 
-                var del = new Button { Content = "✕", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(6, 0, 0, 0) };
                 string captured = entry;
+                var actions = new StackPanel { Orientation = Orientation.Horizontal };
+                var edit = new Button { Content = "Edit", Padding = new Thickness(7, 0, 7, 0), Margin = new Thickness(6, 0, 0, 0) };
+                edit.Click += (_, __) => ShowComboBuilder(get, set, captured);
+                var del = new Button { Content = "✕", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(4, 0, 0, 0) };
                 del.Click += (_, __) =>
                 {
                     var l = get();
@@ -403,10 +412,12 @@ namespace GamepadKeyboard.UI
                     Persist();
                     BuildRows();
                 };
-                Grid.SetColumn(del, 1);
+                actions.Children.Add(edit);
+                actions.Children.Add(del);
+                Grid.SetColumn(actions, 1);
 
                 row.Children.Add(label);
-                row.Children.Add(del);
+                row.Children.Add(actions);
                 _comboPanel.Children.Add(row);
             }
 
@@ -417,7 +428,7 @@ namespace GamepadKeyboard.UI
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 4, 0, 0)
             };
-            addBtn.Click += (_, __) => ShowComboBuilder(get, set);
+            addBtn.Click += (_, __) => ShowComboBuilder(get, set, null);
             _comboPanel.Children.Add(addBtn);
 
             _rowsPanel.Children.Add(_comboPanel);
@@ -455,13 +466,25 @@ namespace GamepadKeyboard.UI
             return text + "  →  " + FormatActionForList(action);
         }
 
-        private void ShowComboBuilder(Func<List<string>> get, Action<List<string>> set)
+        private void ShowComboBuilder(Func<List<string>> get, Action<List<string>> set, string? existingEntry)
         {
             const string Empty = "(none)";
 
+            string[] existingButtons = Array.Empty<string>();
+            string existingAction = "";
+            if (!string.IsNullOrEmpty(existingEntry))
+            {
+                int equals = existingEntry.IndexOf('=');
+                if (equals > 0)
+                {
+                    existingButtons = existingEntry[..equals].Split('+').Select(x => x.Trim()).ToArray();
+                    existingAction = existingEntry[(equals + 1)..].Trim();
+                }
+            }
+
             var dlg = new Window
             {
-                Title = "Add custom binding",
+                Title = existingEntry == null ? "Add custom binding" : "Edit custom binding",
                 Width = 640,
                 SizeToContent = SizeToContent.Height,
                 ResizeMode = ResizeMode.NoResize,
@@ -484,7 +507,7 @@ namespace GamepadKeyboard.UI
                 var cb = new ComboBox { MinWidth = 86, Margin = new Thickness(3, 0, 3, 0) };
                 cb.Items.Add(Empty);
                 foreach (var b in ComboButtonCatalog.All) cb.Items.Add(b);
-                cb.SelectedIndex = 0;
+                cb.SelectedItem = i < existingButtons.Length ? existingButtons[i] : Empty;
                 boxes[i] = cb;
                 panel.Children.Add(cb);
             }
@@ -493,8 +516,10 @@ namespace GamepadKeyboard.UI
             root.Children.Add(new TextBlock { Text = "↓ action triggered by the last button:", Margin = new Thickness(0, 10, 0, 4) });
             var actionBox = new ComboBox { MinWidth = 300, HorizontalAlignment = HorizontalAlignment.Center };
             foreach (var a in ActionCatalog.All) actionBox.Items.Add(a);
+            if (existingAction.Length > 0 && !actionBox.Items.Contains(existingAction))
+                actionBox.Items.Add(existingAction);
             actionBox.Items.Add(PoolItem);
-            actionBox.SelectedIndex = 0;
+            actionBox.SelectedItem = existingAction.Length > 0 ? existingAction : ActionCatalog.All[0];
             root.Children.Add(actionBox);
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
@@ -525,7 +550,12 @@ namespace GamepadKeyboard.UI
 
                 string entry = string.Join("+", picked) + "=" + action;
                 var l = get();
-                if (!l.Contains(entry)) l.Add(entry);
+                if (existingEntry != null)
+                {
+                    int index = l.IndexOf(existingEntry);
+                    if (index >= 0) l[index] = entry;
+                }
+                else if (!l.Contains(entry)) l.Add(entry);
                 set(l);
                 Persist();
                 BuildRows();
@@ -592,7 +622,7 @@ namespace GamepadKeyboard.UI
             "SubmitLeft", "SubmitRight",
             // app control
             "EnableInput", "DisableInput", "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode",
-            "ToggleMoveMode", "ToggleScaleMode",
+            "ToggleMoveScaleKeyboard",
             "ToggleKeyboard", "ToggleLegend",
             "SwitchKeyboardProfile", "SwitchMouseProfile", "SwitchStickPointsProfile",
             // media

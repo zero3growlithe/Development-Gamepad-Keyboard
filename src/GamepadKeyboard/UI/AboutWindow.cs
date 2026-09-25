@@ -54,7 +54,7 @@ namespace GamepadKeyboard.UI
             text.Inlines.Add(new System.Windows.Documents.Run(
                 "• Left/Right stick: aim a cursor; L1 / R1 submit its highlighted key\n" +
                 "• Hold L2 = Shift, hold R2 = Ctrl\n" +
-                "• B = mouse mode, L3 = move mode, R3 = scale mode\n" +
+                "• B = mouse mode, L3 toggles keyboard move/scale mode\n" +
                 "• D-pad = arrows\n" +
                 "• All buttons and shortcuts are remappable per profile\n\n"));
             text.Inlines.Add(new System.Windows.Documents.Run("Mouse mode:\n") { FontWeight = FontWeights.Bold });
