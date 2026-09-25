@@ -15,10 +15,11 @@ namespace GamepadKeyboard.Input
         private volatile bool _stop;
         private GamepadSnapshot _last = default;
         private int _lastRawCount = -1;
-        private readonly Dictionary<string, Windows.Gaming.Input.Gamepad> _padCache = new();
-        private string _lastSummary = "";
-        private DateTime _lastLog = DateTime.MinValue;
+        private readonly Dictionary<Windows.Gaming.Input.RawGameController, Windows.Gaming.Input.Gamepad?> _padCache = new();
         private string _lastActivePad = "";
+        private string _lastPollError = "";
+        private DateTime _lastPollErrorLog = DateTime.MinValue;
+        private int _resetCachesRequested;
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -26,12 +27,12 @@ namespace GamepadKeyboard.Input
 
         public GamepadService()
         {
-            // dedicated high-priority thread: never throttled when the app is
-            // backgrounded (threadpool timers can be coalesced/delayed for tray apps)
+            // Dedicated thread avoids UI stalls. Normal priority is sufficient and
+            // avoids competing with foreground applications while input is disabled.
             _pollThread = new System.Threading.Thread(PollLoop)
             {
                 IsBackground = true,
-                Priority = System.Threading.ThreadPriority.AboveNormal,
+                Priority = System.Threading.ThreadPriority.Normal,
                 Name = "GamepadPoll"
             };
             _pollThread.Start();
@@ -39,30 +40,62 @@ namespace GamepadKeyboard.Input
 
         private void PollLoop()
         {
-            // 1 ms system timer resolution so Sleep(4) is actually ~4 ms
-            try { Native.NativeMethods.TimeBeginPeriod(1); } catch { }
-            while (!_stop)
+            bool highResolution = false;
+            try
             {
-                Poll(null);
-                System.Threading.Thread.Sleep(4);
+                while (!_stop)
+                {
+                    bool active = InputEnabledProbe?.Invoke() ?? false;
+                    if (active != highResolution)
+                    {
+                        try
+                        {
+                            if (active) Native.NativeMethods.TimeBeginPeriod(1);
+                            else Native.NativeMethods.TimeEndPeriod(1);
+                            highResolution = active;
+                        }
+                        catch { }
+                    }
+
+                    Poll(null);
+                    int interval = active
+                        ? Math.Max(1, 1000 / Math.Max(1, PollHz))
+                        : 16;
+                    System.Threading.Thread.Sleep(interval);
+                }
             }
-            try { Native.NativeMethods.TimeEndPeriod(1); } catch { }
+            finally
+            {
+                if (highResolution)
+                {
+                    try { Native.NativeMethods.TimeEndPeriod(1); } catch { }
+                }
+            }
         }
 
         /// <summary>Optional mode probe (true = mouse mode) for the per-mode stick deadzone.</summary>
         public static Func<bool>? MouseModeProbe;
+        public static Func<bool>? InputEnabledProbe;
+
+        public void ResetDeviceCaches() =>
+            System.Threading.Interlocked.Exchange(ref _resetCachesRequested, 1);
 
         private void Poll(object? state)
         {
             try
             {
+                if (System.Threading.Interlocked.Exchange(ref _resetCachesRequested, 0) != 0)
+                    ClearDeviceCaches();
+
                 var app = Settings.AppSettings.Instance;
                 bool mouse = MouseModeProbe?.Invoke() ?? false;
+                bool inputEnabled = InputEnabledProbe?.Invoke() ?? false;
                 GamepadSnapshot.Deadzone = mouse ? app.MouseStickDeadzone : app.StickDeadzone;   // live per-mode value
                 var raws = Windows.Gaming.Input.RawGameController.RawGameControllers;
 
                 if (raws.Count != _lastRawCount)
                 {
+                    ClearDeviceCaches();
                     _lastRawCount = raws.Count;
                     var names = new List<string>();
                     foreach (var r in raws)
@@ -89,7 +122,9 @@ namespace GamepadKeyboard.Input
                         // no Gamepad wrapper for this device (e.g. DualSense outside
                         // DS4Windows) — read the raw controller directly, calibrated
                         var (cal, map) = GetCalibration(raw);
-                        snap = GamepadSnapshot.FromRaw(raw, ReadHome(raw), cal, map);
+                        var buffers = ReadRaw(raw);
+                        snap = GamepadSnapshot.FromRaw(raw, buffers.Buttons, buffers.Switches,
+                            buffers.Axes, ReadHome(raw, buffers.Buttons), cal, map);
                     }
                     if (snap.AnyInput)
                     {
@@ -123,30 +158,31 @@ namespace GamepadKeyboard.Input
                     }
                 }
 
+                GamepadSnapshot previous = _last;
                 _last = chosen;
 
                 if (anyInput)
                 {
-                    var now = DateTime.UtcNow;
-                    var sum = chosen.Summary;
-                    if (sum != _lastSummary && (now - _lastLog).TotalMilliseconds > 1500)
+                    if (chosenName != _lastActivePad)
                     {
-                        _lastLog = now;
-                        _lastSummary = sum;
-                        if (chosenName != _lastActivePad)
-                        {
-                            _lastActivePad = chosenName;
-                            App.Log("active pad: \"" + chosenName + "\"");
-                        }
-                        App.Log("input: " + sum);
+                        _lastActivePad = chosenName;
+                        App.Log("active pad: \"" + chosenName + "\"");
                     }
                 }
 
-                StateChanged?.Invoke(chosen);
+                if (inputEnabled || !chosen.Equals(previous))
+                    StateChanged?.Invoke(chosen);
             }
             catch (Exception ex)
             {
-                App.Log("poll error: " + ex.Message);
+                string error = ex.GetType().Name + ": " + ex.Message;
+                var now = DateTime.UtcNow;
+                if (error != _lastPollError || (now - _lastPollErrorLog).TotalMinutes >= 1)
+                {
+                    _lastPollError = error;
+                    _lastPollErrorLog = now;
+                    App.Log("poll error: " + error);
+                }
             }
         }
 
@@ -157,14 +193,17 @@ namespace GamepadKeyboard.Input
         /// Home. Each candidate index is logged once so crash.log shows ground truth.
         /// </summary>
         private static readonly HashSet<string> _loggedExtras = new();
+        private readonly Dictionary<Windows.Gaming.Input.RawGameController, RawReadingBuffers> _rawBuffers = new();
 
-        private static bool ReadHome(Windows.Gaming.Input.RawGameController raw)
+        private bool ReadHome(Windows.Gaming.Input.RawGameController raw)
         {
             if (raw.ButtonCount <= 14) return false;
-            var buttons = new bool[raw.ButtonCount];
-            var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
-            var axes = new double[raw.AxisCount];
-            raw.GetCurrentReading(buttons, switches, axes);
+            var buffers = ReadRaw(raw);
+            return ReadHome(raw, buffers.Buttons);
+        }
+
+        private static bool ReadHome(Windows.Gaming.Input.RawGameController raw, bool[] buttons)
+        {
             // one-time dump of extra button labels for this pad (crash.log ground truth)
             if (_loggedExtras.Add(raw.DisplayName + "#labels"))
             {
@@ -189,21 +228,21 @@ namespace GamepadKeyboard.Input
             return any;
         }
 
-        private readonly Dictionary<string, AxisCalibration> _calibrations = new();
-        private readonly Dictionary<string, RawButtonMap> _buttonMaps = new();
+        private readonly Dictionary<Windows.Gaming.Input.RawGameController, AxisCalibration> _calibrations = new();
+        private readonly Dictionary<Windows.Gaming.Input.RawGameController, RawButtonMap> _buttonMaps = new();
 
         private (AxisCalibration cal, RawButtonMap map) GetCalibration(Windows.Gaming.Input.RawGameController raw)
         {
-            if (_calibrations.TryGetValue(raw.DisplayName, out var existing))
-                return (existing, _buttonMaps[raw.DisplayName]);
+            if (_calibrations.TryGetValue(raw, out var existing))
+                return (existing, _buttonMaps[raw]);
             var buttons = new bool[raw.ButtonCount];
             var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
             var axes = new double[raw.AxisCount];
             raw.GetCurrentReading(buttons, switches, axes);
             var cal = new AxisCalibration((double[])axes.Clone());
             var map = RawButtonMap.Detect(raw);
-            _calibrations[raw.DisplayName] = cal;
-            _buttonMaps[raw.DisplayName] = map;
+            _calibrations[raw] = cal;
+            _buttonMaps[raw] = map;
             // one-time ground-truth dump: ALL button labels + axis neutrals
             var lbls = new List<string>();
             for (int i = 0; i < raw.ButtonCount; i++)
@@ -217,12 +256,31 @@ namespace GamepadKeyboard.Input
 
         private Windows.Gaming.Input.Gamepad? GetPad(Windows.Gaming.Input.RawGameController raw)
         {
-            if (_padCache.TryGetValue(raw.DisplayName, out var cached))
+            if (_padCache.TryGetValue(raw, out var cached))
                 return cached;
             var gp = Windows.Gaming.Input.Gamepad.FromGameController(raw);
-            if (gp != null) _padCache[raw.DisplayName] = gp;
-            else App.Log("no Gamepad wrapper for \"" + raw.DisplayName + "\" -> raw reading path");
+            _padCache[raw] = gp; // cache null too; otherwise raw-only pads log and probe at polling frequency
+            if (gp == null) App.Log("no Gamepad wrapper for \"" + raw.DisplayName + "\" -> raw reading path");
             return gp;
+        }
+
+        private RawReadingBuffers ReadRaw(Windows.Gaming.Input.RawGameController raw)
+        {
+            if (!_rawBuffers.TryGetValue(raw, out var buffers))
+            {
+                buffers = new RawReadingBuffers(raw);
+                _rawBuffers[raw] = buffers;
+            }
+            raw.GetCurrentReading(buffers.Buttons, buffers.Switches, buffers.Axes);
+            return buffers;
+        }
+
+        private void ClearDeviceCaches()
+        {
+            _padCache.Clear();
+            _calibrations.Clear();
+            _buttonMaps.Clear();
+            _rawBuffers.Clear();
         }
 
         /// <summary>Live per-controller readings for the input monitor window.</summary>
@@ -308,6 +366,20 @@ namespace GamepadKeyboard.Input
         {
             _stop = true;
             try { _pollThread.Join(200); } catch { }
+        }
+
+        private sealed class RawReadingBuffers
+        {
+            public bool[] Buttons { get; }
+            public Windows.Gaming.Input.GameControllerSwitchPosition[] Switches { get; }
+            public double[] Axes { get; }
+
+            public RawReadingBuffers(Windows.Gaming.Input.RawGameController raw)
+            {
+                Buttons = new bool[raw.ButtonCount];
+                Switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
+                Axes = new double[raw.AxisCount];
+            }
         }
     }
 
@@ -441,13 +513,15 @@ namespace GamepadKeyboard.Input
         /// (DualSense standalone). Layout follows the common XInput-compatible
         /// raw ordering; axis min/max are read from the controller to normalize.
         /// </summary>
-        internal static GamepadSnapshot FromRaw(Windows.Gaming.Input.RawGameController raw, bool home, AxisCalibration cal, RawButtonMap map)
+        internal static GamepadSnapshot FromRaw(
+            Windows.Gaming.Input.RawGameController raw,
+            bool[] buttons,
+            Windows.Gaming.Input.GameControllerSwitchPosition[] switches,
+            double[] axes,
+            bool home,
+            AxisCalibration cal,
+            RawButtonMap map)
         {
-            var buttons = new bool[raw.ButtonCount];
-            var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
-            var axes = new double[raw.AxisCount];
-            raw.GetCurrentReading(buttons, switches, axes);
-
             double Axis(int i)
             {
                 if (i >= axes.Length) return 0;

@@ -92,6 +92,10 @@ namespace GamepadKeyboard
         // custom combo bindings ("A+B+X=Action"): per-combo last-button edge tracking
         private readonly Dictionary<string, bool> _comboPrev = new();
         private readonly HashSet<string> _comboConsumedButtons = new();
+        private readonly ComboBindingCache _keyboardComboCache = new();
+        private readonly ComboBindingCache _mouseComboCache = new();
+        private readonly List<string> _staleComboKeys = new();
+        private readonly List<string> _releasedComboButtons = new();
 
         // previous physical state (edge detection)
         private bool _pA, _pB, _pX, _pY, _pLB, _pRB, _pLS, _pRS;
@@ -137,7 +141,8 @@ namespace GamepadKeyboard
                 var enableBindings = MouseMode
                     ? AppSettings.Instance.MouseProfile.ComboBindings
                     : AppSettings.Instance.Profile.ComboBindings;
-                if (mappedButtonEnabled || TryEnableFromProfile(s, enableBindings))
+                var enableCache = MouseMode ? _mouseComboCache : _keyboardComboCache;
+                if (mappedButtonEnabled || TryEnableFromProfile(s, enableBindings, enableCache))
                 {
                     SaveEdges(s); // consume the reading containing the custom enable combo
                     return;
@@ -163,7 +168,7 @@ namespace GamepadKeyboard
         private void ProcessKeyboardMode(in GamepadSnapshot s)
         {
             var p = AppSettings.Instance.Profile;
-            var comboParticipants = EvaluateCombos(s, p.ComboBindings);
+            var comboParticipants = EvaluateCombos(s, p.ComboBindings, _keyboardComboCache);
             if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
 
             MoveDX = MoveDY = ScaleDelta = 0;
@@ -237,7 +242,7 @@ namespace GamepadKeyboard
             if (Math.Abs(s.LX) > 0.05)
                 SendHorizontalScroll((int)Math.Sign(s.LX) * (int)Math.Round(ApplyCurve(Math.Abs(s.LX)) * 120 * sc / 3.0));
 
-            var comboParticipants = EvaluateCombos(s, profile.ComboBindings);
+            var comboParticipants = EvaluateCombos(s, profile.ComboBindings, _mouseComboCache);
             if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
 
             // dpad scroll (unless remapped to something else)
@@ -362,37 +367,38 @@ namespace GamepadKeyboard
             return true;
         }
 
-        private bool TryEnableFromProfile(in GamepadSnapshot s, List<string> combos)
+        private bool TryEnableFromProfile(
+            in GamepadSnapshot s,
+            List<string> combos,
+            ComboBindingCache cache)
         {
-            foreach (var raw in combos)
+            foreach (var binding in cache.Get(combos))
             {
-                int eq = raw.IndexOf('=');
-                if (eq <= 0 || !string.Equals(raw[(eq + 1)..].Trim(), "EnableInput", StringComparison.Ordinal))
+                if (!string.Equals(binding.Action, "EnableInput", StringComparison.Ordinal))
                     continue;
 
-                string key = raw[..eq].Trim();
-                var parts = key.Split('+');
+                var parts = binding.Parts;
                 if (parts.Length < 2) continue;
 
                 bool modifiersHeld = true;
                 for (int i = 0; i < parts.Length - 1; i++)
                 {
-                    if (!s.Button(parts[i].Trim()))
+                    if (!s.Button(parts[i]))
                     {
                         modifiersHeld = false;
                         break;
                     }
                 }
 
-                string last = parts[^1].Trim();
+                string last = parts[^1];
                 bool held = modifiersHeld && s.Button(last);
-                bool previous = _comboPrev.TryGetValue(raw, out var wasHeld) && wasHeld;
-                _comboPrev[raw] = held;
+                bool previous = _comboPrev.TryGetValue(binding.Raw, out var wasHeld) && wasHeld;
+                _comboPrev[binding.Raw] = held;
                 if (held && !previous)
                 {
                     foreach (var part in parts)
-                        _comboConsumedButtons.Add(part.Trim());
-                    App.Log("input enabled by profile binding: " + key);
+                        _comboConsumedButtons.Add(part);
+                    App.Log("input enabled by profile binding: " + binding.Key);
                     SetInputEnabled(true);
                     return true;
                 }
@@ -405,47 +411,47 @@ namespace GamepadKeyboard
         /// participates in a combo so its standalone action can be deferred to release.
         /// "A+B+X=Act": A+B held = modifiers; X edge = trigger.
         /// </summary>
-        private HashSet<string> EvaluateCombos(in GamepadSnapshot s, List<string> combos)
+        private HashSet<string> EvaluateCombos(
+            in GamepadSnapshot s,
+            List<string> combos,
+            ComboBindingCache cache)
         {
-            var participants = new HashSet<string>();
-            if (combos.Count == 0) { _comboPrev.Clear(); _comboConsumedButtons.Clear(); return participants; }
-
-            var seen = new HashSet<string>();
-            foreach (var raw in combos)
+            var bindings = cache.Get(combos);
+            var participants = cache.Participants;
+            if (bindings.Count == 0)
             {
-                int eq = raw.IndexOf('=');
-                if (eq <= 0) continue;
-                string action = raw[(eq + 1)..].Trim();
-                string key = raw[..eq].Trim();
-                if (key.Length == 0 || action.Length == 0) continue;
-                seen.Add(raw);
+                _comboPrev.Clear();
+                _comboConsumedButtons.Clear();
+                return participants;
+            }
 
-                var parts = key.Split('+');
-                foreach (var part in parts)
-                    participants.Add(part.Trim());
+            foreach (var binding in bindings)
+            {
+                var parts = binding.Parts;
                 bool allHeld = true;
                 for (int i = 0; i < parts.Length - 1; i++)
-                    if (!s.Button(parts[i].Trim())) { allHeld = false; break; }
-                if (!allHeld) { _comboPrev[raw] = false; continue; }
+                    if (!s.Button(parts[i])) { allHeld = false; break; }
+                if (!allHeld) { _comboPrev[binding.Raw] = false; continue; }
 
-                string last = parts[^1].Trim();
+                string last = parts[^1];
                 bool held = s.Button(last);
-                bool prev = _comboPrev.TryGetValue(raw, out var p) && p;
+                bool prev = _comboPrev.TryGetValue(binding.Raw, out var p) && p;
                 if (held && !prev)
                 {
                     foreach (var part in parts)
-                        _comboConsumedButtons.Add(part.Trim());
-                    App.Log("combo binding: " + key + " -> " + action);
-                    RunActionOnce(action);
+                        _comboConsumedButtons.Add(part);
+                    App.Log("combo binding: " + binding.Key + " -> " + binding.Action);
+                    RunActionOnce(binding.Action);
                 }
-                _comboPrev[raw] = held;
+                _comboPrev[binding.Raw] = held;
             }
 
-            // drop stale entries for removed combos
-            var stale = new List<string>();
+            // Drop stale entries for removed or mode-specific combos without
+            // allocating a new work list on every input sample.
+            _staleComboKeys.Clear();
             foreach (var k in _comboPrev.Keys)
-                if (!seen.Contains(k)) stale.Add(k);
-            foreach (var k in stale) _comboPrev.Remove(k);
+                if (!cache.RawKeys.Contains(k)) _staleComboKeys.Add(k);
+            foreach (var k in _staleComboKeys) _comboPrev.Remove(k);
             return participants;
         }
 
@@ -483,10 +489,10 @@ namespace GamepadKeyboard
         {
             // An in parameter cannot be captured by RemoveWhere's predicate.
             // Collect released buttons first, then mutate the set separately.
-            var released = new List<string>();
+            _releasedComboButtons.Clear();
             foreach (var button in _comboConsumedButtons)
-                if (!s.Button(button)) released.Add(button);
-            foreach (var button in released)
+                if (!s.Button(button)) _releasedComboButtons.Add(button);
+            foreach (var button in _releasedComboButtons)
                 _comboConsumedButtons.Remove(button);
         }
 
@@ -1114,6 +1120,69 @@ namespace GamepadKeyboard
             _pDUp = s.DUp; _pDDown = s.DDown; _pDLeft = s.DLeft; _pDRight = s.DRight;
             _pView = s.View; _pMenu = s.Menu;
             _pLTHeld = s.LeftTrigger > 0.5; _pRTHeld = s.RightTrigger > 0.5;
+        }
+
+        private sealed class ComboBindingCache
+        {
+            private readonly List<string> _source = new();
+            private readonly List<ParsedComboBinding> _bindings = new();
+
+            public HashSet<string> Participants { get; } = new(StringComparer.Ordinal);
+            public HashSet<string> RawKeys { get; } = new(StringComparer.Ordinal);
+
+            public IReadOnlyList<ParsedComboBinding> Get(List<string> source)
+            {
+                bool unchanged = _source.Count == source.Count;
+                if (unchanged)
+                {
+                    for (int i = 0; i < source.Count; i++)
+                    {
+                        if (string.Equals(_source[i], source[i], StringComparison.Ordinal)) continue;
+                        unchanged = false;
+                        break;
+                    }
+                }
+                if (unchanged) return _bindings;
+
+                _source.Clear();
+                _source.AddRange(source);
+                _bindings.Clear();
+                Participants.Clear();
+                RawKeys.Clear();
+
+                foreach (string raw in source)
+                {
+                    int equals = raw.IndexOf('=');
+                    if (equals <= 0) continue;
+                    string key = raw[..equals].Trim();
+                    string action = raw[(equals + 1)..].Trim();
+                    if (key.Length == 0 || action.Length == 0) continue;
+
+                    string[] parts = key.Split('+', StringSplitOptions.TrimEntries);
+                    _bindings.Add(new ParsedComboBinding(raw, key, action, parts));
+                    RawKeys.Add(raw);
+                    foreach (string part in parts)
+                        Participants.Add(part);
+                }
+
+                return _bindings;
+            }
+        }
+
+        private sealed class ParsedComboBinding
+        {
+            public string Raw { get; }
+            public string Key { get; }
+            public string Action { get; }
+            public string[] Parts { get; }
+
+            public ParsedComboBinding(string raw, string key, string action, string[] parts)
+            {
+                Raw = raw;
+                Key = key;
+                Action = action;
+                Parts = parts;
+            }
         }
 
         // edge fields used only in some modes

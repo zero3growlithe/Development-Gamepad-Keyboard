@@ -16,6 +16,9 @@ namespace GamepadKeyboard.Overlay
     public sealed class LegendOverlay : Window
     {
         private readonly StackPanel _panel = new() { Orientation = Orientation.Vertical };
+        private readonly List<(string key, string action)> _entries = new();
+        private double _lastLeft = double.NaN, _lastTop = double.NaN, _lastOpacity = double.NaN;
+        private int _lastFontSize = -1;
 
         public LegendOverlay()
         {
@@ -53,6 +56,20 @@ namespace GamepadKeyboard.Overlay
 
         public void SetEntries(IReadOnlyList<(string key, string action)> entries)
         {
+            if (_entries.Count == entries.Count)
+            {
+                bool unchanged = true;
+                for (int i = 0; i < entries.Count; i++)
+                {
+                    if (_entries[i] == entries[i]) continue;
+                    unchanged = false;
+                    break;
+                }
+                if (unchanged) return;
+            }
+
+            _entries.Clear();
+            _entries.AddRange(entries);
             _panel.Children.Clear();
             foreach (var (key, action) in entries)
             {
@@ -83,9 +100,11 @@ namespace GamepadKeyboard.Overlay
 
         public void ApplySettings(double left, double top, double opacity, int fontSize)
         {
-            Left = left;
-            Top = top;
-            Opacity = opacity;
+            if (_lastLeft != left) { Left = left; _lastLeft = left; }
+            if (_lastTop != top) { Top = top; _lastTop = top; }
+            if (_lastOpacity != opacity) { Opacity = opacity; _lastOpacity = opacity; }
+            if (_lastFontSize == fontSize) return;
+            _lastFontSize = fontSize;
             foreach (var child in _panel.Children)
                 if (child is Grid g)
                     foreach (var c in g.Children)

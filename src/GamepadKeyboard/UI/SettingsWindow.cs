@@ -259,7 +259,8 @@ namespace GamepadKeyboard.UI
             {
                 Text = "In HidHide, add this app to Applications, enable device hiding, and leave inverse cloak off. " +
                        "Legacy fallback temporarily edits HidHide's persistent device list. It restores only entries added by this app " +
-                       "on DisableInput/exit and retries cleanup on the next app launch after a crash.",
+                       "on DisableInput/exit and retries cleanup on the next app launch after a crash. Run as Administrator so Windows " +
+                       "can restart the controller when the list changes; otherwise reconnect it manually.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brushes.DimGray,
                 Margin = new Thickness(0, 2, 0, 0)

@@ -29,6 +29,9 @@ namespace GamepadKeyboard
         private static System.Windows.MessageBoxButton MessageBoxButton_OK() => System.Windows.MessageBoxButton.OK;
         private static System.Windows.MessageBoxImage MessageBoxImage_Information() => System.Windows.MessageBoxImage.Information;
         private bool _settingsDirty;
+        private long _lastUiRefreshTimestamp;
+        private int _uiRefreshQueued;
+        private static readonly long UiRefreshInterval = Math.Max(1, System.Diagnostics.Stopwatch.Frequency / 60);
         private readonly System.Windows.Threading.DispatcherTimer _saveTimer =
             new() { Interval = TimeSpan.FromSeconds(2) };
 
@@ -39,6 +42,7 @@ namespace GamepadKeyboard
             layout.Build();
             _mapper = new ControllerMapper(layout);
             Input.GamepadService.MouseModeProbe = () => _mapper.MouseMode;   // per-mode deadzone
+            Input.GamepadService.InputEnabledProbe = () => _mapper.InputEnabled;
             _keyboard = new KeyboardOverlay(layout);
 
             _pad.StateChanged += OnPad;
@@ -75,6 +79,9 @@ namespace GamepadKeyboard
             var recovery = _hidHide.RecoverLegacyClaim();
             if (!recovery.Success)
                 ShowHidHideError(recovery.Error ?? "legacy cleanup failed.");
+            else if (!string.IsNullOrWhiteSpace(recovery.Warning))
+                ShowHidHideWarning(recovery.Warning);
+            _pad.ResetDeviceCaches();
 
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             _keyboard.SetPointPositions();
@@ -278,8 +285,18 @@ namespace GamepadKeyboard
                 return; // nothing to draw in pass-through
             if (!_mapper.MouseMode)
             {
-                // rays move every reading — refresh on the UI thread
-                _keyboard.Dispatcher.BeginInvoke(RefreshUiCore);
+                // Input is sampled faster than the display can render. Coalesce UI
+                // work to 60 Hz instead of queueing a WPF pass for every poll.
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                long previous = System.Threading.Interlocked.Read(ref _lastUiRefreshTimestamp);
+                if (now - previous < UiRefreshInterval) return;
+                if (System.Threading.Interlocked.CompareExchange(ref _uiRefreshQueued, 1, 0) != 0) return;
+                System.Threading.Interlocked.Exchange(ref _lastUiRefreshTimestamp, now);
+                _keyboard.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    System.Threading.Interlocked.Exchange(ref _uiRefreshQueued, 0);
+                    RefreshUiCore(refreshStatic: false);
+                }));
             }
         }
 
@@ -291,6 +308,7 @@ namespace GamepadKeyboard
         private void ApplyHidHideState(bool inputEnabled, bool refresh)
         {
             HidHideResult result;
+            bool wasLegacy = _hidHide.IsLegacyClaimed;
             try
             {
                 result = HidHideResult.Ok;
@@ -313,8 +331,14 @@ namespace GamepadKeyboard
 
             if (result.Success)
             {
+                if (wasLegacy || _hidHide.IsLegacyClaimed)
+                    _pad.ResetDeviceCaches();
                 App.Log("HidHide reservation: " + (_hidHide.IsClaimed ? _hidHide.ModeDescription : "released"));
-                if (_hidHide.IsLegacyClaimed)
+                if (!string.IsNullOrWhiteSpace(result.Warning))
+                {
+                    ShowHidHideWarning(result.Warning);
+                }
+                else if (_hidHide.IsLegacyClaimed)
                 {
                     _keyboard.Dispatcher.BeginInvoke(
                         System.Windows.Threading.DispatcherPriority.Background,
@@ -327,6 +351,17 @@ namespace GamepadKeyboard
             }
 
             ShowHidHideError(result.Error ?? "controller reservation failed.");
+        }
+
+        private void ShowHidHideWarning(string warning)
+        {
+            string message = "HidHide: " + warning;
+            App.Log(message);
+            _keyboard.Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => _toast.ShowStatus(message,
+                    Math.Max(8, Settings.AppSettings.Instance.ProfileToastSeconds),
+                    permanent: false)));
         }
 
         private void ShowHidHideError(string error)
@@ -349,26 +384,32 @@ namespace GamepadKeyboard
             }
             else
             {
-                dispatcher.BeginInvoke(RefreshUiCore);
+                dispatcher.BeginInvoke(new Action(() => RefreshUiCore()));
             }
         }
 
-        private void RefreshUiCore()
+        private void RefreshUiCore(bool refreshStatic = true)
         {
             _keyboard.ClearHighlights();
-            _keyboard.SetToggledKeys(_mapper.HeldModifierVks.Concat(_mapper.HeldRayKeyVks));
-            _keyboard.SetPointPositions();   // keep dots on the active profile's origin points
-            RefreshLegend();
+            if (refreshStatic)
+            {
+                _keyboard.SetToggledKeys(_mapper.HeldModifierVks.Concat(_mapper.HeldRayKeyVks));
+                _keyboard.SetPointPositions();
+                RefreshLegend();
+            }
 
             // ── stick-driven overlay adjust (buttons are profile-defined actions) ──
             if (_mapper.AdjustMoveScaleKeyboard)
             {
                 var spd = Settings.AppSettings.Instance.OverlayMoveSpeed;
-                _keyboard.Left = Math.Clamp(_keyboard.Left + _mapper.MoveDX * spd, -_keyboard.Width + 80, System.Windows.SystemParameters.WorkArea.Width - 40);
-                _keyboard.Top = Math.Clamp(_keyboard.Top - _mapper.MoveDY * spd, 0, System.Windows.SystemParameters.WorkArea.Height - 40);
-                Settings.AppSettings.Instance.OverlayLeft = _keyboard.Left;
-                Settings.AppSettings.Instance.OverlayTop = _keyboard.Top;
-                _settingsDirty = true;
+                if (Math.Abs(_mapper.MoveDX) > 0.01 || Math.Abs(_mapper.MoveDY) > 0.01)
+                {
+                    _keyboard.Left = Math.Clamp(_keyboard.Left + _mapper.MoveDX * spd, -_keyboard.Width + 80, System.Windows.SystemParameters.WorkArea.Width - 40);
+                    _keyboard.Top = Math.Clamp(_keyboard.Top - _mapper.MoveDY * spd, 0, System.Windows.SystemParameters.WorkArea.Height - 40);
+                    Settings.AppSettings.Instance.OverlayLeft = _keyboard.Left;
+                    Settings.AppSettings.Instance.OverlayTop = _keyboard.Top;
+                    _settingsDirty = true;
+                }
                 if (Math.Abs(_mapper.ScaleDelta) > 0.15)
                 {
                     _keyboard.SetScale(_keyboard.Scale + Math.Sign(_mapper.ScaleDelta) * 0.02);
@@ -379,22 +420,23 @@ namespace GamepadKeyboard
 
             // overlay visibility follows the setting (ToggleOverlay action / tray);
             // hidden while input disabled (gamepad free for games) AND in mouse mode
-            bool wantShown = Settings.AppSettings.Instance.ShowOverlay && _mapper.InputEnabled && !_mapper.MouseMode;
-            if (wantShown && !_keyboardShown)
+            if (refreshStatic)
             {
-                ShowKeyboard();
+                bool wantShown = Settings.AppSettings.Instance.ShowOverlay && _mapper.InputEnabled && !_mapper.MouseMode;
+                if (wantShown && !_keyboardShown)
+                {
+                    ShowKeyboard();
+                }
+                if (!wantShown && _keyboardShown)
+                {
+                    _keyboardShown = false;
+                    _keyboard.Hide();
+                }
+                // keep the tray checkmark in sync (mapped ToggleOverlay flips it too)
+                if (_overlayItem != null && _overlayItem.Checked != wantShown)
+                    _overlayItem.Checked = wantShown;
+                _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             }
-            if (!wantShown && _keyboardShown)
-            {
-                _keyboardShown = false;
-                _keyboard.Hide();
-            }
-            // keep the tray checkmark in sync (mapped ToggleOverlay flips it too)
-            var items = _tray?.ContextMenuStrip?.Items;
-            if (items != null)
-                foreach (System.Windows.Forms.ToolStripItem it in items)
-                    if (it is System.Windows.Forms.ToolStripMenuItem mi && mi.Text == "Show keyboard")
-                        mi.Checked = wantShown;
             if (!_mapper.MouseMode)
             {
                 _keyboard.UpdateCursor(true, _mapper.LeftRayX, _mapper.LeftRayY,
@@ -410,7 +452,6 @@ namespace GamepadKeyboard
                     _keyboard.HighlightKey(_mapper.RightHit, false, left: false);
                 }
             }
-            _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
         }
 
         private void RefreshLegend()
@@ -420,11 +461,11 @@ namespace GamepadKeyboard
             {
                 _legend.ApplySettings(st.LegendLeft, st.LegendTop, st.LegendOpacity, st.LegendFontSize);
                 _legend.SetEntries(LegendEntries());
-                _legend.Show();
+                if (!_legend.IsVisible) _legend.Show();
             }
             else
             {
-                _legend.Hide();
+                if (_legend.IsVisible) _legend.Hide();
             }
         }
 

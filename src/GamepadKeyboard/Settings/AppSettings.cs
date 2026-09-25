@@ -10,6 +10,8 @@ namespace GamepadKeyboard.Settings
     public sealed class AppSettings
     {
         public static AppSettings Instance { get; private set; } = new();
+        private static readonly object SaveLock = new();
+        private static string? _lastSavedJson;
 
         public int SettingsVersion { get; set; } = 2;
 
@@ -107,6 +109,7 @@ namespace GamepadKeyboard.Settings
                             && versionElement.TryGetInt32(out var version) ? version : 0;
                         loaded.Normalize(root, hasStickProfiles, settingsVersion);
                         Instance = loaded;
+                        _lastSavedJson = json;
                     }
                 }
             }
@@ -115,11 +118,17 @@ namespace GamepadKeyboard.Settings
 
         public static void Save()
         {
-            try
+            lock (SaveLock)
             {
-                File.WriteAllText(FilePath, JsonSerializer.Serialize(Instance, JsonOpts));
+                try
+                {
+                    string json = JsonSerializer.Serialize(Instance, JsonOpts);
+                    if (string.Equals(json, _lastSavedJson, StringComparison.Ordinal)) return;
+                    File.WriteAllText(FilePath, json);
+                    _lastSavedJson = json;
+                }
+                catch { /* non-fatal */ }
             }
-            catch { /* non-fatal */ }
         }
 
         private static readonly JsonSerializerOptions JsonOpts = new()

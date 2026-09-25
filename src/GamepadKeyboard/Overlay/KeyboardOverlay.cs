@@ -34,6 +34,10 @@ namespace GamepadKeyboard.Overlay
         private readonly ScaleTransform _scaleT = new(1, 1);
         private double _baseW, _baseH;   // unscaled canvas size
         private double _scale = 1.0;
+        private string _profileText = "";
+        private double _lastLeftPointX = double.NaN, _lastLeftPointY = double.NaN;
+        private double _lastRightPointX = double.NaN, _lastRightPointY = double.NaN;
+        private bool? _lastCentersVisible;
 
         public double Scale => _scale;
 
@@ -158,7 +162,10 @@ namespace GamepadKeyboard.Overlay
 
         public void SetProfileName(string name)
         {
-            _profileLabel.Text = $"Profile: {name}";
+            string text = $"Profile: {name}";
+            if (_profileText == text) return;
+            _profileText = text;
+            _profileLabel.Text = text;
             PlaceStatusAfterProfile();
         }
 
@@ -194,8 +201,6 @@ namespace GamepadKeyboard.Overlay
 
         private void PlaceStatusAfterProfile()
         {
-            _statusHide.Tick -= StatusHideTick;   // idempotent single subscription
-            _statusHide.Tick += StatusHideTick;
             // profile label is at (4, _baseH-40); place status right after its rendered width
             _profileLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double pw = _profileLabel.DesiredSize.Width;
@@ -213,7 +218,9 @@ namespace GamepadKeyboard.Overlay
 
         public void SetScale(double scale)
         {
-            _scale = Math.Clamp(scale, 0.5, 2.5);
+            double clamped = Math.Clamp(scale, 0.5, 2.5);
+            if (Math.Abs(_scale - clamped) < 0.0001) return;
+            _scale = clamped;
             ApplyScale();
         }
 
@@ -230,17 +237,33 @@ namespace GamepadKeyboard.Overlay
             SizeToContent();
             LayoutProfileLabel(Width);
             // reposition points per profile after a resize
+            _lastLeftPointX = _lastLeftPointY = double.NaN;
+            _lastRightPointX = _lastRightPointY = double.NaN;
             SetPointPositions();
         }
 
         public void SetPointPositions()
         {
             var p = AppSettings.Instance.StickPointsProfile;
-            SetPoint(_leftPoint, p.LeftX, p.LeftY);
-            SetPoint(_rightPoint, p.RightX, p.RightY);
+            if (p.LeftX != _lastLeftPointX || p.LeftY != _lastLeftPointY)
+            {
+                SetPoint(_leftPoint, p.LeftX, p.LeftY);
+                _lastLeftPointX = p.LeftX;
+                _lastLeftPointY = p.LeftY;
+            }
+            if (p.RightX != _lastRightPointX || p.RightY != _lastRightPointY)
+            {
+                SetPoint(_rightPoint, p.RightX, p.RightY);
+                _lastRightPointX = p.RightX;
+                _lastRightPointY = p.RightY;
+            }
             bool showCenters = !(AppSettings.Instance.FreeCursorEnabled
                 && AppSettings.Instance.HideCenterPointsAndRaysInFreeCursor);
-            _leftPoint.Visibility = _rightPoint.Visibility = showCenters ? Visibility.Visible : Visibility.Collapsed;
+            if (_lastCentersVisible != showCenters)
+            {
+                _leftPoint.Visibility = _rightPoint.Visibility = showCenters ? Visibility.Visible : Visibility.Collapsed;
+                _lastCentersVisible = showCenters;
+            }
         }
 
         private void SetPoint(Ellipse dot, double nx, double ny)
@@ -288,7 +311,9 @@ namespace GamepadKeyboard.Overlay
         public void SetToggledKeys(System.Collections.Generic.IEnumerable<ushort> vks)
         {
             // modifier VKs only — never tint regular keys
-            _toggledVks = new HashSet<ushort>(vks.Where(IsModifierVk));
+            var next = new HashSet<ushort>(vks.Where(IsModifierVk));
+            if (_toggledVks.SetEquals(next)) return;
+            _toggledVks = next;
             foreach (var pair in _keyBorders)
             {
                 bool on = pair.Key.Vk != 0 && _toggledVks.Contains(pair.Key.Vk);
@@ -324,11 +349,12 @@ namespace GamepadKeyboard.Overlay
 
         public void ClearHighlights()
         {
-            if (_highlighted.Count == 0) return;   // hot path: 250 Hz idle calls
-            foreach (var kv in _keyBorders)
+            if (_highlighted.Count == 0) return;
+            foreach (var key in _highlighted)
             {
-                kv.Value.BorderBrush = (Brush)FindResource("KeyBorderBrush");
-                kv.Value.BorderThickness = new Thickness(1);
+                if (!_keyBorders.TryGetValue(key, out var border)) continue;
+                border.BorderBrush = (Brush)FindResource("KeyBorderBrush");
+                border.BorderThickness = new Thickness(1);
             }
             _highlighted.Clear();
         }

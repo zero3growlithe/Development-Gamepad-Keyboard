@@ -22,7 +22,7 @@ Background tray app for Xbox 360 / One / Series and DualShock 4 / DualSense cont
 
 In Settings, enable **Reserve selected controllers while input is enabled** and choose the controller(s). In HidHide Configuration Client, add this app to the Applications list, enable device hiding, and leave inverse cloak disabled.
 
-The app prefers HidHide's process-lifetime session blacklist IOCTLs (functions 2056/2057). For current drivers without that API, Settings offers an explicit legacy fallback. The fallback temporarily adds only the selected device paths to HidHide's persistent blacklist, removes only entries it added on `DisableInput`/exit, and writes a recovery journal before changing the list so the next app launch can clean up after a crash. Missing, inactive, inversely configured, or otherwise incompatible drivers fail open and show a toast.
+The app prefers HidHide's process-lifetime session blacklist IOCTLs (functions 2056/2057). For current drivers without that API, Settings offers an explicit legacy fallback. The fallback temporarily adds only the selected device paths to HidHide's persistent blacklist, removes only entries it added on `DisableInput`/exit, and writes a recovery journal before changing the list so the next app launch can clean up after a crash. It also asks Windows to restart the selected device so the change affects applications that already had it open; this needs Administrator rights, otherwise the toast asks you to reconnect the controller manually. Missing, inactive, inversely configured, or otherwise incompatible drivers fail open and show a toast.
 
 ## Building
 

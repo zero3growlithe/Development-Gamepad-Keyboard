@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -36,6 +37,7 @@ namespace GamepadKeyboard.Native
 
         private ReservationMode _mode;
         private string[] _legacyAddedPaths = Array.Empty<string>();
+        private string[] _legacyDevicePaths = Array.Empty<string>();
 
         public bool IsClaimed => _mode != ReservationMode.None;
         public bool IsLegacyClaimed => _mode == ReservationMode.Legacy;
@@ -125,8 +127,10 @@ namespace GamepadKeyboard.Native
 
             if (_mode == ReservationMode.Legacy && _legacyAddedPaths.Length == 0)
             {
+                var restart = RestartDeviceNodes(_legacyDevicePaths, hiding: false);
+                _legacyDevicePaths = Array.Empty<string>();
                 _mode = ReservationMode.None;
-                return HidHideResult.Ok;
+                return restart;
             }
 
             using var handle = OpenControlDevice(out var openError);
@@ -135,11 +139,12 @@ namespace GamepadKeyboard.Native
 
             if (_mode == ReservationMode.Legacy)
             {
-                var cleanup = CleanupLegacyPaths(handle, _legacyAddedPaths);
+                var cleanup = CleanupLegacyPaths(handle, _legacyAddedPaths, _legacyDevicePaths);
                 if (!cleanup.Success) return cleanup;
                 _legacyAddedPaths = Array.Empty<string>();
+                _legacyDevicePaths = Array.Empty<string>();
                 _mode = ReservationMode.None;
-                return HidHideResult.Ok;
+                return cleanup;
             }
 
             if (!DeviceIoControl(handle, IoctlClearSessionBlacklist,
@@ -179,7 +184,7 @@ namespace GamepadKeyboard.Native
             using var handle = OpenControlDevice(out var openError);
             if (handle == null)
                 return HidHideResult.Failure(openError + " Legacy blacklist cleanup remains pending.");
-            return CleanupLegacyPaths(handle, paths);
+            return CleanupLegacyPaths(handle, paths, paths);
         }
 
         private HidHideResult ClaimLegacy(SafeFileHandle handle, IReadOnlyList<string> paths)
@@ -193,8 +198,9 @@ namespace GamepadKeyboard.Native
             if (added.Length == 0)
             {
                 _legacyAddedPaths = Array.Empty<string>();
+                _legacyDevicePaths = paths.ToArray();
                 _mode = ReservationMode.Legacy;
-                return HidHideResult.Ok;
+                return RestartDeviceNodes(paths, hiding: true);
             }
 
             var journal = SaveLegacyJournal(added);
@@ -207,18 +213,22 @@ namespace GamepadKeyboard.Native
                 "update HidHide's persistent device list");
             if (!write.Success)
             {
-                var rollback = CleanupLegacyPaths(handle, added);
+                var rollback = CleanupLegacyPaths(handle, added, added);
                 return rollback.Success
                     ? write
                     : HidHideResult.Failure(write.Error + " Rollback also failed: " + rollback.Error);
             }
 
             _legacyAddedPaths = added;
+            _legacyDevicePaths = paths.ToArray();
             _mode = ReservationMode.Legacy;
-            return HidHideResult.Ok;
+            return RestartDeviceNodes(paths, hiding: true);
         }
 
-        private static HidHideResult CleanupLegacyPaths(SafeFileHandle handle, IReadOnlyCollection<string> addedPaths)
+        private static HidHideResult CleanupLegacyPaths(
+            SafeFileHandle handle,
+            IReadOnlyCollection<string> addedPaths,
+            IReadOnlyCollection<string> restartPaths)
         {
             var currentResult = ReadMultiString(handle, IoctlGetBlacklist,
                 "read HidHide's persistent device list for cleanup");
@@ -234,7 +244,62 @@ namespace GamepadKeyboard.Native
                     return HidHideResult.Failure(write.Error + " Cleanup remains journaled for the next app launch.");
             }
 
-            return ClearLegacyJournal();
+            var journal = ClearLegacyJournal();
+            if (!journal.Success) return journal;
+            return RestartDeviceNodes(restartPaths, hiding: false);
+        }
+
+        private static HidHideResult RestartDeviceNodes(IEnumerable<string> deviceInstancePaths, bool hiding)
+        {
+            var failures = new List<string>();
+            foreach (string path in deviceInstancePaths.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (path.IndexOfAny(new[] { '"', '\r', '\n' }) >= 0)
+                {
+                    failures.Add(path + " (invalid device path)");
+                    continue;
+                }
+
+                try
+                {
+                    using var process = new Process
+                    {
+                        StartInfo = new ProcessStartInfo
+                        {
+                            FileName = Path.Combine(Environment.SystemDirectory, "pnputil.exe"),
+                            Arguments = "/restart-device \"" + path + "\"",
+                            UseShellExecute = false,
+                            CreateNoWindow = true,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        }
+                    };
+                    process.Start();
+                    if (!process.WaitForExit(10000))
+                    {
+                        failures.Add(path + " (device restart timed out)");
+                        continue;
+                    }
+                    if (process.ExitCode != 0)
+                    {
+                        string output = process.StandardOutput.ReadToEnd();
+                        string error = process.StandardError.ReadToEnd();
+                        string detail = string.IsNullOrWhiteSpace(error) ? output : error;
+                        failures.Add(path + (string.IsNullOrWhiteSpace(detail) ? "" : " (" + detail.Trim() + ")"));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failures.Add(path + " (" + ex.Message + ")");
+                }
+            }
+
+            if (failures.Count == 0) return HidHideResult.Ok;
+            string action = hiding ? "take effect" : "become available again";
+            return HidHideResult.OkWithWarning(
+                "HidHide's list was updated, but Windows could not restart the selected controller so the change may not " +
+                action + ". Run this app as Administrator or reconnect the controller manually. " +
+                string.Join("; ", failures));
         }
 
         private static HidHideResult SaveLegacyJournal(IReadOnlyList<string> paths)
@@ -437,11 +502,13 @@ namespace GamepadKeyboard.Native
 
     }
 
-    public readonly record struct HidHideResult(bool Success, string? Error, bool SessionApiUnsupported)
+    public readonly record struct HidHideResult(
+        bool Success, string? Error, bool SessionApiUnsupported, string? Warning)
     {
-        public static HidHideResult Ok => new(true, null, false);
+        public static HidHideResult Ok => new(true, null, false, null);
+        public static HidHideResult OkWithWarning(string warning) => new(true, null, false, warning);
         public static HidHideResult Failure(string error, bool sessionApiUnsupported = false) =>
-            new(false, error, sessionApiUnsupported);
+            new(false, error, sessionApiUnsupported, null);
     }
 
     internal readonly record struct HidHideBooleanResult(bool Success, bool Value, string? Error)
@@ -449,7 +516,7 @@ namespace GamepadKeyboard.Native
         public static HidHideBooleanResult FromValue(bool value) => new(true, value, null);
         public static HidHideBooleanResult Failure(string error) => new(false, false, error);
         public static implicit operator HidHideResult(HidHideBooleanResult result) =>
-            new(result.Success, result.Error, false);
+            new(result.Success, result.Error, false, null);
     }
 
     internal readonly record struct HidHideStringsResult(bool Success, IReadOnlyList<string> Values, string? Error)
@@ -457,6 +524,6 @@ namespace GamepadKeyboard.Native
         public static HidHideStringsResult FromValues(IReadOnlyList<string> values) => new(true, values, null);
         public static HidHideStringsResult Failure(string error) => new(false, Array.Empty<string>(), error);
         public static implicit operator HidHideResult(HidHideStringsResult result) =>
-            new(result.Success, result.Error, false);
+            new(result.Success, result.Error, false, null);
     }
 }
