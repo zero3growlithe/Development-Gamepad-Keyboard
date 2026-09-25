@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 namespace GamepadKeyboard.Util
 {
     /// <summary>
-    /// Autostart ("Run on startup") and elevation helpers.
+    /// Autostart ("Run on Windows startup") and elevation helpers.
     /// Autostart uses the Startup shell folder (no registry), elevation uses
     /// ShellExecute "runas" verb. Admin-launch persistence uses Task Scheduler
     /// (schtasks) so no UAC prompt appears on every login.
