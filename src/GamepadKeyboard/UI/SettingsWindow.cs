@@ -51,6 +51,7 @@ namespace GamepadKeyboard.UI
         private readonly CheckBox _startup = new() { Content = "Run on Windows startup" };
         private readonly CheckBox _startMouse = new() { Content = "Start in mouse mode" };
         private readonly CheckBox _hidHideSession = new() { Content = "Reserve selected controllers while input is enabled" };
+        private readonly CheckBox _hidHideLegacy = new() { Content = "Allow legacy persistent-list fallback when session claims are unsupported" };
         private readonly TextBlock _hidHideSelection = new() { VerticalAlignment = VerticalAlignment.Center };
         private List<string> _hidHidePaths = new();
         private readonly List<Action> _numericValidators = new();
@@ -84,6 +85,7 @@ namespace GamepadKeyboard.UI
             _startup.IsChecked = s.RunOnStartup;
             _startMouse.IsChecked = s.StartInMouseMode;
             _hidHideSession.IsChecked = s.HidHideSessionEnabled;
+            _hidHideLegacy.IsChecked = s.HidHideLegacyFallbackEnabled;
             _hidHidePaths = s.HidHideDeviceInstancePaths.ToList();
             UpdateHidHideSelectionText();
 
@@ -192,6 +194,7 @@ namespace GamepadKeyboard.UI
             s.ProfileToastPermanent = _toastPermanent.IsChecked == true;
             s.StartInMouseMode = _startMouse.IsChecked == true;
             s.HidHideSessionEnabled = _hidHideSession.IsChecked == true;
+            s.HidHideLegacyFallbackEnabled = _hidHideLegacy.IsChecked == true;
             s.HidHideDeviceInstancePaths = _hidHidePaths
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -254,8 +257,9 @@ namespace GamepadKeyboard.UI
 
             var instructions = new TextBlock
             {
-                Text = "Session-only safety mode. In HidHide, add this app to Applications, enable device hiding, " +
-                       "and leave inverse cloak off. An unsupported driver fails open; persistent hiding is never used.",
+                Text = "In HidHide, add this app to Applications, enable device hiding, and leave inverse cloak off. " +
+                       "Legacy fallback temporarily edits HidHide's persistent device list. It restores only entries added by this app " +
+                       "on DisableInput/exit and retries cleanup on the next app launch after a crash.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brushes.DimGray,
                 Margin = new Thickness(0, 2, 0, 0)
@@ -263,6 +267,8 @@ namespace GamepadKeyboard.UI
 
             var panel = new StackPanel { Margin = new Thickness(12, 12, 12, 4) };
             panel.Children.Add(_hidHideSession);
+            _hidHideLegacy.Margin = new Thickness(18, 6, 0, 0);
+            panel.Children.Add(_hidHideLegacy);
             panel.Children.Add(controls);
             panel.Children.Add(instructions);
             return new GroupBox { Header = "HidHide controller reservation", Content = panel, Margin = new Thickness(12, 10, 12, 0) };

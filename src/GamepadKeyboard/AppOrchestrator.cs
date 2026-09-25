@@ -72,6 +72,10 @@ namespace GamepadKeyboard
         {
             BuildTray();
 
+            var recovery = _hidHide.RecoverLegacyClaim();
+            if (!recovery.Success)
+                ShowHidHideError(recovery.Error ?? "legacy cleanup failed.");
+
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             _keyboard.SetPointPositions();
 
@@ -154,9 +158,9 @@ namespace GamepadKeyboard
                 {
                     "input enabled: " + _mapper.InputEnabled,
                     "mouse mode: " + _mapper.MouseMode,
-                    "HidHide session reservation: " +
+                    "HidHide reservation: " +
                         (Settings.AppSettings.Instance.HidHideSessionEnabled
-                            ? (_hidHide.IsClaimed ? "claimed" : "enabled, not claimed")
+                            ? (_hidHide.IsClaimed ? _hidHide.ModeDescription : "enabled, not claimed")
                             : "disabled")
                 };
                 System.Windows.MessageBox.Show(string.Join(Environment.NewLine, lines),
@@ -297,22 +301,37 @@ namespace GamepadKeyboard
                 {
                     var settings = Settings.AppSettings.Instance;
                     result = inputEnabled && settings.HidHideSessionEnabled
-                        ? _hidHide.Claim(settings.HidHideDeviceInstancePaths)
+                        ? _hidHide.Claim(settings.HidHideDeviceInstancePaths,
+                            settings.HidHideLegacyFallbackEnabled)
                         : _hidHide.Release();
                 }
             }
             catch (Exception ex)
             {
-                result = HidHideResult.Failure("session reservation failed unexpectedly (" + ex.Message + "). No persistent fallback was used.");
+                result = HidHideResult.Failure("controller reservation failed unexpectedly (" + ex.Message + ").");
             }
 
             if (result.Success)
             {
-                App.Log("HidHide session reservation: " + (_hidHide.IsClaimed ? "claimed" : "released"));
+                App.Log("HidHide reservation: " + (_hidHide.IsClaimed ? _hidHide.ModeDescription : "released"));
+                if (_hidHide.IsLegacyClaimed)
+                {
+                    _keyboard.Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() => _toast.ShowStatus(
+                            "HidHide: using legacy persistent fallback; DisableInput or exit restores it.",
+                            Settings.AppSettings.Instance.ProfileToastSeconds,
+                            permanent: false)));
+                }
                 return;
             }
 
-            string message = "HidHide: " + result.Error;
+            ShowHidHideError(result.Error ?? "controller reservation failed.");
+        }
+
+        private void ShowHidHideError(string error)
+        {
+            string message = "HidHide: " + error;
             App.Log(message);
             _keyboard.Dispatcher.BeginInvoke(
                 System.Windows.Threading.DispatcherPriority.Background,

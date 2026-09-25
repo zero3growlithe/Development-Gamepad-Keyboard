@@ -44,6 +44,7 @@ namespace GamepadKeyboard.Settings
         public bool ProfileToastPermanent { get; set; } = false;
         public bool StartInMouseMode { get; set; } = true;
         public bool HidHideSessionEnabled { get; set; } = false;
+        public bool HidHideLegacyFallbackEnabled { get; set; } = false;
         public List<string> HidHideDeviceInstancePaths { get; set; } = new();
         public int ActiveProfile { get; set; } = 0;
         public int ActiveMouseProfile { get; set; } = 0;
