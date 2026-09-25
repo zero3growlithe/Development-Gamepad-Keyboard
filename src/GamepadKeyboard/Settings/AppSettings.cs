@@ -11,6 +11,8 @@ namespace GamepadKeyboard.Settings
     {
         public static AppSettings Instance { get; private set; } = new();
 
+        public int SettingsVersion { get; set; } = 1;
+
         public double KeySpacing { get; set; } = 6.0;
         public double StickDeadzone { get; set; } = 0.005;
         public double MouseStickDeadzone { get; set; } = 0.005;   // separate deadzone for mouse mode
@@ -21,6 +23,12 @@ namespace GamepadKeyboard.Settings
         public double MouseSpeed { get; set; } = 12.0;
         public double MouseSpeedBoostMultiplier { get; set; } = 2.5;
         public double ScrollSpeed { get; set; } = 3.0;
+        public bool InvertVerticalScroll { get; set; } = false;
+        public bool CursorLagEnabled { get; set; } = false;
+        public double CursorLagSeconds { get; set; } = 0.15;
+        public bool FreeCursorEnabled { get; set; } = false;
+        public double FreeCursorSpeed { get; set; } = 420.0;
+        public bool HideCenterPointsAndRaysInFreeCursor { get; set; } = false;
         public double PointEditStickSpeed { get; set; } = 0.8;
         public bool ShowOverlay { get; set; } = true;
         public bool RunAsAdminOnLaunch { get; set; } = false;
@@ -35,15 +43,8 @@ namespace GamepadKeyboard.Settings
         public bool StartInMouseMode { get; set; } = true;
         public int ActiveProfile { get; set; } = 0;
         public int ActiveMouseProfile { get; set; } = 0;
+        public int ActiveStickPointsProfile { get; set; } = 0;
         public bool AdminLaunch { get; set; } = false;
-
-        /// <summary>
-        /// Legacy two-button enable combo (kept for settings compatibility; the
-        /// active shortcuts are built-in: Home+Menu+Select, or L3+R3+L1+R1 when
-        /// the PS/Xbox button is not detectable).
-        /// </summary>
-        public string EnableComboButton1 { get; set; } = "View";
-        public string EnableComboButton2 { get; set; } = "Menu";
 
         public List<KeyboardProfile> KeyboardProfiles { get; set; } = new()
         {
@@ -55,6 +56,11 @@ namespace GamepadKeyboard.Settings
             new MouseProfile()
         };
 
+        public List<StickPointsProfile> StickPointsProfiles { get; set; } = new()
+        {
+            new StickPointsProfile()
+        };
+
         [JsonIgnore]
         public KeyboardProfile Profile =>
             KeyboardProfiles.Count == 0 ? new KeyboardProfile() : KeyboardProfiles[Math.Clamp(ActiveProfile, 0, KeyboardProfiles.Count - 1)];
@@ -62,6 +68,10 @@ namespace GamepadKeyboard.Settings
         [JsonIgnore]
         public MouseProfile MouseProfile =>
             MouseProfiles.Count == 0 ? new MouseProfile() : MouseProfiles[Math.Min(ActiveMouseProfile, MouseProfiles.Count - 1)];
+
+        [JsonIgnore]
+        public StickPointsProfile StickPointsProfile =>
+            StickPointsProfiles.Count == 0 ? new StickPointsProfile() : StickPointsProfiles[Math.Clamp(ActiveStickPointsProfile, 0, StickPointsProfiles.Count - 1)];
 
         public static string FilePath
         {
@@ -81,8 +91,17 @@ namespace GamepadKeyboard.Settings
             {
                 if (File.Exists(FilePath))
                 {
-                    var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOpts);
-                    if (loaded != null) Instance = loaded;
+                    string json = File.ReadAllText(FilePath);
+                    var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts);
+                    if (loaded != null)
+                    {
+                        using var document = JsonDocument.Parse(json);
+                        var root = document.RootElement;
+                        bool hasStickProfiles = root.TryGetProperty(nameof(StickPointsProfiles), out _);
+                        bool hasSettingsVersion = root.TryGetProperty(nameof(SettingsVersion), out _);
+                        loaded.Normalize(root, hasStickProfiles, hasSettingsVersion);
+                        Instance = loaded;
+                    }
                 }
             }
             catch { /* corrupted settings -> defaults */ }
@@ -102,47 +121,108 @@ namespace GamepadKeyboard.Settings
             WriteIndented = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
+
+        private void Normalize(JsonElement root, bool hasStickProfiles, bool hasSettingsVersion)
+        {
+            KeyboardProfiles ??= new List<KeyboardProfile>();
+            MouseProfiles ??= new List<MouseProfile>();
+            StickPointsProfiles ??= new List<StickPointsProfile>();
+            if (KeyboardProfiles.Count == 0) KeyboardProfiles.Add(new KeyboardProfile());
+            if (MouseProfiles.Count == 0) MouseProfiles.Add(new MouseProfile());
+            foreach (var profile in KeyboardProfiles) profile.ComboBindings ??= new List<string>();
+            foreach (var profile in MouseProfiles) profile.ComboBindings ??= new List<string>();
+
+            if (!hasStickProfiles)
+            {
+                StickPointsProfiles.Clear();
+                if (root.TryGetProperty(nameof(KeyboardProfiles), out var profiles) && profiles.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var old in profiles.EnumerateArray())
+                    {
+                        var points = new StickPointsProfile
+                        {
+                            Name = ReadString(old, nameof(StickPointsProfile.Name), "Default"),
+                            LeftX = ReadDouble(old, nameof(StickPointsProfile.LeftX), 0.32),
+                            LeftY = ReadDouble(old, nameof(StickPointsProfile.LeftY), 0.553),
+                            RightX = ReadDouble(old, nameof(StickPointsProfile.RightX), 0.51),
+                            RightY = ReadDouble(old, nameof(StickPointsProfile.RightY), 0.53),
+                            CurveExponent = ReadDouble(old, nameof(StickPointsProfile.CurveExponent), 1.0),
+                            LeftRayLength = ReadDouble(old, nameof(StickPointsProfile.LeftRayLength), 0.4),
+                            RightRayLength = ReadDouble(old, nameof(StickPointsProfile.RightRayLength), 0.4)
+                        };
+                        StickPointsProfiles.Add(points);
+                    }
+                }
+            }
+            if (StickPointsProfiles.Count == 0) StickPointsProfiles.Add(new StickPointsProfile());
+
+            ActiveProfile = Math.Clamp(ActiveProfile, 0, KeyboardProfiles.Count - 1);
+            ActiveMouseProfile = Math.Clamp(ActiveMouseProfile, 0, MouseProfiles.Count - 1);
+            ActiveStickPointsProfile = hasStickProfiles
+                ? Math.Clamp(ActiveStickPointsProfile, 0, StickPointsProfiles.Count - 1)
+                : Math.Clamp(ActiveProfile, 0, StickPointsProfiles.Count - 1);
+
+            if (!hasSettingsVersion)
+                MigrateLegacyBindings();
+            SettingsVersion = 1;
+        }
+
+        private void MigrateLegacyBindings()
+        {
+            foreach (var profile in KeyboardProfiles)
+            {
+                if (profile.B == "Backspace") profile.B = "MouseMode";
+                if (profile.LB == "LeftClick") profile.LB = "SubmitLeft";
+                if (profile.RB == "RightClick") profile.RB = "SubmitRight";
+                if (profile.LS == "ToggleAlt") profile.LS = "ToggleMoveMode";
+                if (profile.RS == "None") profile.RS = "ToggleScaleMode";
+                AddEnableBinding(profile.ComboBindings);
+            }
+            foreach (var profile in MouseProfiles)
+            {
+                if (profile.Y == "ToggleKeyboard") profile.Y = "KeyboardMode";
+                AddEnableBinding(profile.ComboBindings);
+            }
+        }
+
+        private static void AddEnableBinding(List<string> bindings)
+        {
+            const string enableBinding = "LS+RS+LB+RB=EnableInput";
+            if (!bindings.Contains(enableBinding)) bindings.Add(enableBinding);
+        }
+
+        private static double ReadDouble(JsonElement element, string name, double fallback) =>
+            element.TryGetProperty(name, out var value) && value.TryGetDouble(out var number) ? number : fallback;
+
+        private static string ReadString(JsonElement element, string name, string fallback) =>
+            element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? fallback
+                : fallback;
     }
 
     /// <summary>
-    /// One keyboard-mode profile: origin points, response curve, ray scale and
-    /// ALL button mappings. Multiple profiles; switch with L2+R2+D-pad or a
-    /// mapped SwitchKeyboardProfile action.
+    /// One keyboard-mode button mapping profile. Stick origins and ray behavior
+    /// live in independent <see cref="StickPointsProfile"/> instances.
     /// </summary>
     public sealed class KeyboardProfile
     {
         public string Name { get; set; } = "Default";
 
-        // ── origin points (normalized 0..1 inside the layout bounds) ─────────
-        public double LeftX { get; set; } = 0.32;
-        public double LeftY { get; set; } = 0.553;
-        public double RightX { get; set; } = 0.51;
-        public double RightY { get; set; } = 0.53;
-
-        /// <summary>Response curve exponent. 1.0 = linear; &gt;1 = finer near center.</summary>
-        public double CurveExponent { get; set; } = 1.0;
-
-        /// <summary>Left ray length, 0..1 × max distance LeftCtrl→Backspace.</summary>
-        public double LeftRayLength { get; set; } = 0.4;
-
-        /// <summary>Right ray length, 0..1 × max distance LeftCtrl→Backspace.</summary>
-        public double RightRayLength { get; set; } = 0.4;
-
         // ── button mappings (physical pad -> action name) ────────────────────
         public string A { get; set; } = "Space";
-        public string B { get; set; } = "Backspace";
+        public string B { get; set; } = "MouseMode";
         public string X { get; set; } = "Tab";
         public string Y { get; set; } = "None";
 
-        /// <summary>LB = left mouse button, RB = right mouse button (user mapping).</summary>
-        public string LB { get; set; } = "LeftClick";
-        public string RB { get; set; } = "RightClick";
+        /// <summary>Default submit buttons for the independently highlighted cursors.</summary>
+        public string LB { get; set; } = "SubmitLeft";
+        public string RB { get; set; } = "SubmitRight";
 
         /// <summary>Hold-type modifier (tap = toggle): HoldShift / HoldCtrl / HoldAlt / HoldWin, or any action.</summary>
         public string LT { get; set; } = "HoldShift";
         public string RT { get; set; } = "HoldCtrl";
-        public string LS { get; set; } = "ToggleAlt";
-        public string RS { get; set; } = "None";
+        public string LS { get; set; } = "ToggleMoveMode";
+        public string RS { get; set; } = "ToggleScaleMode";
 
         public string View { get; set; } = "DisableInput";
         public string Menu { get; set; } = "ToggleKeyboardMouseMode";
@@ -162,7 +242,10 @@ namespace GamepadKeyboard.Settings
         /// Custom combo bindings: "A+B+X=Action" — all buttons held, the LAST one's
         /// press edge triggers the action (earlier buttons are modifiers).
         /// </summary>
-        public List<string> ComboBindings { get; set; } = new();
+        public List<string> ComboBindings { get; set; } = new()
+        {
+            "LS+RS+LB+RB=EnableInput"
+        };
     }
 
     public sealed class MouseProfile
@@ -172,7 +255,7 @@ namespace GamepadKeyboard.Settings
         public string A { get; set; } = "LeftClick";
         public string B { get; set; } = "RightClick";
         public string X { get; set; } = "MiddleClick";
-        public string Y { get; set; } = "ToggleKeyboard";
+        public string Y { get; set; } = "KeyboardMode";
 
         public string LB { get; set; } = "LeftClick";
         public string RB { get; set; } = "RightClick";
@@ -191,6 +274,22 @@ namespace GamepadKeyboard.Settings
         public string Menu { get; set; } = "ToggleKeyboardMouseMode";
 
         /// <summary>Custom combo bindings: "A+B=Action" (mods held, last press triggers).</summary>
-        public List<string> ComboBindings { get; set; } = new();
+        public List<string> ComboBindings { get; set; } = new()
+        {
+            "LS+RS+LB+RB=EnableInput"
+        };
+    }
+
+    /// <summary>Independent geometry profile used by both keyboard mapping profiles.</summary>
+    public sealed class StickPointsProfile
+    {
+        public string Name { get; set; } = "Default";
+        public double LeftX { get; set; } = 0.32;
+        public double LeftY { get; set; } = 0.553;
+        public double RightX { get; set; } = 0.51;
+        public double RightY { get; set; } = 0.53;
+        public double CurveExponent { get; set; } = 1.0;
+        public double LeftRayLength { get; set; } = 0.4;
+        public double RightRayLength { get; set; } = 0.4;
     }
 }

@@ -151,15 +151,15 @@ namespace GamepadKeyboard.UI
             return b;
         }
 
-        private List<KeyboardProfile> Kb => AppSettings.Instance.KeyboardProfiles;
+        private List<StickPointsProfile> Profiles => AppSettings.Instance.StickPointsProfiles;
 
         private void ReloadProfileList()
         {
             _suppress++;
             _profileBox.Items.Clear();
-            for (int i = 0; i < Kb.Count; i++)
-                _profileBox.Items.Add(Kb[i].Name + (i == AppSettings.Instance.ActiveProfile ? "  (active)" : ""));
-            int idx = Math.Clamp(AppSettings.Instance.ActiveProfile, 0, Kb.Count - 1);
+            for (int i = 0; i < Profiles.Count; i++)
+                _profileBox.Items.Add(Profiles[i].Name + (i == AppSettings.Instance.ActiveStickPointsProfile ? "  (active)" : ""));
+            int idx = Math.Clamp(AppSettings.Instance.ActiveStickPointsProfile, 0, Profiles.Count - 1);
             _profileBox.SelectedIndex = idx;
             _suppress--;
             LoadSelected();
@@ -170,10 +170,10 @@ namespace GamepadKeyboard.UI
             if (_suppress > 0) return;
             int idx = _profileBox.SelectedIndex;
             if (idx < 0) return;
-            AppSettings.Instance.ActiveProfile = idx;
-            _nameBox.Text = Kb[idx].Name;
+            AppSettings.Instance.ActiveStickPointsProfile = idx;
+            _nameBox.Text = Profiles[idx].Name;
 
-            var p = Kb[idx];
+            var p = Profiles[idx];
             _suppress++;
             _lx.Value = p.LeftX; _ly.Value = p.LeftY;
             _rx.Value = p.RightX; _ry.Value = p.RightY;
@@ -182,7 +182,7 @@ namespace GamepadKeyboard.UI
 
             UpdateValues();
             AppSettings.Save();
-            AppOrchestrator.NotifyMappingsChanged();
+            AppOrchestrator.NotifyStickPointsChanged();
         }
 
         private void WireSliders()
@@ -200,7 +200,7 @@ namespace GamepadKeyboard.UI
             if (_suppress > 0) return;
             int idx = _profileBox.SelectedIndex;
             if (idx < 0) return;
-            var p = Kb[idx];
+            var p = Profiles[idx];
             p.LeftX = _lx.Value; p.LeftY = _ly.Value;
             p.RightX = _rx.Value; p.RightY = _ry.Value;
             p.LeftRayLength = _ll.Value; p.RightRayLength = _rl.Value;
@@ -212,7 +212,7 @@ namespace GamepadKeyboard.UI
             _ryv.Text = p.RightY.ToString("0.000");
 
             AppSettings.Save();
-            AppOrchestrator.NotifyMappingsChanged();   // refreshes points on the keyboard overlay live
+            AppOrchestrator.NotifyStickPointsChanged();   // refreshes points on the keyboard overlay live
         }
 
         private void UpdateValues()
@@ -227,32 +227,32 @@ namespace GamepadKeyboard.UI
 
         private void AddProfile(bool dup)
         {
-            KeyboardProfile np;
+            StickPointsProfile np;
             int src = _profileBox.SelectedIndex;
-            if (dup && src >= 0 && src < Kb.Count)
+            if (dup && src >= 0 && src < Profiles.Count)
             {
-                var json = JsonSerializer.Serialize(Kb[src]);
-                np = JsonSerializer.Deserialize<KeyboardProfile>(json) ?? new KeyboardProfile();
+                var json = JsonSerializer.Serialize(Profiles[src]);
+                np = JsonSerializer.Deserialize<StickPointsProfile>(json) ?? new StickPointsProfile();
                 np.Name = np.Name + " copy";
             }
-            else np = new KeyboardProfile { Name = "Keyboard profile " + (Kb.Count + 1) };
-            int insert = Math.Min(Math.Max(src, 0) + 1, Kb.Count);
-            Kb.Insert(insert, np);
-            AppSettings.Instance.ActiveProfile = insert;
+            else np = new StickPointsProfile { Name = "Stick points profile " + (Profiles.Count + 1) };
+            int insert = Math.Min(Math.Max(src, 0) + 1, Profiles.Count);
+            Profiles.Insert(insert, np);
+            AppSettings.Instance.ActiveStickPointsProfile = insert;
             AppSettings.Save();
-            AppOrchestrator.NotifyMappingsChanged();
+            AppOrchestrator.NotifyStickPointsChanged();
             ReloadProfileList();
         }
 
         private void DeleteProfile()
         {
-            if (Kb.Count <= 1) return;
+            if (Profiles.Count <= 1) return;
             int idx = _profileBox.SelectedIndex;
             if (idx < 0) return;
-            Kb.RemoveAt(idx);
-            AppSettings.Instance.ActiveProfile = Math.Clamp(idx - 1, 0, Kb.Count - 1);
+            Profiles.RemoveAt(idx);
+            AppSettings.Instance.ActiveStickPointsProfile = Math.Clamp(idx - 1, 0, Profiles.Count - 1);
             AppSettings.Save();
-            AppOrchestrator.NotifyMappingsChanged();
+            AppOrchestrator.NotifyStickPointsChanged();
             ReloadProfileList();
         }
 
@@ -260,13 +260,13 @@ namespace GamepadKeyboard.UI
         {
             int idx = _profileBox.SelectedIndex;
             string name = _nameBox.Text.Trim();
-            if (idx < 0 || string.IsNullOrEmpty(name) || Kb[idx].Name == name) return;
-            Kb[idx].Name = name;
+            if (idx < 0 || string.IsNullOrEmpty(name) || Profiles[idx].Name == name) return;
+            Profiles[idx].Name = name;
             _suppress++;
-            _profileBox.Items[idx] = name + (idx == AppSettings.Instance.ActiveProfile ? "  (active)" : "");
+            _profileBox.Items[idx] = name + (idx == AppSettings.Instance.ActiveStickPointsProfile ? "  (active)" : "");
             _suppress--;
             AppSettings.Save();
-            AppOrchestrator.NotifyMappingsChanged();
+            AppOrchestrator.NotifyStickPointsChanged();
         }
     }
 }

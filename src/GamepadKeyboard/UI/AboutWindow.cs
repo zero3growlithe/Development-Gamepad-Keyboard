@@ -52,16 +52,16 @@ namespace GamepadKeyboard.UI
                 FontWeight = FontWeights.Bold
             });
             text.Inlines.Add(new System.Windows.Documents.Run(
-                "• Left/Right stick: aim the ray from the origin point; L1 / R1 press the highlighted key\n" +
-                "• Hold L2 = Shift, hold R2 = Ctrl, press stick = Alt toggle\n" +
-                "• B = Backspace, Y = switch keyboard/mouse mode\n" +
-                "• D-pad = arrows; hold Y + D-pad = PageUp/PageDown/Home/End\n" +
-                "• L2+R2 + D-pad Left/Right = switch keyboard profile\n\n"));
+                "• Left/Right stick: aim a cursor; L1 / R1 submit its highlighted key\n" +
+                "• Hold L2 = Shift, hold R2 = Ctrl\n" +
+                "• B = mouse mode, L3 = move mode, R3 = scale mode\n" +
+                "• D-pad = arrows\n" +
+                "• All buttons and shortcuts are remappable per profile\n\n"));
             text.Inlines.Add(new System.Windows.Documents.Run("Mouse mode:\n") { FontWeight = FontWeights.Bold });
             text.Inlines.Add(new System.Windows.Documents.Run(
                 "• Right stick = cursor, left stick = scroll, D-pad = scroll\n" +
                 "• L1 = left click, R1 = right click, L2 = middle click, R2 = speed boost\n" +
-                "• B = back to keyboard mode\n" +
+                "• Y = keyboard mode\n" +
                 "• All buttons are remappable per mouse profile in settings"));
 
             var ok = new Button

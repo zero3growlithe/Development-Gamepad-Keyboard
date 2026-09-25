@@ -73,7 +73,7 @@ namespace GamepadKeyboard
             _keyboard.SetPointPositions();
 
             // launch state: input disabled (pad free for games) and no GUI visible;
-            // the enable combo (PS+Menu+Select / L3+R3+L1+R1) starts the tool normally
+            // a profile-defined EnableInput binding starts the tool normally
             _keyboard.Hide();
             _legend.Hide();
             _mapper.MouseMode = Settings.AppSettings.Instance.StartInMouseMode;
@@ -97,12 +97,19 @@ namespace GamepadKeyboard
             });
         }
 
+        public static void NotifyStickPointsChanged()
+        {
+            _current?._mapper.ResetKeyboardCursors();
+            NotifyMappingsChanged();
+        }
+
         private static AppOrchestrator? _current;
 
         private bool _keyboardShown;
 
         private void ShowKeyboard()
         {
+            _mapper.ResetKeyboardCursors();
             _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             _keyboard.SetPointPositions();
             _keyboard.Show();
@@ -278,7 +285,7 @@ namespace GamepadKeyboard
             _keyboard.SetPointPositions();   // keep dots on the active profile's origin points
             RefreshLegend();
 
-            // ── stick-driven overlay adjust: L3 hold = move (left stick), R3 hold = scale (right stick) ──
+            // ── stick-driven overlay adjust (buttons are profile-defined actions) ──
             if (_mapper.AdjustMove)
             {
                 var spd = Settings.AppSettings.Instance.OverlayMoveSpeed;
@@ -303,8 +310,7 @@ namespace GamepadKeyboard
             bool wantShown = Settings.AppSettings.Instance.ShowOverlay && _mapper.InputEnabled && !_mapper.MouseMode;
             if (wantShown && !_keyboardShown)
             {
-                _keyboardShown = true;
-                _keyboard.Show();
+                ShowKeyboard();
             }
             if (!wantShown && _keyboardShown)
             {
@@ -319,14 +325,14 @@ namespace GamepadKeyboard
                         mi.Checked = wantShown;
             if (!_mapper.MouseMode)
             {
+                _keyboard.UpdateCursor(true, _mapper.LeftCursorX, _mapper.LeftCursorY, _mapper.LeftCursorActive);
+                _keyboard.UpdateCursor(false, _mapper.RightCursorX, _mapper.RightCursorY, _mapper.RightCursorActive);
                 if (_mapper.LeftHit != null)
                 {
-                    _keyboard.UpdateRay(true, _mapper.LastLeftX, _mapper.LastLeftY, _mapper.LeftLen, _mapper.LeftHit);
                     _keyboard.HighlightKey(_mapper.LeftHit, false, left: true);
                 }
                 if (_mapper.RightHit != null)
                 {
-                    _keyboard.UpdateRay(false, _mapper.LastRightX, _mapper.LastRightY, _mapper.RightLen, _mapper.RightHit);
                     _keyboard.HighlightKey(_mapper.RightHit, false, left: false);
                 }
             }

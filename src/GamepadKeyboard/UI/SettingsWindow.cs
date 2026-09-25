@@ -31,8 +31,14 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _mouseSpeed = new() { Text = "" };
         private readonly TextBox _boost = new() { Text = "" };
         private readonly TextBox _scroll = new() { Text = "" };
+        private readonly CheckBox _invertScroll = new() { Content = "Invert vertical mouse scroll direction" };
         private readonly TextBox _deadzone = new() { Text = "" };
         private readonly TextBox _mouseDeadzone = new() { Text = "" };
+        private readonly CheckBox _cursorLag = new() { Content = "Enable cursor lag" };
+        private readonly TextBox _cursorLagSeconds = new() { Text = "" };
+        private readonly CheckBox _freeCursor = new() { Content = "Enable free cursor" };
+        private readonly TextBox _freeCursorSpeed = new() { Text = "" };
+        private readonly CheckBox _hideCentersAndRays = new() { Content = "Hide center points and rays in free cursor mode" };
         private readonly CheckBox _legend = new() { Content = "Show button legend overlay" };
         private readonly CheckBox _toastPermanent = new() { Content = "Keep profile toast permanently visible" };
         private readonly CheckBox _runAdmin = new() { Content = "Run as Administrator every launch (UAC on startup)" };
@@ -42,7 +48,7 @@ namespace GamepadKeyboard.UI
         public SettingsWindow()
         {
             Title = "Development Gamepad Keyboard — Settings";
-            Width = 460;
+            Width = 560;
             SizeToContent = SizeToContent.Height;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -52,8 +58,14 @@ namespace GamepadKeyboard.UI
             _mouseSpeed.Text = s.MouseSpeed.ToString("0.#");
             _boost.Text = s.MouseSpeedBoostMultiplier.ToString("0.##");
             _scroll.Text = s.ScrollSpeed.ToString("0.#");
+            _invertScroll.IsChecked = s.InvertVerticalScroll;
             _deadzone.Text = s.StickDeadzone.ToString("0.###");
             _mouseDeadzone.Text = s.MouseStickDeadzone.ToString("0.###");
+            _cursorLag.IsChecked = s.CursorLagEnabled;
+            _cursorLagSeconds.Text = s.CursorLagSeconds.ToString("0.###");
+            _freeCursor.IsChecked = s.FreeCursorEnabled;
+            _freeCursorSpeed.Text = s.FreeCursorSpeed.ToString("0.#");
+            _hideCentersAndRays.IsChecked = s.HideCenterPointsAndRaysInFreeCursor;
             _legend.IsChecked = s.ShowButtonLegend;
             _toastPermanent.IsChecked = s.ProfileToastPermanent;
             _runAdmin.IsChecked = s.AdminLaunch;
@@ -61,8 +73,8 @@ namespace GamepadKeyboard.UI
             _startMouse.IsChecked = s.StartInMouseMode;
 
             var grid = new Grid { Margin = new Thickness(12) };
-            for (int i = 0; i < 8; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+            for (int i = 0; i < 14; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(285) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             void AddRow(int r, string label, FrameworkElement editor)
@@ -77,12 +89,18 @@ namespace GamepadKeyboard.UI
 
             AddRow(0, "Key spacing (px gap between keys):", _spacing);
             AddRow(1, "Mouse speed (px per stick unit):", _mouseSpeed);
-            AddRow(2, "Mouse speed boost multiplier (R2):", _boost);
+            AddRow(2, "Mouse speed boost multiplier:", _boost);
             AddRow(3, "Scroll speed:", _scroll);
-            AddRow(4, "Stick deadzone keyboard mode (0.000–0.5):", _deadzone);
-            AddRow(5, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
-            AddRow(6, "", _legend);
-            AddRow(7, "", _toastPermanent);
+            AddRow(4, "", _invertScroll);
+            AddRow(5, "Stick deadzone keyboard mode (0.000–0.5):", _deadzone);
+            AddRow(6, "Stick deadzone mouse mode (0.000–0.5):", _mouseDeadzone);
+            AddRow(7, "", _cursorLag);
+            AddRow(8, "Cursor lag (seconds; 0 = instant):", _cursorLagSeconds);
+            AddRow(9, "", _freeCursor);
+            AddRow(10, "Free cursor speed (px/second):", _freeCursorSpeed);
+            AddRow(11, "", _hideCentersAndRays);
+            AddRow(12, "", _legend);
+            AddRow(13, "", _toastPermanent);
 
             // WrapPanel: three wide buttons wrap to the next line instead of
             // being clipped off the 460 px window edge
@@ -132,8 +150,14 @@ namespace GamepadKeyboard.UI
             if (double.TryParse(_mouseSpeed.Text, out var ms) && ms > 0) s.MouseSpeed = ms;
             if (double.TryParse(_boost.Text, out var boost) && boost >= 1) s.MouseSpeedBoostMultiplier = boost;
             if (double.TryParse(_scroll.Text, out var scroll) && scroll > 0) s.ScrollSpeed = scroll;
+            s.InvertVerticalScroll = _invertScroll.IsChecked == true;
             if (double.TryParse(_deadzone.Text, System.Globalization.CultureInfo.InvariantCulture, out var dz) && dz >= 0 && dz <= 0.5) s.StickDeadzone = dz;
             if (double.TryParse(_mouseDeadzone.Text, System.Globalization.CultureInfo.InvariantCulture, out var mdz) && mdz >= 0 && mdz <= 0.5) s.MouseStickDeadzone = mdz;
+            s.CursorLagEnabled = _cursorLag.IsChecked == true;
+            if (double.TryParse(_cursorLagSeconds.Text, out var lag) && lag >= 0) s.CursorLagSeconds = lag;
+            s.FreeCursorEnabled = _freeCursor.IsChecked == true;
+            if (double.TryParse(_freeCursorSpeed.Text, out var cursorSpeed) && cursorSpeed > 0) s.FreeCursorSpeed = cursorSpeed;
+            s.HideCenterPointsAndRaysInFreeCursor = _hideCentersAndRays.IsChecked == true;
             s.ShowButtonLegend = _legend.IsChecked == true;
             s.ProfileToastPermanent = _toastPermanent.IsChecked == true;
             s.StartInMouseMode = _startMouse.IsChecked == true;

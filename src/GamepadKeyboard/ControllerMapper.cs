@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using GamepadKeyboard.Input;
 using GamepadKeyboard.Keyboard;
 using GamepadKeyboard.Native;
@@ -17,10 +18,13 @@ namespace GamepadKeyboard
     {
         private readonly InputSender _sender = new();
         private readonly KeyboardLayout _layout;
+        private readonly Stopwatch _cursorClock = Stopwatch.StartNew();
+        private double _lastCursorTime;
+        private bool _cursorInitialized;
+        private bool _lastFreeCursor;
+        private double _leftTargetX, _leftTargetY, _rightTargetX, _rightTargetY;
 
         public bool MouseMode { get; set; }
-        /// <summary>Keyboard was entered from mouse mode via Y — B returns to mouse.</summary>
-        public bool KeyboardFromMouse { get; private set; }
 
         /// <summary>When disabled the pad is passed through untouched (game use).</summary>
         public bool InputEnabled { get; private set; }   // starts disabled: gamepad free for games until enable combo
@@ -44,6 +48,12 @@ namespace GamepadKeyboard
         public double LastLeftY { get; private set; }
         public double LastRightX { get; private set; }
         public double LastRightY { get; private set; }
+        public double LeftCursorX { get; private set; }
+        public double LeftCursorY { get; private set; }
+        public double RightCursorX { get; private set; }
+        public double RightCursorY { get; private set; }
+        public bool LeftCursorActive { get; private set; }
+        public bool RightCursorActive { get; private set; }
 
         /// <summary>L3/R3 press toggles (sticky until toggled off or input disabled).</summary>
         public bool AdjustMove { get; set; }
@@ -58,9 +68,6 @@ namespace GamepadKeyboard
 
         // hold-to-type state: key currently held down by the left/right commit activation
         private KeyboardLayout.KeyDef? _heldRayKeyL, _heldRayKeyR;
-
-        // pending move/scale toggles (armed on L3/R3 press, fired on release unless cancelled)
-        private bool _l3Pending, _r3Pending;
 
         /// <summary>Keys currently held via hold-to-type (for UI tint; modifiers only tint).</summary>
         public System.Collections.Generic.IEnumerable<ushort> HeldRayKeyVks
@@ -81,9 +88,6 @@ namespace GamepadKeyboard
         // previous physical state (edge detection)
         private bool _pA, _pB, _pX, _pY, _pLB, _pRB, _pLS, _pRS;
         private bool _pDUp, _pDDown, _pDLeft, _pDRight;
-        private double _pLT, _pRT;
-        private bool _pCombo;
-
         /// <summary>Raised when disable/enable happens or profile changes (UI toast).</summary>
         public event Action<string>? Notification;
         public event Action? StateChanged;
@@ -91,30 +95,41 @@ namespace GamepadKeyboard
         public ControllerMapper(KeyboardLayout layout)
         {
             _layout = layout;
+            ResetKeyboardCursors();
+        }
+
+        public void ResetKeyboardCursors()
+        {
+            var p = AppSettings.Instance.StickPointsProfile;
+            double width = KeyboardWidth();
+            double height = KeyboardHeight();
+            LeftCursorX = _leftTargetX = 4 + p.LeftX * width;
+            LeftCursorY = _leftTargetY = 4 + p.LeftY * height;
+            RightCursorX = _rightTargetX = 4 + p.RightX * width;
+            RightCursorY = _rightTargetY = 4 + p.RightY * height;
+            LeftCursorActive = RightCursorActive = AppSettings.Instance.FreeCursorEnabled;
+            LeftHit = RightHit = null;
+            _cursorInitialized = true;
+            _lastFreeCursor = AppSettings.Instance.FreeCursorEnabled;
+            _lastCursorTime = _cursorClock.Elapsed.TotalSeconds;
         }
 
         public void Process(in GamepadSnapshot s)
         {
-            // ── enable combo (works even when disabled) ──────────────────────
-            // primary: PS/Xbox (Home) + Menu + Select; fallback: L3 + R3 + L1 + R1
-            bool comboPrimary = s.Home && s.Menu && s.View;
-            bool comboFallback = s.LS && s.RS && s.LB && s.RB;
-            bool combo = comboPrimary || comboFallback;
-            if (combo && !_pCombo)
-            {
-                App.Log("input enabled -> true (enable combo: " +
-                        (comboPrimary ? "Home+Menu+Select" : "L3+R3+L1+R1") + ")");
-                InputEnabled = true;
-                Notification?.Invoke("Input ENABLED — gamepad controls the PC");
-                StateChanged?.Invoke();
-                _pCombo = combo;
-                SaveEdges(s);   // consume the enabling reading: still-held combo buttons
-                return;         // (View/Menu) must not fire their mapped actions
-            }
-            _pCombo = combo;
-
             if (!InputEnabled)
             {
+                bool mappedButtonEnabled = MouseMode
+                    ? TryEnableFromMappedButton(s, AppSettings.Instance.MouseProfile)
+                    : TryEnableFromMappedButton(s, AppSettings.Instance.Profile);
+                var enableBindings = MouseMode
+                    ? AppSettings.Instance.MouseProfile.ComboBindings
+                    : AppSettings.Instance.Profile.ComboBindings;
+                if (mappedButtonEnabled || TryEnableFromProfile(s, enableBindings))
+                {
+                    SaveEdges(s); // consume the reading containing the custom enable combo
+                    return;
+                }
+
                 // pass-through: app injects nothing, game sees the pad natively
                 AdjustMove = AdjustScale = false;
                 MoveDX = MoveDY = ScaleDelta = 0;
@@ -138,52 +153,7 @@ namespace GamepadKeyboard
             var comboSup = EvaluateCombos(s, p.ComboBindings);
             bool Sup(string b) => comboSup.Contains(b);
 
-            // fixed mode-switch: B returns to mouse mode if keyboard was opened via Y in mouse mode
-            if (KeyboardFromMouse && !Sup("B") && s.B && !_pB)
-            {
-                KeyboardFromMouse = false;
-                MouseMode = true;
-                App.Log("mode: keyboard -> mouse (B)");
-                Notification?.Invoke("Mouse mode");
-                StateChanged?.Invoke();
-                return;
-            }
-
-            // origin-point edit mode is intentionally NOT here; profile switch first
-            if (HandleProfileSwitch(s))
-                return;
-
-            // ── overlay adjust TOGGLES: toggle happens on button RELEASE, unless another
-            //    button was pressed while L3/R3 was held (that press belonged to a combo) ──
-            if (s.LS && !_pLS) _l3Pending = true;
-            if (s.RS && !_pRS) _r3Pending = true;
-            if (_l3Pending || _r3Pending)
-            {
-                // any other button edge this tick cancels the pending toggle
-                if (AnyOtherButtonEdge(s)) { _l3Pending = false; _r3Pending = false; }
-            }
-            if (!s.LS && _pLS)   // L3 released
-            {
-                if (_l3Pending)
-                {
-                    AdjustMove = !AdjustMove;
-                    MoveDX = MoveDY = 0;
-                    Notification?.Invoke(AdjustMove ? "Move mode ON — left stick moves the keyboard"
-                                                    : "Move mode OFF");
-                }
-                _l3Pending = false;
-            }
-            if (!s.RS && _pRS)   // R3 released
-            {
-                if (_r3Pending)
-                {
-                    AdjustScale = !AdjustScale;
-                    ScaleDelta = 0;
-                    Notification?.Invoke(AdjustScale ? "Scale mode ON — right stick up/down scales"
-                                                     : "Scale mode OFF");
-                }
-                _r3Pending = false;
-            }
+            MoveDX = MoveDY = ScaleDelta = 0;
             if (AdjustMove)
             {
                 MoveDX = s.LX;
@@ -194,30 +164,23 @@ namespace GamepadKeyboard
                 ScaleDelta = s.RY;   // up (+RY) = bigger, down = smaller
             }
 
-            // hold modifiers from triggers (LT/RT mapped as HoldShift/HoldCtrl)
-            if (!Sup("LT")) ApplyTriggerModifier(p.LT, s.LeftTrigger);
-            if (!Sup("RT")) ApplyTriggerModifier(p.RT, s.RightTrigger);
+            UpdateKeyboardCursors(s);
 
-            // stick rays (max length = LeftCtrl -> Backspace distance, per-stick slider)
-            LastLeftX = s.LX; LastLeftY = s.LY;
-            double maxL = MaxRayLength() * p.LeftRayLength;
-            (LeftHit, LeftLen) = RayHit(s.LX, s.LY, maxL, left: true);
-
-            LastRightX = s.RX; LastRightY = s.RY;
-            double maxR = MaxRayLength() * p.RightRayLength;
-            (RightHit, RightLen) = RayHit(s.RX, s.RY, maxR, left: false);
+            if (!Sup("LT")) DispatchButton(p.LT, s.LeftTrigger > 0.5, ref _pLTHeld);
+            if (!Sup("RT")) DispatchButton(p.RT, s.RightTrigger > 0.5, ref _pRTHeld);
 
             // dispatch mapped actions for every button (edge or hold semantics);
             // buttons used as combo LAST button are suppressed while combo modifiers held
             if (!Sup("A")) DispatchButton(p.A, s.A, ref _pA);
             if (!Sup("B")) DispatchButton(p.B, s.B, ref _pB);
+            if (MouseMode) return;
             if (!Sup("X")) DispatchButton(p.X, s.X, ref _pX);
             if (!Sup("Y")) DispatchButton(p.Y, s.Y, ref _pY);
 
             if (!Sup("LB")) DispatchButton(p.LB, s.LB, ref _pLB);
             if (!Sup("RB")) DispatchButton(p.RB, s.RB, ref _pRB);
-
-            // L3/R3 are dedicated to overlay move/scale toggles — not mappable here
+            if (!Sup("LS")) DispatchButton(p.LS, s.LS, ref _pLS);
+            if (!Sup("RS")) DispatchButton(p.RS, s.RS, ref _pRS);
 
             if (!Sup("View")) DispatchButton(p.View, s.View, ref _pView);
             if (!Sup("Menu")) DispatchButton(p.Menu, s.Menu, ref _pMenu);
@@ -237,29 +200,6 @@ namespace GamepadKeyboard
                 if (!Sup("DLeft")) DispatchButton(p.DLeft, s.DLeft, ref _pDLeft);
                 if (!Sup("DRight")) DispatchButton(p.DRight, s.DRight, ref _pDRight);
             }
-
-
-        }
-
-        private bool HandleProfileSwitch(in GamepadSnapshot s)
-        {
-            // L2+R2+dpad left/right switches keyboard profile (fixed combo, documented)
-            if (s.LeftTrigger > 0.5 && s.RightTrigger > 0.5)
-            {
-                bool next = s.DRight && !_pDRight;
-                bool prev = s.DLeft && !_pDLeft;
-                if (next || prev)
-                {
-                    var st = AppSettings.Instance;
-                    int count = Math.Max(1, st.KeyboardProfiles.Count);
-                    st.ActiveProfile = (st.ActiveProfile + (next ? 1 : count - 1)) % count;
-                    AppSettings.Save();
-                    Notification?.Invoke("Keyboard profile: " + st.Profile.Name);
-                    StateChanged?.Invoke();
-                }
-                return true;
-            }
-            return false;
         }
 
         // ── Mouse mode ────────────────────────────────────────────────────────
@@ -269,7 +209,7 @@ namespace GamepadKeyboard
             var profile = AppSettings.Instance.MouseProfile;
             var st = AppSettings.Instance;
 
-            bool boost = s.Button(profile.RT) || s.RightTrigger > 0.5;
+            bool boost = IsActionHeld(profile, "SpeedBoost", s);
             double speed = st.MouseSpeed * (boost ? st.MouseSpeedBoostMultiplier : 1.0);
 
             // right stick: cursor
@@ -280,7 +220,7 @@ namespace GamepadKeyboard
             // left stick: scroll (vertical + horizontal)
             double sc = st.ScrollSpeed;
             if (Math.Abs(s.LY) > 0.05)
-                _sender.MouseWheel((int)Math.Sign(s.LY) * -(int)Math.Round(ApplyCurve(Math.Abs(s.LY)) * 120 * sc / 3.0));
+                SendVerticalScroll((int)Math.Sign(s.LY) * -(int)Math.Round(ApplyCurve(Math.Abs(s.LY)) * 120 * sc / 3.0));
             if (Math.Abs(s.LX) > 0.05)
                 _sender.MouseHWheel((int)Math.Sign(s.LX) * (int)Math.Round(ApplyCurve(Math.Abs(s.LX)) * 120 * sc / 3.0));
 
@@ -290,12 +230,12 @@ namespace GamepadKeyboard
             // dpad scroll (unless remapped to something else)
             if (!Sup("DUp"))
             {
-                if (profile.DUp == "ScrollUp") { if (s.DUp) _sender.MouseWheel(120); }
+                if (profile.DUp == "ScrollUp") { if (s.DUp) SendVerticalScroll(120); }
                 else DispatchButton(profile.DUp, s.DUp, ref _pDUp);
             }
             if (!Sup("DDown"))
             {
-                if (profile.DDown == "ScrollDown") { if (s.DDown) _sender.MouseWheel(-120); }
+                if (profile.DDown == "ScrollDown") { if (s.DDown) SendVerticalScroll(-120); }
                 else DispatchButton(profile.DDown, s.DDown, ref _pDDown);
             }
             if (!Sup("DLeft"))
@@ -309,23 +249,12 @@ namespace GamepadKeyboard
                 else DispatchButton(profile.DRight, s.DRight, ref _pDRight);
             }
 
-            // fixed mode-switch: Y press in mouse mode enables the keyboard overlay
-            // (suppressed while Y is a combo last-button with modifiers held)
-            if (!Sup("Y") && s.Y && !_pY && MouseMode)
-            {
-                MouseMode = false;
-                KeyboardFromMouse = true;
-                App.Log("mode: mouse -> keyboard (Y)");
-                Notification?.Invoke("Keyboard mode");
-                StateChanged?.Invoke();
-            }
-
             // buttons (combo last-button suppressed while its modifiers held)
             if (!Sup("A")) DispatchButton(profile.A, s.A, ref _pA);
             if (!Sup("B")) DispatchButton(profile.B, s.B, ref _pB);
             if (!Sup("X")) DispatchButton(profile.X, s.X, ref _pX);
-            if (!MouseMode) return;   // switched to keyboard this tick: skip mouse Y dispatch
             if (!Sup("Y")) DispatchButton(profile.Y, s.Y, ref _pY);
+            if (!MouseMode) return;
             if (!Sup("LB")) DispatchButton(profile.LB, s.LB, ref _pLB);
             if (!Sup("RB")) DispatchButton(profile.RB, s.RB, ref _pRB);
             if (!Sup("LS")) DispatchButton(profile.LS, s.LS, ref _pLS);
@@ -336,7 +265,111 @@ namespace GamepadKeyboard
             if (!Sup("RT")) DispatchButton(profile.RT, s.RightTrigger > 0.5, ref _pRTHeld);
         }
 
+        private static bool IsActionHeld(MouseProfile profile, string action, in GamepadSnapshot s)
+        {
+            return profile.A == action && s.A
+                || profile.B == action && s.B
+                || profile.X == action && s.X
+                || profile.Y == action && s.Y
+                || profile.LB == action && s.LB
+                || profile.RB == action && s.RB
+                || profile.LT == action && s.LeftTrigger > 0.5
+                || profile.RT == action && s.RightTrigger > 0.5
+                || profile.LS == action && s.LS
+                || profile.RS == action && s.RS
+                || profile.View == action && s.View
+                || profile.Menu == action && s.Menu
+                || profile.DUp == action && s.DUp
+                || profile.DDown == action && s.DDown
+                || profile.DLeft == action && s.DLeft
+                || profile.DRight == action && s.DRight;
+        }
+
+        private void SendVerticalScroll(int delta)
+        {
+            _sender.MouseWheel(AppSettings.Instance.InvertVerticalScroll ? -delta : delta);
+        }
+
         // ── Custom combo bindings ─────────────────────────────────────────────
+
+        private bool TryEnableFromMappedButton(in GamepadSnapshot s, KeyboardProfile profile) =>
+            TryEnableAction(profile.A, s.A, _pA)
+            || TryEnableAction(profile.B, s.B, _pB)
+            || TryEnableAction(profile.X, s.X, _pX)
+            || TryEnableAction(profile.Y, s.Y, _pY)
+            || TryEnableAction(profile.LB, s.LB, _pLB)
+            || TryEnableAction(profile.RB, s.RB, _pRB)
+            || TryEnableAction(profile.LT, s.LeftTrigger > 0.5, _pLTHeld)
+            || TryEnableAction(profile.RT, s.RightTrigger > 0.5, _pRTHeld)
+            || TryEnableAction(profile.LS, s.LS, _pLS)
+            || TryEnableAction(profile.RS, s.RS, _pRS)
+            || TryEnableAction(profile.View, s.View, _pView)
+            || TryEnableAction(profile.Menu, s.Menu, _pMenu)
+            || TryEnableAction(profile.DUp, s.DUp, _pDUp)
+            || TryEnableAction(profile.DDown, s.DDown, _pDDown)
+            || TryEnableAction(profile.DLeft, s.DLeft, _pDLeft)
+            || TryEnableAction(profile.DRight, s.DRight, _pDRight);
+
+        private bool TryEnableFromMappedButton(in GamepadSnapshot s, MouseProfile profile) =>
+            TryEnableAction(profile.A, s.A, _pA)
+            || TryEnableAction(profile.B, s.B, _pB)
+            || TryEnableAction(profile.X, s.X, _pX)
+            || TryEnableAction(profile.Y, s.Y, _pY)
+            || TryEnableAction(profile.LB, s.LB, _pLB)
+            || TryEnableAction(profile.RB, s.RB, _pRB)
+            || TryEnableAction(profile.LT, s.LeftTrigger > 0.5, _pLTHeld)
+            || TryEnableAction(profile.RT, s.RightTrigger > 0.5, _pRTHeld)
+            || TryEnableAction(profile.LS, s.LS, _pLS)
+            || TryEnableAction(profile.RS, s.RS, _pRS)
+            || TryEnableAction(profile.View, s.View, _pView)
+            || TryEnableAction(profile.Menu, s.Menu, _pMenu)
+            || TryEnableAction(profile.DUp, s.DUp, _pDUp)
+            || TryEnableAction(profile.DDown, s.DDown, _pDDown)
+            || TryEnableAction(profile.DLeft, s.DLeft, _pDLeft)
+            || TryEnableAction(profile.DRight, s.DRight, _pDRight);
+
+        private bool TryEnableAction(string action, bool held, bool previous)
+        {
+            if (action != "EnableInput" || !held || previous) return false;
+            SetInputEnabled(true);
+            return true;
+        }
+
+        private bool TryEnableFromProfile(in GamepadSnapshot s, List<string> combos)
+        {
+            foreach (var raw in combos)
+            {
+                int eq = raw.IndexOf('=');
+                if (eq <= 0 || !string.Equals(raw[(eq + 1)..].Trim(), "EnableInput", StringComparison.Ordinal))
+                    continue;
+
+                string key = raw[..eq].Trim();
+                var parts = key.Split('+');
+                if (parts.Length < 2) continue;
+
+                bool modifiersHeld = true;
+                for (int i = 0; i < parts.Length - 1; i++)
+                {
+                    if (!s.Button(parts[i].Trim()))
+                    {
+                        modifiersHeld = false;
+                        break;
+                    }
+                }
+
+                string last = parts[^1].Trim();
+                bool held = modifiersHeld && s.Button(last);
+                bool previous = _comboPrev.TryGetValue(raw, out var wasHeld) && wasHeld;
+                _comboPrev[raw] = held;
+                if (held && !previous)
+                {
+                    App.Log("input enabled by profile binding: " + key);
+                    SetInputEnabled(true);
+                    return true;
+                }
+            }
+            return false;
+        }
 
         /// <summary>
         /// Evaluates the profile's custom combos. Returns the set of last buttons whose
@@ -464,16 +497,6 @@ namespace GamepadKeyboard
             }
         }
 
-        /// <summary>True when any button OTHER than L3/R3 had a press edge this tick.</summary>
-        private bool AnyOtherButtonEdge(in GamepadSnapshot s)
-        {
-            bool Edge(bool now, bool prev) => now && !prev;
-            return Edge(s.A, _pA) || Edge(s.B, _pB) || Edge(s.X, _pX) || Edge(s.Y, _pY)
-                || Edge(s.LB, _pLB) || Edge(s.RB, _pRB) || Edge(s.View, _pView) || Edge(s.Menu, _pMenu)
-                || Edge(s.DUp, _pDUp) || Edge(s.DDown, _pDDown) || Edge(s.DLeft, _pDLeft) || Edge(s.DRight, _pDRight)
-                || s.LeftTrigger > 0.5 && _pLT <= 0.5 || s.RightTrigger > 0.5 && _pRT <= 0.5;
-        }
-
         private void ReleaseHeldRayKeys()
         {
             if (_heldRayKeyL != null) { _sender.KeyUp(_heldRayKeyL.Vk, _heldRayKeyL.Extended); _heldRayKeyL = null; }
@@ -504,10 +527,12 @@ namespace GamepadKeyboard
             // hold-to-type: commit buttons hold the ray-highlighted key down (LB/R1 style)
             switch (action)
             {
-                case "CommitLeft":
+                case "SubmitLeft":
+                case "CommitLeft": // legacy saved profiles
                     UpdateHeldRayKey(ref _heldRayKeyL, held, LeftHit);
                     return;
-                case "CommitRight":
+                case "SubmitRight":
+                case "CommitRight": // legacy saved profiles
                     UpdateHeldRayKey(ref _heldRayKeyR, held, RightHit);
                     return;
             }
@@ -553,26 +578,39 @@ namespace GamepadKeyboard
                 case "MediaPrev": _sender.TapKey(Vk.MediaPrev); break;
 
                 case "DisableInput":
-                    App.Log("input enabled -> false (View button)");
-                    InputEnabled = false;
-                    ReleaseAllModifiers();
-                    Notification?.Invoke("Input DISABLED — gamepad free for games");
-                    StateChanged?.Invoke();
+                    App.Log("input disabled by profile action");
+                    SetInputEnabled(false);
+                    break;
+
+                case "EnableInput":
+                    SetInputEnabled(true);
                     break;
 
                 case "ToggleKeyboardMouseMode":
                     MouseMode = !MouseMode;
-                    KeyboardFromMouse = false;
                     StateChanged?.Invoke();
                     break;
-                case "KeyboardMode": MouseMode = false; KeyboardFromMouse = false; StateChanged?.Invoke(); break;
-                case "MouseMode": MouseMode = true; KeyboardFromMouse = false; StateChanged?.Invoke(); break;
+                case "KeyboardMode": MouseMode = false; StateChanged?.Invoke(); break;
+                case "MouseMode": MouseMode = true; StateChanged?.Invoke(); break;
+
+                case "ToggleMoveMode":
+                    AdjustMove = !AdjustMove;
+                    MoveDX = MoveDY = 0;
+                    Notification?.Invoke(AdjustMove ? "Move mode ON — left stick moves the keyboard"
+                                                    : "Move mode OFF");
+                    break;
+                case "ToggleScaleMode":
+                    AdjustScale = !AdjustScale;
+                    ScaleDelta = 0;
+                    Notification?.Invoke(AdjustScale ? "Scale mode ON — right stick up/down scales"
+                                                     : "Scale mode OFF");
+                    break;
 
                 case "SwitchKeyboardProfile":
                     SwitchProfile(+1);
                     break;
                 case "SwitchStickPointsProfile":
-                    SwitchProfile(+1);   // stick center points share keyboard profiles
+                    SwitchStickPointsProfile(+1);
                     break;
                 case "SwitchMouseProfile":
                     SwitchMouseProfile(+1);
@@ -593,8 +631,8 @@ namespace GamepadKeyboard
                     break;
 
                 // mouse actions (also valid in keyboard-mode mappings if wanted)
-                case "ScrollUp": _sender.MouseWheel(120); break;
-                case "ScrollDown": _sender.MouseWheel(-120); break;
+                case "ScrollUp": SendVerticalScroll(120); break;
+                case "ScrollDown": SendVerticalScroll(-120); break;
                 case "ScrollLeft": _sender.MouseHWheel(-120); break;
                 case "ScrollRight": _sender.MouseHWheel(120); break;
 
@@ -621,21 +659,6 @@ namespace GamepadKeyboard
             ushort vk = ActionToVk(action);
             if (held) { if (_heldModifiers.Add(vk)) { _sender.KeyDown(vk); StateChanged?.Invoke(); } }
             else { if (_heldModifiers.Remove(vk)) { _sender.KeyUp(vk); StateChanged?.Invoke(); } }
-        }
-
-        private void ApplyTriggerModifier(string action, double trigger)
-        {
-            if (action is "HoldShift" or "HoldCtrl" or "HoldAlt" or "HoldWin")
-            {
-                ApplyHeld(action, trigger > 0.5);
-            }
-            else if (action != "None")
-            {
-                // treat like a button edge on trigger crossing
-                bool held = trigger > 0.5;
-                bool dummy = false;
-                DispatchButton(action, held, ref dummy);
-            }
         }
 
                 private void ToggleModifier(ushort vk)
@@ -779,45 +802,107 @@ namespace GamepadKeyboard
             StateChanged?.Invoke();
         }
 
-        // ── Key commit with modifiers ────────────────────────────────────────
-
-        private void CommitKey(KeyboardLayout.KeyDef k)
+        private void SwitchStickPointsProfile(int dir)
         {
-            // held modifiers are already pressed via SendInput — just tap the key
-            _sender.TapKey(k.Vk, k.Extended);
+            var st = AppSettings.Instance;
+            int count = Math.Max(1, st.StickPointsProfiles.Count);
+            st.ActiveStickPointsProfile = (st.ActiveStickPointsProfile + dir + count) % count;
+            ResetKeyboardCursors();
+            AppSettings.Save();
+            Notification?.Invoke("Stick points profile: " + st.StickPointsProfile.Name);
+            StateChanged?.Invoke();
         }
 
-        // ── Ray geometry ──────────────────────────────────────────────────────
+        // ── Ray and cursor geometry ───────────────────────────────────────────
 
-        private (KeyboardLayout.KeyDef?, double) RayHit(double sx, double sy, double maxLen, bool left)
+        private void UpdateKeyboardCursors(in GamepadSnapshot s)
         {
-            double mag = Math.Sqrt(sx * sx + sy * sy);
-            if (mag < 0.08) return (null, 0);
+            var settings = AppSettings.Instance;
+            var points = settings.StickPointsProfile;
+            double now = _cursorClock.Elapsed.TotalSeconds;
+            double dt = Math.Clamp(now - _lastCursorTime, 0, 0.05);
+            _lastCursorTime = now;
 
-            var p = AppSettings.Instance.Profile;
-            double len = maxLen * Math.Pow(mag, p.CurveExponent);
+            if (!_cursorInitialized || _lastFreeCursor != settings.FreeCursorEnabled)
+                ResetKeyboardCursors();
+            _lastFreeCursor = settings.FreeCursorEnabled;
 
-            // origin in grid units
-            double gx = (left ? p.LeftX : p.RightX) * GridW();
-            double gy = (left ? p.LeftY : p.RightY) * GridH();
-            double ex = gx + sx * len / Pitch();
-            double ey = gy - sy * len / Pitch();   // grid Y grows downward; stick up = smaller Y
+            double leftOriginX = 4 + points.LeftX * KeyboardWidth();
+            double leftOriginY = 4 + points.LeftY * KeyboardHeight();
+            double rightOriginX = 4 + points.RightX * KeyboardWidth();
+            double rightOriginY = 4 + points.RightY * KeyboardHeight();
 
-            KeyboardLayout.KeyDef? best = null;
-            double bestD = double.MaxValue;
+            LastLeftX = s.LX;
+            LastLeftY = s.LY;
+            LastRightX = s.RX;
+            LastRightY = s.RY;
+
+            if (settings.FreeCursorEnabled)
+            {
+                double speed = Math.Max(0, settings.FreeCursorSpeed);
+                _leftTargetX = Math.Clamp(_leftTargetX + s.LX * speed * dt, 4, 4 + KeyboardWidth());
+                _leftTargetY = Math.Clamp(_leftTargetY - s.LY * speed * dt, 4, 4 + KeyboardHeight());
+                _rightTargetX = Math.Clamp(_rightTargetX + s.RX * speed * dt, 4, 4 + KeyboardWidth());
+                _rightTargetY = Math.Clamp(_rightTargetY - s.RY * speed * dt, 4, 4 + KeyboardHeight());
+                LeftCursorActive = RightCursorActive = true;
+            }
+            else
+            {
+                double leftMagnitude = Math.Sqrt(s.LX * s.LX + s.LY * s.LY);
+                double rightMagnitude = Math.Sqrt(s.RX * s.RX + s.RY * s.RY);
+                double maxRay = MaxRayLength();
+                double leftLength = maxRay * points.LeftRayLength * Math.Pow(leftMagnitude, points.CurveExponent);
+                double rightLength = maxRay * points.RightRayLength * Math.Pow(rightMagnitude, points.CurveExponent);
+                _leftTargetX = leftOriginX + s.LX * leftLength;
+                _leftTargetY = leftOriginY - s.LY * leftLength;
+                _rightTargetX = rightOriginX + s.RX * rightLength;
+                _rightTargetY = rightOriginY - s.RY * rightLength;
+                LeftCursorActive = leftMagnitude >= 0.08;
+                RightCursorActive = rightMagnitude >= 0.08;
+            }
+
+            if (!settings.CursorLagEnabled || settings.CursorLagSeconds <= 0)
+            {
+                LeftCursorX = _leftTargetX;
+                LeftCursorY = _leftTargetY;
+                RightCursorX = _rightTargetX;
+                RightCursorY = _rightTargetY;
+            }
+            else
+            {
+                double alpha = Math.Clamp(dt / settings.CursorLagSeconds, 0, 1);
+                LeftCursorX += (_leftTargetX - LeftCursorX) * alpha;
+                LeftCursorY += (_leftTargetY - LeftCursorY) * alpha;
+                RightCursorX += (_rightTargetX - RightCursorX) * alpha;
+                RightCursorY += (_rightTargetY - RightCursorY) * alpha;
+            }
+
+            LeftLen = Distance(leftOriginX, leftOriginY, LeftCursorX, LeftCursorY);
+            RightLen = Distance(rightOriginX, rightOriginY, RightCursorX, RightCursorY);
+            LeftHit = LeftCursorActive ? HitAt(LeftCursorX, LeftCursorY) : null;
+            RightHit = RightCursorActive ? HitAt(RightCursorX, RightCursorY) : null;
+        }
+
+        private KeyboardLayout.KeyDef? HitAt(double x, double y)
+        {
             foreach (var k in _layout.Keys)
             {
-                double cx = k.X + k.W / 2;
-                double cy = k.Y + k.H / 2;
-                double d = (cx - ex) * (cx - ex) + (cy - ey) * (cy - ey);
-                if (d < bestD) { bestD = d; best = k; }
+                if (KeyboardLayout.KeyRect(k, AppSettings.Instance.KeySpacing).Contains(x - 4, y - 4))
+                    return k;
             }
-            return (best, len);
+            return null;
         }
 
-        private double GridW() => _layout.GridW;
-        private double GridH() => _layout.GridH;
+        private static double Distance(double x1, double y1, double x2, double y2)
+        {
+            double dx = x2 - x1;
+            double dy = y2 - y1;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
         private double Pitch() => 48 + AppSettings.Instance.KeySpacing;
+        private double KeyboardWidth() => _layout.GridW * Pitch();
+        private double KeyboardHeight() => _layout.GridH * Pitch();
 
         /// <summary>Max ray length = key-center distance LeftCtrl -> Backspace in pixels.</summary>
         private double MaxRayLength()
@@ -831,7 +916,7 @@ namespace GamepadKeyboard
 
         private double ApplyCurve(double v)
         {
-            double exp = AppSettings.Instance.Profile.CurveExponent;
+            double exp = AppSettings.Instance.StickPointsProfile.CurveExponent;
             double sign = Math.Sign(v);
             return sign * Math.Pow(Math.Abs(v), exp);
         }
@@ -843,7 +928,6 @@ namespace GamepadKeyboard
             _pA = s.A; _pB = s.B; _pX = s.X; _pY = s.Y;
             _pLB = s.LB; _pRB = s.RB; _pLS = s.LS; _pRS = s.RS;
             _pDUp = s.DUp; _pDDown = s.DDown; _pDLeft = s.DLeft; _pDRight = s.DRight;
-            _pLT = s.LeftTrigger; _pRT = s.RightTrigger;
             _pView = s.View; _pMenu = s.Menu;
             _pLTHeld = s.LeftTrigger > 0.5; _pRTHeld = s.RightTrigger > 0.5;
         }
@@ -853,7 +937,6 @@ namespace GamepadKeyboard
             _pA = s.A; _pB = s.B; _pX = s.X; _pY = s.Y;
             _pLB = s.LB; _pRB = s.RB; _pLS = s.LS; _pRS = s.RS;
             _pDUp = s.DUp; _pDDown = s.DDown; _pDLeft = s.DLeft; _pDRight = s.DRight;
-            _pLT = s.LeftTrigger; _pRT = s.RightTrigger;
             _pView = s.View; _pMenu = s.Menu;
             _pLTHeld = s.LeftTrigger > 0.5; _pRTHeld = s.RightTrigger > 0.5;
         }

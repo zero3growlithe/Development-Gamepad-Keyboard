@@ -108,6 +108,7 @@ namespace GamepadKeyboard.UI
                 var ptsBtn = new Button { Content = "Stick center points…", Padding = new Thickness(10, 3, 10, 3) };
                 ptsBtn.Click += (_, __) => new StickPointsEditorWindow { Owner = this }.Show();
                 ptsBar.Children.Add(ptsBtn);
+                ptsBar.Children.Add(_stickProfileLabel);
                 DockPanel.SetDock(ptsBar, Dock.Top);   // docked after scroll -> bottom strip
                 root.Children.Add(ptsBar);
             }
@@ -162,7 +163,7 @@ namespace GamepadKeyboard.UI
             if (idx < 0) return;
             ActiveIndex = idx;
             _nameBox.Text = ProfileNameOf(idx);
-            if (!_mouse) _stickProfileLabel.Text = "(stick points: " + ProfileNameOf(idx) + ")";
+            if (!_mouse) _stickProfileLabel.Text = "(active: " + AppSettings.Instance.StickPointsProfile.Name + ")";
 
             BuildRows();
             AppSettings.Save();
@@ -562,10 +563,10 @@ namespace GamepadKeyboard.UI
         }
     }
 
-    /// <summary>Buttons available for custom combos (Home excluded — enable combo).</summary>
+    /// <summary>Buttons available for removable, profile-defined custom combos.</summary>
     internal static class ComboButtonCatalog
     {
-        public static readonly string[] All = { "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "LS", "RS", "View", "Menu", "DUp", "DDown", "DLeft", "DRight" };
+        public static readonly string[] All = { "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "LS", "RS", "View", "Menu", "Home", "DUp", "DDown", "DLeft", "DRight" };
     }
 
     /// <summary>Full action vocabulary shown in the dropdowns.</summary>
@@ -588,9 +589,10 @@ namespace GamepadKeyboard.UI
             "LeftClick", "RightClick", "MiddleClick", "XButton1", "XButton2",
             "ScrollUp", "ScrollDown", "ScrollLeft", "ScrollRight", "SpeedBoost",
             // virtual keyboard control
-            "CommitLeft", "CommitRight",
+            "SubmitLeft", "SubmitRight",
             // app control
-            "DisableInput", "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode",
+            "EnableInput", "DisableInput", "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode",
+            "ToggleMoveMode", "ToggleScaleMode",
             "ToggleKeyboard", "ToggleLegend",
             "SwitchKeyboardProfile", "SwitchMouseProfile", "SwitchStickPointsProfile",
             // media

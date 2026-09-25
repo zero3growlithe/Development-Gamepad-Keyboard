@@ -26,8 +26,8 @@ namespace GamepadKeyboard.Overlay
         private readonly Ellipse _rightPoint = MakePoint(RightBrush);
         private readonly Line _leftRay = MakeRay(new SolidColorBrush(Color.FromArgb(170, 0xFF, 0xA5, 0x00)));
         private readonly Line _rightRay = MakeRay(new SolidColorBrush(Color.FromArgb(170, 0x00, 0xBF, 0xFF)));
-        private readonly Ellipse _leftHit = MakeHit();
-        private readonly Ellipse _rightHit = MakeHit();
+        private readonly Ellipse _leftHit = MakeCursor(LeftBrush);
+        private readonly Ellipse _rightHit = MakeCursor(RightBrush);
         private readonly TextBlock _profileLabel = MakeLabel();
         private readonly TextBlock _statusLabel = MakeLabel();   // mode/notifications, right of profile
         private HashSet<ushort> _toggledVks = new();             // modifier keys tinted while toggled on
@@ -131,10 +131,10 @@ namespace GamepadKeyboard.Overlay
             IsHitTestVisible = true
         };
 
-        private static Ellipse MakeHit() => new()
+        private static Ellipse MakeCursor(Brush stroke) => new()
         {
             Width = 26, Height = 26, Fill = Brushes.Transparent,
-            Stroke = null, IsHitTestVisible = true
+            Stroke = stroke, StrokeThickness = 2.5, IsHitTestVisible = false
         };
 
         private static Line MakeRay(Brush stroke) => new()
@@ -235,49 +235,51 @@ namespace GamepadKeyboard.Overlay
 
         public void SetPointPositions()
         {
-            var p = AppSettings.Instance.Profile;
-            SetPoint(_leftPoint, _leftHit, p.LeftX, p.LeftY);
-            SetPoint(_rightPoint, _rightHit, p.RightX, p.RightY);
+            var p = AppSettings.Instance.StickPointsProfile;
+            SetPoint(_leftPoint, p.LeftX, p.LeftY);
+            SetPoint(_rightPoint, p.RightX, p.RightY);
+            bool showCenters = !(AppSettings.Instance.FreeCursorEnabled
+                && AppSettings.Instance.HideCenterPointsAndRaysInFreeCursor);
+            _leftPoint.Visibility = _rightPoint.Visibility = showCenters ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private void SetPoint(Ellipse dot, Ellipse hit, double nx, double ny)
+        private void SetPoint(Ellipse dot, double nx, double ny)
         {
             double x = nx * (_baseW - 8) + 4;
             double y = ny * (_baseH - 44) + 4;
-            Canvas.SetLeft(hit, x - 13);
-            Canvas.SetTop(hit, y - 13);
             Canvas.SetLeft(dot, x - 7);
             Canvas.SetTop(dot, y - 7);
         }
 
         /// <summary>
-        /// Update rays + highlight for a stick. Origin = the point for that stick.
+        /// Update a stick's ray and independent unfilled cursor circle.
         /// </summary>
-        public void UpdateRay(bool left, double dx, double dy, double len, KeyboardLayout.KeyDef? hit)
+        public void UpdateCursor(bool left, double cursorX, double cursorY, bool active)
         {
             var point = left ? _leftPoint : _rightPoint;
             var ray = left ? _leftRay : _rightRay;
-            var hitE = left ? _leftHit : _rightHit;
+            var cursor = left ? _leftHit : _rightHit;
 
             double ox = Canvas.GetLeft(point) + 7;
             double oy = Canvas.GetTop(point) + 7;
 
-            if (hit == null || (dx == 0 && dy == 0))
+            if (!active)
             {
                 ray.Visibility = Visibility.Collapsed;
-                hitE.Visibility = Visibility.Collapsed;
+                cursor.Visibility = Visibility.Collapsed;
                 return;
             }
 
-            ray.Visibility = Visibility.Visible;
+            bool showRay = !(AppSettings.Instance.FreeCursorEnabled
+                && AppSettings.Instance.HideCenterPointsAndRaysInFreeCursor);
+            ray.Visibility = showRay ? Visibility.Visible : Visibility.Collapsed;
             ray.X1 = ox; ray.Y1 = oy;
-            ray.X2 = ox + dx * len;
-            ray.Y2 = oy - dy * len; // screen Y is inverted
+            ray.X2 = cursorX;
+            ray.Y2 = cursorY;
 
-            var r = KeyboardLayout.KeyRect(hit, AppSettings.Instance.KeySpacing);
-            Canvas.SetLeft(hitE, r.X + r.Width / 2 - 13);
-            Canvas.SetTop(hitE, r.Y + r.Height / 2 - 13);
-            hitE.Visibility = Visibility.Visible;
+            Canvas.SetLeft(cursor, cursorX - 13);
+            Canvas.SetTop(cursor, cursorY - 13);
+            cursor.Visibility = Visibility.Visible;
         }
 
         /// <summary>Tints the background of keys whose virtual modifiers are toggled on.</summary>
