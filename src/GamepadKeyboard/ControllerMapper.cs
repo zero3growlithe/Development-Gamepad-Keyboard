@@ -479,7 +479,13 @@ namespace GamepadKeyboard
 
         private void FinishComboFrame(in GamepadSnapshot s)
         {
-            _comboConsumedButtons.RemoveWhere(button => !s.Button(button));
+            // An in parameter cannot be captured by RemoveWhere's predicate.
+            // Collect released buttons first, then mutate the set separately.
+            var released = new List<string>();
+            foreach (var button in _comboConsumedButtons)
+                if (!s.Button(button)) released.Add(button);
+            foreach (var button in released)
+                _comboConsumedButtons.Remove(button);
         }
 
         private static bool IsContinuousModifier(string action) => action is
