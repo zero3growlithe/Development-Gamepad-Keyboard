@@ -35,6 +35,7 @@ namespace GamepadKeyboard.Overlay
         private double _baseW, _baseH;   // unscaled canvas size
         private double _scale = 1.0;
         private string _profileText = "";
+        private bool _shiftActive;
         private double _lastLeftPointX = double.NaN, _lastLeftPointY = double.NaN;
         private double _lastRightPointX = double.NaN, _lastRightPointY = double.NaN;
         private bool? _lastCentersVisible;
@@ -92,7 +93,7 @@ namespace GamepadKeyboard.Overlay
                     CornerRadius = new CornerRadius(3),
                     Child = new TextBlock
                     {
-                        Text = k.Label,
+                        Text = VisibleKeyLabel(k, _shiftActive),
                         Foreground = (Brush)FindResource("TextBrush"),
                         FontSize = 12,
                         HorizontalAlignment = HorizontalAlignment.Center,
@@ -319,6 +320,47 @@ namespace GamepadKeyboard.Overlay
                 bool on = pair.Key.Vk != 0 && _toggledVks.Contains(pair.Key.Vk);
                 ApplyToggleTint(pair.Value, on);
             }
+        }
+
+        public void SetShiftActive(bool active)
+        {
+            if (_shiftActive == active) return;
+            _shiftActive = active;
+            foreach (var pair in _keyBorders)
+            {
+                if (pair.Value.Child is TextBlock label)
+                    label.Text = VisibleKeyLabel(pair.Key, active);
+            }
+        }
+
+        private static string VisibleKeyLabel(KeyboardLayout.KeyDef key, bool shiftActive)
+        {
+            if (!shiftActive) return key.Label;
+            return key.Vk switch
+            {
+                0xC0 => "~",                         // `
+                (ushort)'1' => "!",
+                (ushort)'2' => "@",
+                (ushort)'3' => "#",
+                (ushort)'4' => "$",
+                (ushort)'5' => "%",
+                (ushort)'6' => "^",
+                (ushort)'7' => "&",
+                (ushort)'8' => "*",
+                (ushort)'9' => "(",
+                (ushort)'0' => ")",
+                0xBD => "_",                         // -
+                0xBB => "+",                         // =
+                0xDB => "{",                         // [
+                0xDD => "}",                         // ]
+                0xDC => "|",                         // \
+                0xBA => ":",                         // ;
+                0xDE => "\"",                        // '
+                0xBC => "<",                         // ,
+                0xBE => ">",                         // .
+                0xBF => "?",                         // /
+                _ => key.Label
+            };
         }
 
         private static bool IsModifierVk(ushort vk) => vk is

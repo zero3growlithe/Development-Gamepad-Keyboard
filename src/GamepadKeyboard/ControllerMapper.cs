@@ -88,6 +88,7 @@ namespace GamepadKeyboard
 
         /// <summary>Virtual modifier keys currently active (toggled on or held) — for UI tint.</summary>
         public IReadOnlyCollection<ushort> HeldModifierVks => _heldModifiers;
+        public bool ShiftActive => _heldModifiers.Contains(Vk.LShift) || _heldModifiers.Contains(Vk.RShift);
 
         // custom combo bindings ("A+B+X=Action"): per-combo last-button edge tracking
         private readonly Dictionary<string, bool> _comboPrev = new();

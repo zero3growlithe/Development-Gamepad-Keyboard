@@ -394,6 +394,7 @@ namespace GamepadKeyboard
             if (refreshStatic)
             {
                 _keyboard.SetToggledKeys(_mapper.HeldModifierVks.Concat(_mapper.HeldRayKeyVks));
+                _keyboard.SetShiftActive(_mapper.ShiftActive);
                 _keyboard.SetPointPositions();
                 RefreshLegend();
             }
