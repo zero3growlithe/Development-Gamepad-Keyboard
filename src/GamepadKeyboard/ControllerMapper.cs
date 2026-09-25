@@ -519,22 +519,16 @@ namespace GamepadKeyboard
         /// Runs a mapped action on press edge. Hold-type actions (modifiers,
         /// DisableInput) use the held flag directly; everything else is edge-only.
         /// </summary>
-        private string? _heldClickAction;
+        private readonly Dictionary<string, int> _heldClickCounts = new();
 
-        private void ReleaseHeldClick()
+        private void ReleaseHeldClicks()
         {
-            if (_heldClickAction == null) return;
-            (uint up, uint data) = _heldClickAction switch
+            foreach (string action in _heldClickCounts.Keys)
             {
-                "LeftClick" => (NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
-                "RightClick" => (NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
-                "MiddleClick" => (NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
-                "XButton1" => (NativeMethods.MOUSEEVENTF_XUP, 1u),
-                "XButton2" => (NativeMethods.MOUSEEVENTF_XUP, 2u),
-                _ => (0u, 0u)
-            };
-            if (up != 0) _sender.MouseButtonRelease(up, data);
-            _heldClickAction = null;
+                (uint up, uint data) = ClickRelease(action);
+                if (up != 0) _sender.MouseButtonRelease(up, data);
+            }
+            _heldClickCounts.Clear();
         }
 
         private void HandleClickHold(string action, bool held, ref bool prev)
@@ -552,15 +546,36 @@ namespace GamepadKeyboard
 
             if (held && !prev)
             {
-                _sender.MouseButtonPress(down, data);
-                _heldClickAction = action;
+                int count = _heldClickCounts.TryGetValue(action, out var current) ? current + 1 : 1;
+                _heldClickCounts[action] = count;
+                if (count == 1) _sender.MouseButtonPress(down, data);
             }
             else if (!held && prev)
             {
-                _sender.MouseButtonRelease(up, data);
-                _heldClickAction = null;
+                int count = _heldClickCounts.TryGetValue(action, out var current)
+                    ? Math.Max(0, current - 1)
+                    : 0;
+                if (count == 0)
+                {
+                    _heldClickCounts.Remove(action);
+                    _sender.MouseButtonRelease(up, data);
+                }
+                else
+                {
+                    _heldClickCounts[action] = count;
+                }
             }
         }
+
+        private static (uint up, uint data) ClickRelease(string action) => action switch
+        {
+            "LeftClick" => (NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
+            "RightClick" => (NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
+            "MiddleClick" => (NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
+            "XButton1" => (NativeMethods.MOUSEEVENTF_XUP, 1u),
+            "XButton2" => (NativeMethods.MOUSEEVENTF_XUP, 2u),
+            _ => (0u, 0u)
+        };
 
         /// <summary>
         /// Hold-to-type: activation held = KeyDown on the ray's current key; moving the ray to
@@ -873,7 +888,7 @@ namespace GamepadKeyboard
             _heldModifiers.Clear();
             _toggledModifiers.Clear();
             _heldModifierCounts.Clear();
-            ReleaseHeldClick();   // no stuck mouse buttons on disable / mode switch
+            ReleaseHeldClicks();  // no stuck mouse buttons on disable / mode switch
             ReleaseHeldRayKeys(); // no stuck held-typed keys
         }
 

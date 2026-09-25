@@ -20,6 +20,7 @@ namespace GamepadKeyboard.Input
         private string _lastPollError = "";
         private DateTime _lastPollErrorLog = DateTime.MinValue;
         private int _resetCachesRequested;
+        private int _preferredXInputSlot = -1;
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -107,53 +108,68 @@ namespace GamepadKeyboard.Input
                 string chosenName = "";
                 bool foundIdle = false;
                 bool anyInput = false;
-                bool wgiAnyInput = false;
 
-                foreach (var raw in raws)
-                {
-                    GamepadSnapshot snap;
-                    var gp = GetPad(raw);
-                    if (gp != null)
-                    {
-                        snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
-                    }
-                    else
-                    {
-                        // no Gamepad wrapper for this device (e.g. DualSense outside
-                        // DS4Windows) — read the raw controller directly, calibrated
-                        var (cal, map) = GetCalibration(raw);
-                        var buffers = ReadRaw(raw);
-                        snap = GamepadSnapshot.FromRaw(raw, buffers.Buttons, buffers.Switches,
-                            buffers.Axes, ReadHome(raw, buffers.Buttons), cal, map);
-                    }
-                    if (snap.AnyInput)
-                    {
-                        chosen = snap; chosenName = raw.DisplayName; anyInput = true; wgiAnyInput = true;
-                        break;
-                    }
-                    if (!foundIdle)
-                    {
-                        chosen = snap; chosenName = raw.DisplayName; foundIdle = true;
-                    }
-                }
+                // An XInput controller is also exposed through WGI on many systems.
+                // Once input identifies an XInput slot, keep using that one source
+                // until disconnect so button edges cannot alternate between two
+                // views of the same physical controller.
+                bool sourceSelected = TryReadPreferredXInput(
+                    ref chosen, ref chosenName, ref foundIdle, ref anyInput);
 
-                // ── XInput fallback: WGI enumeration works but readings stay idle when
-                //    the real pad is hidden (HidHide) or consumed (DS4Windows / Steam Input
-                //    virtual pads). The virtual Xbox pad is always reachable via XInput. ──
-                if (!wgiAnyInput && Native.XInput.Available)
+                if (!sourceSelected && Native.XInput.Available)
                 {
                     for (int i = 0; i < 4; i++)
                     {
-                        var st = new Native.XInput.XINPUT_STATE();
-                        int err = Native.XInput.GetState(i, ref st);
-                        if (err != 0) continue;
-                        var snap = GamepadSnapshot.FromXInput(st);
-                        if (snap.AnyInput)
+                        if (!TryReadXInput(i, out var snap) || !snap.AnyInput) continue;
+                        _preferredXInputSlot = i;
+                        chosen = snap;
+                        chosenName = "XInput slot " + i;
+                        foundIdle = anyInput = sourceSelected = true;
+                        if (_loggedExtras.Add("xinput-slot" + i))
+                            App.Log("using XInput slot " + i + " as the stable input source");
+                        break;
+                    }
+                }
+
+                if (!sourceSelected)
+                {
+                    foreach (var raw in raws)
+                    {
+                        try
                         {
-                            chosen = snap; chosenName = "XInput slot " + i; anyInput = true;
-                            if (_loggedExtras.Add("xinput-slot" + i))
-                                App.Log("WGI readings idle -> using XInput slot " + i + " (hidden/virtual pad)");
-                            break;
+                            GamepadSnapshot snap;
+                            var gp = GetPad(raw);
+                            if (gp != null)
+                            {
+                                snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
+                            }
+                            else
+                            {
+                                // No Gamepad wrapper for this device (e.g. DualSense
+                                // standalone) — read the raw controller directly.
+                                var (cal, map) = GetCalibration(raw);
+                                var buffers = ReadRaw(raw);
+                                snap = GamepadSnapshot.FromRaw(raw, buffers.Buttons, buffers.Switches,
+                                    buffers.Axes, ReadHome(raw, buffers.Buttons), cal, map);
+                            }
+                            if (snap.AnyInput)
+                            {
+                                chosen = snap;
+                                chosenName = raw.DisplayName;
+                                anyInput = true;
+                                break;
+                            }
+                            if (!foundIdle)
+                            {
+                                chosen = snap;
+                                chosenName = raw.DisplayName;
+                                foundIdle = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            ForgetRawController(raw);
+                            LogPollError("WGI device read failed", ex);
                         }
                     }
                 }
@@ -175,15 +191,54 @@ namespace GamepadKeyboard.Input
             }
             catch (Exception ex)
             {
-                string error = ex.GetType().Name + ": " + ex.Message;
-                var now = DateTime.UtcNow;
-                if (error != _lastPollError || (now - _lastPollErrorLog).TotalMinutes >= 1)
-                {
-                    _lastPollError = error;
-                    _lastPollErrorLog = now;
-                    App.Log("poll error: " + error);
-                }
+                LogPollError("poll failed", ex);
             }
+        }
+
+        private bool TryReadPreferredXInput(
+            ref GamepadSnapshot chosen,
+            ref string chosenName,
+            ref bool foundIdle,
+            ref bool anyInput)
+        {
+            if (_preferredXInputSlot < 0) return false;
+            if (!TryReadXInput(_preferredXInputSlot, out var snap))
+            {
+                _preferredXInputSlot = -1;
+                return false;
+            }
+
+            chosen = snap;
+            chosenName = "XInput slot " + _preferredXInputSlot;
+            foundIdle = true;
+            anyInput = snap.AnyInput;
+            return true;
+        }
+
+        private static bool TryReadXInput(int slot, out GamepadSnapshot snapshot)
+        {
+            snapshot = default;
+            try
+            {
+                var state = new Native.XInput.XINPUT_STATE();
+                if (Native.XInput.GetState(slot, ref state) != 0) return false;
+                snapshot = GamepadSnapshot.FromXInput(state);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void LogPollError(string context, Exception ex)
+        {
+            string error = context + " — " + ex.GetType().Name + ": " + ex.Message;
+            var now = DateTime.UtcNow;
+            if (error == _lastPollError && (now - _lastPollErrorLog).TotalMinutes < 1) return;
+            _lastPollError = error;
+            _lastPollErrorLog = now;
+            App.Log("poll error: " + error);
         }
 
         /// <summary>
@@ -281,6 +336,15 @@ namespace GamepadKeyboard.Input
             _calibrations.Clear();
             _buttonMaps.Clear();
             _rawBuffers.Clear();
+            _preferredXInputSlot = -1;
+        }
+
+        private void ForgetRawController(Windows.Gaming.Input.RawGameController raw)
+        {
+            _padCache.Remove(raw);
+            _calibrations.Remove(raw);
+            _buttonMaps.Remove(raw);
+            _rawBuffers.Remove(raw);
         }
 
         /// <summary>Live per-controller readings for the input monitor window.</summary>
