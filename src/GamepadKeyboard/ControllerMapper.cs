@@ -73,6 +73,7 @@ namespace GamepadKeyboard
 
         // hold-to-type state: key currently held down by the left/right commit activation
         private KeyboardLayout.KeyDef? _heldRayKeyL, _heldRayKeyR;
+        private bool _leftModifierSubmit, _rightModifierSubmit;
 
         /// <summary>Keys currently held via hold-to-type (for UI tint; modifiers only tint).</summary>
         public System.Collections.Generic.IEnumerable<ushort> HeldRayKeyVks
@@ -537,15 +538,41 @@ namespace GamepadKeyboard
         /// Hold-to-type: activation held = KeyDown on the ray's current key; moving the ray to
         /// another key sends KeyUp(old)+KeyDown(new); releasing activation sends KeyUp.
         /// </summary>
-        private void UpdateHeldRayKey(ref KeyboardLayout.KeyDef? heldKey, bool activationHeld, KeyboardLayout.KeyDef? hit)
+        private void UpdateHeldRayKey(
+            ref KeyboardLayout.KeyDef? heldKey,
+            ref bool modifierSubmit,
+            bool activationHeld,
+            bool activationWasHeld,
+            KeyboardLayout.KeyDef? hit)
         {
             if (!activationHeld)
             {
                 if (heldKey != null) { _sender.KeyUp(heldKey.Vk, heldKey.Extended); heldKey = null; }
+                modifierSubmit = false;
                 return;
             }
+
+            // Submitting a virtual modifier latches it instead of treating it as a
+            // normal hold-to-type key. It stays down until the modifier is submitted
+            // again or its mapped Hold/Toggle action takes ownership of the state.
+            if (!activationWasHeld && hit != null && IsModifierVk(hit.Vk))
+            {
+                if (heldKey != null) { _sender.KeyUp(heldKey.Vk, heldKey.Extended); heldKey = null; }
+                modifierSubmit = true;
+                ToggleModifier(hit.Vk);
+                return;
+            }
+            if (modifierSubmit) return;
+
             if (hit == null)
             {
+                if (heldKey != null) { _sender.KeyUp(heldKey.Vk, heldKey.Extended); heldKey = null; }
+                return;
+            }
+            if (IsModifierVk(hit.Vk))
+            {
+                // Moving onto a modifier while submit is already held must not
+                // toggle it; only a fresh submit on that key changes its latch.
                 if (heldKey != null) { _sender.KeyUp(heldKey.Vk, heldKey.Extended); heldKey = null; }
                 return;
             }
@@ -561,6 +588,7 @@ namespace GamepadKeyboard
         {
             if (_heldRayKeyL != null) { _sender.KeyUp(_heldRayKeyL.Vk, _heldRayKeyL.Extended); _heldRayKeyL = null; }
             if (_heldRayKeyR != null) { _sender.KeyUp(_heldRayKeyR.Vk, _heldRayKeyR.Extended); _heldRayKeyR = null; }
+            _leftModifierSubmit = _rightModifierSubmit = false;
         }
 
         private void DispatchButton(string action, bool held, ref bool prev)
@@ -589,11 +617,11 @@ namespace GamepadKeyboard
             {
                 case "SubmitLeft":
                 case "CommitLeft": // legacy saved profiles
-                    UpdateHeldRayKey(ref _heldRayKeyL, held, LeftHit);
+                    UpdateHeldRayKey(ref _heldRayKeyL, ref _leftModifierSubmit, held, prev, LeftHit);
                     return;
                 case "SubmitRight":
                 case "CommitRight": // legacy saved profiles
-                    UpdateHeldRayKey(ref _heldRayKeyR, held, RightHit);
+                    UpdateHeldRayKey(ref _heldRayKeyR, ref _rightModifierSubmit, held, prev, RightHit);
                     return;
             }
 
@@ -732,6 +760,10 @@ namespace GamepadKeyboard
             ushort vk = ActionToVk(action);
             if (held && !previous)
             {
+                // A mapped Hold action supersedes any sticky virtual/toggle state
+                // in the same modifier family. Keep this exact key down while the
+                // hold source takes ownership, avoiding an artificial up/down pulse.
+                ClearToggledModifierFamily(vk, vk);
                 int count = _heldModifierCounts.TryGetValue(vk, out var current) ? current + 1 : 1;
                 _heldModifierCounts[vk] = count;
                 if (_heldModifiers.Add(vk)) _sender.KeyDown(vk);
@@ -751,10 +783,18 @@ namespace GamepadKeyboard
 
         private void ToggleModifier(ushort vk)
         {
-            if (_toggledModifiers.Remove(vk))
+            var activeFamily = new List<ushort>();
+            foreach (var active in _toggledModifiers)
+                if (SameModifierFamily(active, vk)) activeFamily.Add(active);
+
+            if (activeFamily.Count > 0)
             {
-                if (!_heldModifierCounts.ContainsKey(vk) && _heldModifiers.Remove(vk))
-                    _sender.KeyUp(vk);
+                foreach (var active in activeFamily)
+                {
+                    _toggledModifiers.Remove(active);
+                    if (!_heldModifierCounts.ContainsKey(active) && _heldModifiers.Remove(active))
+                        _sender.KeyUp(active);
+                }
             }
             else
             {
@@ -763,6 +803,38 @@ namespace GamepadKeyboard
             }
             StateChanged?.Invoke();   // refresh toggle tint immediately (both modes)
         }
+
+        private void ClearToggledModifierFamily(ushort vk, ushort preserveDownVk)
+        {
+            var activeFamily = new List<ushort>();
+            foreach (var active in _toggledModifiers)
+                if (SameModifierFamily(active, vk)) activeFamily.Add(active);
+
+            foreach (var active in activeFamily)
+            {
+                _toggledModifiers.Remove(active);
+                if (active != preserveDownVk
+                    && !_heldModifierCounts.ContainsKey(active)
+                    && _heldModifiers.Remove(active))
+                {
+                    _sender.KeyUp(active);
+                }
+            }
+        }
+
+        private static bool SameModifierFamily(ushort left, ushort right) =>
+            ModifierFamily(left) != 0 && ModifierFamily(left) == ModifierFamily(right);
+
+        private static int ModifierFamily(ushort vk) => vk switch
+        {
+            Vk.LShift or Vk.RShift => 1,
+            Vk.LControl or Vk.RControl => 2,
+            Vk.LMenu or Vk.RMenu => 3,
+            Vk.LWin or Vk.RWin => 4,
+            _ => 0
+        };
+
+        private static bool IsModifierVk(ushort vk) => ModifierFamily(vk) != 0;
 
         private void ReleaseAllModifiers()
         {
