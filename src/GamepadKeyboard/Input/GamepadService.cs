@@ -147,8 +147,8 @@ namespace GamepadKeyboard.Input
                             {
                                 // No Gamepad wrapper for this device (e.g. DualSense
                                 // standalone) — read the raw controller directly.
-                                var (cal, map) = GetCalibration(raw);
                                 var buffers = ReadRaw(raw);
+                                var (cal, map) = GetCalibration(raw, buffers.Axes);
                                 snap = GamepadSnapshot.FromRaw(raw, buffers.Buttons, buffers.Switches,
                                     buffers.Axes, ReadHome(raw, buffers.Buttons), cal, map);
                             }
@@ -286,14 +286,12 @@ namespace GamepadKeyboard.Input
         private readonly Dictionary<Windows.Gaming.Input.RawGameController, AxisCalibration> _calibrations = new();
         private readonly Dictionary<Windows.Gaming.Input.RawGameController, RawButtonMap> _buttonMaps = new();
 
-        private (AxisCalibration cal, RawButtonMap map) GetCalibration(Windows.Gaming.Input.RawGameController raw)
+        private (AxisCalibration cal, RawButtonMap map) GetCalibration(
+            Windows.Gaming.Input.RawGameController raw,
+            double[] axes)
         {
             if (_calibrations.TryGetValue(raw, out var existing))
                 return (existing, _buttonMaps[raw]);
-            var buttons = new bool[raw.ButtonCount];
-            var switches = new Windows.Gaming.Input.GameControllerSwitchPosition[raw.SwitchCount];
-            var axes = new double[raw.AxisCount];
-            raw.GetCurrentReading(buttons, switches, axes);
             var cal = new AxisCalibration((double[])axes.Clone());
             var map = RawButtonMap.Detect(raw);
             _calibrations[raw] = cal;
@@ -448,8 +446,11 @@ namespace GamepadKeyboard.Input
     }
 
     /// <summary>
-    /// Per-device raw axis calibration captured at first reading: neutral offset
-    /// (DualSense raw axes are [0..1], neutral=0.5) plus gain to full -1..1 range.
+    /// Per-device raw axis information. Windows.Gaming.Input guarantees raw axis
+    /// values in [0..1], so centered axes must use the API-defined 0.5 center rather
+    /// than a single startup reading that may still contain transient device data.
+    /// The captured values are retained only to distinguish idle trigger axes on
+    /// unknown raw-controller layouts.
     /// </summary>
     public sealed class AxisCalibration
     {
@@ -459,16 +460,10 @@ namespace GamepadKeyboard.Input
 
         public double NeutralOf(int axis) => axis < _neutral.Length ? _neutral[axis] : 0;
 
-        public double Normalize(int axis, double value)
+        public double NormalizeCentered(int axis, double value)
         {
             if (axis >= _neutral.Length) return 0;
-            double n = _neutral[axis];
-            // [0..1] axis (DualSense, neutral 0.5): span 0.5 → (v-0.5)*2, exactly the
-            // user-measured mapping. [-1..1] axis (neutral ~0): span 1 → passthrough.
-            // [0..2] axis (neutral 1): span 1 → (v-1).
-            double span = Math.Max(n, 1.0 - n);
-            if (span < 0.25) span = 1.0;
-            return Math.Clamp((value - n) / span, -1, 1);
+            return Math.Clamp((value - 0.5) * 2.0, -1, 1);
         }
     }
 
@@ -574,8 +569,8 @@ namespace GamepadKeyboard.Input
 
         /// <summary>
         /// Raw-controller reading for devices the Gamepad wrapper cannot wrap
-        /// (DualSense standalone). Layout follows the common XInput-compatible
-        /// raw ordering; axis min/max are read from the controller to normalize.
+        /// (DualSense standalone). Sony and generic button/axis layouts are handled
+        /// separately, while WGI's normalized [0..1] axis range is mapped here.
         /// </summary>
         internal static GamepadSnapshot FromRaw(
             Windows.Gaming.Input.RawGameController raw,
@@ -589,11 +584,11 @@ namespace GamepadKeyboard.Input
             double Axis(int i)
             {
                 if (i >= axes.Length) return 0;
-                double v = cal.Normalize(i, axes[i]);
+                double v = cal.NormalizeCentered(i, axes[i]);
                 double dz = Deadzone;
                 return Math.Abs(v) < dz ? 0 : (v - Math.Sign(v) * dz) / (1.0 - dz);
             }
-            double Clamp01(double v) => v < 0 ? 0 : v;
+            double Clamp01(double v) => Math.Clamp(v, 0, 1);
             bool B(int i) => i >= 0 && i < buttons.Length && buttons[i];
 
             // dpad: buttons on generic/XInput-like pads, hat switch on Sony layout
@@ -625,19 +620,29 @@ namespace GamepadKeyboard.Input
             // triggers: pick axes whose captured neutral is near 0 (idle) — trigger
             // axes rest at 0 on DualSense ([0..1] analog), stick axes rest at 0.5
             int ltAxis = -1, rtAxis = -1;
-            for (int i = 0; i < raw.AxisCount && rtAxis < 0; i++)
+            if (map == RawButtonMap.Sony && axes.Length > 4)
             {
-                double n = cal.NeutralOf(i);
-                if (n < 0.25)
-                {
-                    if (ltAxis < 0) ltAxis = i; else rtAxis = i;
-                }
+                // DualSense raw layout is known; do not let a transient startup
+                // sample make a centered stick axis look like a trigger.
+                ltAxis = 3;
+                rtAxis = 4;
             }
-            if (ltAxis < 0 || rtAxis < 0) { ltAxis = 3; rtAxis = 4; }   // fallback
-            double lt = ltAxis >= 0 ? Clamp01(cal.Normalize(ltAxis, ltAxis < axes.Length ? axes[ltAxis] : 0)) : 0;
-            double rt = rtAxis >= 0 ? Clamp01(cal.Normalize(rtAxis, rtAxis < axes.Length ? axes[rtAxis] : 0)) : 0;
-            // DualSense raw axis order (user-measured): 0=LX 1=LY 2=RX 3=? 4=? 5=RY
-            // (axes 3/4 rest at 0 -> triggers, auto-detected below)
+            else
+            {
+                for (int i = 0; i < raw.AxisCount && rtAxis < 0; i++)
+                {
+                    double n = cal.NeutralOf(i);
+                    if (n < 0.25)
+                    {
+                        if (ltAxis < 0) ltAxis = i; else rtAxis = i;
+                    }
+                }
+                if (ltAxis < 0 || rtAxis < 0) { ltAxis = 3; rtAxis = 4; }
+            }
+            double lt = ltAxis >= 0 && ltAxis < axes.Length ? Clamp01(axes[ltAxis]) : 0;
+            double rt = rtAxis >= 0 && rtAxis < axes.Length ? Clamp01(axes[rtAxis]) : 0;
+            // DualSense raw axis order (user-measured): 0=LX 1=LY 2=RX,
+            // 3=LT, 4=RT, 5=RY.
             return new GamepadSnapshot(
                 Axis(0), -Axis(1),
                 Axis(2), -Axis(5),
