@@ -179,7 +179,7 @@ namespace GamepadKeyboard
                 Exit();
             };
 
-            var startupItem = new ToolStripMenuItem("Run on startup");
+            var startupItem = new ToolStripMenuItem("Run on Windows startup");
             startupItem.CheckOnClick = true;
             startupItem.Checked = Util.LaunchUtil.StartupShortcutExists();
             startupItem.Click += (_, __) =>

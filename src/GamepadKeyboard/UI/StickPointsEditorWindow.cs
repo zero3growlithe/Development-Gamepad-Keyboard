@@ -77,8 +77,7 @@ namespace GamepadKeyboard.UI
 
             var hint = new TextBlock
             {
-                Text = "Points update live on the virtual keyboard overlay. " +
-                       "Ray max length = LeftCtrl → Backspace key distance.",
+                Text = "Points update live on the virtual keyboard overlay.",
                 Foreground = Brushes.Gray,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 10, 0, 0)
