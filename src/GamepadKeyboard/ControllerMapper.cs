@@ -93,17 +93,13 @@ namespace GamepadKeyboard
         // custom combo state and explicit release-only physical modifiers
         private readonly Dictionary<string, ComboRuntimeState> _comboStates = new(StringComparer.Ordinal);
         private readonly HashSet<string> _comboConsumedButtons = new();
-        private readonly HashSet<string> _modifierButtonsUsed = new(StringComparer.Ordinal);
         private readonly List<string> _staleComboKeys = new();
         private readonly List<string> _releasedComboButtons = new();
         private readonly Dictionary<ushort, int> _heldKeyCounts = new();
         private readonly Dictionary<ushort, double> _nextKeyRepeat = new();
 
-        // previous physical state (edge detection)
-        private bool _pA, _pB, _pX, _pY, _pLB, _pRB, _pLS, _pRS;
-        private bool _pDUp, _pDDown, _pDLeft, _pDRight;
-        private bool _pLUpAxis, _pLDownAxis, _pLLeftAxis, _pLRightAxis;
-        private bool _pRUpAxis, _pRDownAxis, _pRLeftAxis, _pRRightAxis;
+        private readonly Dictionary<string, BindingRuntimeState> _bindingStates = new(StringComparer.Ordinal);
+        private readonly List<string> _staleBindingKeys = new();
         /// <summary>Raised when disable/enable happens or profile changes (UI toast).</summary>
         public event Action<string>? Notification;
         public event Action? StateChanged;
@@ -139,22 +135,21 @@ namespace GamepadKeyboard
         {
             if (!InputEnabled)
             {
-                bool mappedButtonEnabled = MouseMode
-                    ? TryEnableFromMappedButton(s, AppSettings.Instance.MouseProfile)
-                    : TryEnableFromMappedButton(s, AppSettings.Instance.Profile);
-                var enableBindings = MouseMode
-                    ? AppSettings.Instance.MouseProfile.ComboBindings
-                    : AppSettings.Instance.Profile.ComboBindings;
-                if (mappedButtonEnabled || TryEnableFromProfile(s, enableBindings))
+                var bindings = MouseMode
+                    ? AppSettings.Instance.MouseProfile.Bindings
+                    : AppSettings.Instance.Profile.Bindings;
+                if (TryEnableFromProfile(s, bindings))
                 {
-                    SaveEdges(s); // consume the reading containing the custom enable combo
+                    CaptureBindingEdges(s, bindings);
                     return;
                 }
 
                 // pass-through: app injects nothing, game sees the pad natively
                 AdjustMoveScaleKeyboard = false;
                 MoveDX = MoveDY = ScaleDelta = 0;
-                ClearAllEdges(s);
+                CaptureBindingEdges(s, bindings);
+                CleanupRuntimeBindings(bindings);
+                FinishComboFrame(s);
                 return;
             }
 
@@ -164,7 +159,9 @@ namespace GamepadKeyboard
                 ProcessKeyboardMode(s);
 
             RepeatHeldKeys();
-            SaveEdges(s);
+            CleanupRuntimeBindings(MouseMode
+                ? AppSettings.Instance.MouseProfile.Bindings
+                : AppSettings.Instance.Profile.Bindings);
         }
 
         // ── Keyboard mode ─────────────────────────────────────────────────────
@@ -172,10 +169,14 @@ namespace GamepadKeyboard
         private void ProcessKeyboardMode(in GamepadSnapshot s)
         {
             var p = AppSettings.Instance.Profile;
-            EvaluateCombos(s, p.ComboBindings);
+            EvaluateCombos(s, p.Bindings);
             if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
 
             MoveDX = MoveDY = ScaleDelta = 0;
+            double leftX = 0, leftY = 0, rightX = 0, rightY = 0;
+            AccumulateContinuousActions(p.Bindings, s,
+                ref leftX, ref leftY, ref rightX, ref rightY,
+                out _, out _, out _, out _);
             if (AdjustMoveScaleKeyboard)
             {
                 // Left stick scales and right stick moves the keyboard.
@@ -186,35 +187,10 @@ namespace GamepadKeyboard
             }
             else
             {
-                UpdateKeyboardCursors(s);
+                UpdateKeyboardCursors(s, leftX, leftY, rightX, rightY);
             }
 
-            DispatchProfileButton("LT", p.LT, s.LeftTrigger > 0.5, ref _pLTHeld, s);
-            DispatchProfileButton("RT", p.RT, s.RightTrigger > 0.5, ref _pRTHeld, s);
-
-            // Explicit modifier bindings defer their standalone action to release;
-            // ordinary bindings preserve immediate down/up behavior.
-            DispatchProfileButton("A", p.A, s.A, ref _pA, s);
-            if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("B", p.B, s.B, ref _pB, s);
-            if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("X", p.X, s.X, ref _pX, s);
-            DispatchProfileButton("Y", p.Y, s.Y, ref _pY, s);
-
-            DispatchProfileButton("LB", p.LB, s.LB, ref _pLB, s);
-            DispatchProfileButton("RB", p.RB, s.RB, ref _pRB, s);
-            DispatchProfileButton("LS", p.LS, s.LS, ref _pLS, s);
-            DispatchProfileButton("RS", p.RS, s.RS, ref _pRS, s);
-
-            DispatchProfileButton("View", p.View, s.View, ref _pView, s);
-            if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("Menu", p.Menu, s.Menu, ref _pMenu, s);
-            if (!InputEnabled || MouseMode) { FinishComboFrame(s); return; }
-
-            DispatchProfileButton("DUp", p.DUp, s.DUp, ref _pDUp, s);
-            DispatchProfileButton("DDown", p.DDown, s.DDown, ref _pDDown, s);
-            DispatchProfileButton("DLeft", p.DLeft, s.DLeft, ref _pDLeft, s);
-            DispatchProfileButton("DRight", p.DRight, s.DRight, ref _pDRight, s);
+            DispatchSingleBindings(p.Bindings, s, keyboardMode: true);
             FinishComboFrame(s);
         }
 
@@ -225,28 +201,12 @@ namespace GamepadKeyboard
             var profile = AppSettings.Instance.MouseProfile;
             var st = AppSettings.Instance;
 
-            bool boost = IsActionHeld(profile, "SpeedBoost", s);
+            bool boost = IsActionHeld(profile.Bindings, "SpeedBoost", s);
             double speed = st.MouseSpeed * (boost ? st.MouseSpeedBoostMultiplier : 1.0);
-            ApplyRadialStickCurve(s.LX, s.LY, out double leftX, out double leftY);
-            ApplyRadialStickCurve(s.RX, s.RY, out double rightX, out double rightY);
-
-            double moveX = 0, moveY = 0, scrollX = 0, scrollY = 0;
-            DispatchAnalogDirection(profile.LUp, Math.Max(0, leftY), ref _pLUpAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
-            DispatchAnalogDirection(profile.LDown, Math.Max(0, -leftY), ref _pLDownAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
-            DispatchAnalogDirection(profile.LLeft, Math.Max(0, -leftX), ref _pLLeftAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
-            DispatchAnalogDirection(profile.LRight, Math.Max(0, leftX), ref _pLRightAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
-            DispatchAnalogDirection(profile.RUp, Math.Max(0, rightY), ref _pRUpAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
-            DispatchAnalogDirection(profile.RDown, Math.Max(0, -rightY), ref _pRDownAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
-            DispatchAnalogDirection(profile.RLeft, Math.Max(0, -rightX), ref _pRLeftAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
-            DispatchAnalogDirection(profile.RRight, Math.Max(0, rightX), ref _pRRightAxis,
-                ref moveX, ref moveY, ref scrollX, ref scrollY);
+            double leftX = 0, leftY = 0, rightX = 0, rightY = 0;
+            AccumulateContinuousActions(profile.Bindings, s,
+                ref leftX, ref leftY, ref rightX, ref rightY,
+                out double moveX, out double moveY, out double scrollX, out double scrollY);
 
             int dx = (int)Math.Round(moveX * speed);
             int dy = (int)Math.Round(moveY * speed);
@@ -256,170 +216,119 @@ namespace GamepadKeyboard
             if (vertical != 0) SendVerticalScroll(vertical);
             if (horizontal != 0) SendHorizontalScroll(horizontal);
 
-            EvaluateCombos(s, profile.ComboBindings);
+            EvaluateCombos(s, profile.Bindings);
             if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
-
-            DispatchProfileButton("DUp", profile.DUp, s.DUp, ref _pDUp, s);
-            DispatchProfileButton("DDown", profile.DDown, s.DDown, ref _pDDown, s);
-            DispatchProfileButton("DLeft", profile.DLeft, s.DLeft, ref _pDLeft, s);
-            DispatchProfileButton("DRight", profile.DRight, s.DRight, ref _pDRight, s);
-
-            DispatchProfileButton("A", profile.A, s.A, ref _pA, s);
-            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("B", profile.B, s.B, ref _pB, s);
-            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("X", profile.X, s.X, ref _pX, s);
-            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("Y", profile.Y, s.Y, ref _pY, s);
-            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("LB", profile.LB, s.LB, ref _pLB, s);
-            DispatchProfileButton("RB", profile.RB, s.RB, ref _pRB, s);
-            DispatchProfileButton("LS", profile.LS, s.LS, ref _pLS, s);
-            DispatchProfileButton("RS", profile.RS, s.RS, ref _pRS, s);
-            DispatchProfileButton("View", profile.View, s.View, ref _pView, s);
-            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("Menu", profile.Menu, s.Menu, ref _pMenu, s);
-            if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
-            DispatchProfileButton("LT", profile.LT, s.LeftTrigger > 0.5, ref _pLTHeld, s);
-            DispatchProfileButton("RT", profile.RT, s.RightTrigger > 0.5, ref _pRTHeld, s);
+            DispatchSingleBindings(profile.Bindings, s, keyboardMode: false);
             FinishComboFrame(s);
         }
 
-        private void DispatchAnalogDirection(
-            ButtonBinding binding,
-            double value,
-            ref bool previous,
-            ref double moveX,
-            ref double moveY,
-            ref double scrollX,
-            ref double scrollY)
+        private static bool IsActionHeld(List<ProfileBinding> bindings, string action, in GamepadSnapshot s)
         {
-            switch (binding.Action)
+            foreach (var binding in bindings)
             {
-                case "MouseMoveUp": moveY -= value; previous = false; return;
-                case "MouseMoveDown": moveY += value; previous = false; return;
-                case "MouseMoveLeft": moveX -= value; previous = false; return;
-                case "MouseMoveRight": moveX += value; previous = false; return;
-                case "AnalogScrollUp": scrollY += value; previous = false; return;
-                case "AnalogScrollDown": scrollY -= value; previous = false; return;
-                case "AnalogScrollLeft": scrollX -= value; previous = false; return;
-                case "AnalogScrollRight": scrollX += value; previous = false; return;
+                if (binding.Buttons.Count == 1 && !binding.Modifier
+                    && binding.Action == action && InputValue(s, binding.Buttons[0]) >= 0.5)
+                    return true;
             }
-
-            bool held = value >= 0.5;
-            DispatchButton(binding.Action, held, ref previous);
+            return false;
         }
 
-        private static bool IsActionHeld(MouseProfile profile, string action, in GamepadSnapshot s)
+        private void AccumulateContinuousActions(
+            List<ProfileBinding> bindings,
+            in GamepadSnapshot s,
+            ref double leftX,
+            ref double leftY,
+            ref double rightX,
+            ref double rightY,
+            out double moveX,
+            out double moveY,
+            out double scrollX,
+            out double scrollY)
         {
-            bool Active(ButtonBinding binding, bool held) =>
-                !binding.Modifier && binding.Action == action && held;
-            return Active(profile.A, s.A)
-                || Active(profile.B, s.B)
-                || Active(profile.X, s.X)
-                || Active(profile.Y, s.Y)
-                || Active(profile.LB, s.LB)
-                || Active(profile.RB, s.RB)
-                || Active(profile.LT, s.LeftTrigger > 0.5)
-                || Active(profile.RT, s.RightTrigger > 0.5)
-                || Active(profile.LS, s.LS)
-                || Active(profile.RS, s.RS)
-                || Active(profile.View, s.View)
-                || Active(profile.Menu, s.Menu)
-                || Active(profile.DUp, s.DUp)
-                || Active(profile.DDown, s.DDown)
-                || Active(profile.DLeft, s.DLeft)
-                || Active(profile.DRight, s.DRight);
-        }
-
-        private void SendVerticalScroll(int delta)
-        {
-            _sender.MouseWheel(AppSettings.Instance.InvertVerticalScroll ? -delta : delta);
-        }
-
-        private void SendHorizontalScroll(int delta)
-        {
-            _sender.MouseHWheel(AppSettings.Instance.InvertHorizontalScroll ? -delta : delta);
-        }
-
-        // ── Custom combo bindings ─────────────────────────────────────────────
-
-        private bool TryEnableFromMappedButton(in GamepadSnapshot s, KeyboardProfile profile) =>
-            TryEnableAction("A", profile.A, s.A, _pA, s)
-            || TryEnableAction("B", profile.B, s.B, _pB, s)
-            || TryEnableAction("X", profile.X, s.X, _pX, s)
-            || TryEnableAction("Y", profile.Y, s.Y, _pY, s)
-            || TryEnableAction("LB", profile.LB, s.LB, _pLB, s)
-            || TryEnableAction("RB", profile.RB, s.RB, _pRB, s)
-            || TryEnableAction("LT", profile.LT, s.LeftTrigger > 0.5, _pLTHeld, s)
-            || TryEnableAction("RT", profile.RT, s.RightTrigger > 0.5, _pRTHeld, s)
-            || TryEnableAction("LS", profile.LS, s.LS, _pLS, s)
-            || TryEnableAction("RS", profile.RS, s.RS, _pRS, s)
-            || TryEnableAction("View", profile.View, s.View, _pView, s)
-            || TryEnableAction("Menu", profile.Menu, s.Menu, _pMenu, s)
-            || TryEnableAction("DUp", profile.DUp, s.DUp, _pDUp, s)
-            || TryEnableAction("DDown", profile.DDown, s.DDown, _pDDown, s)
-            || TryEnableAction("DLeft", profile.DLeft, s.DLeft, _pDLeft, s)
-            || TryEnableAction("DRight", profile.DRight, s.DRight, _pDRight, s);
-
-        private bool TryEnableFromMappedButton(in GamepadSnapshot s, MouseProfile profile) =>
-            TryEnableAction("A", profile.A, s.A, _pA, s)
-            || TryEnableAction("B", profile.B, s.B, _pB, s)
-            || TryEnableAction("X", profile.X, s.X, _pX, s)
-            || TryEnableAction("Y", profile.Y, s.Y, _pY, s)
-            || TryEnableAction("LB", profile.LB, s.LB, _pLB, s)
-            || TryEnableAction("RB", profile.RB, s.RB, _pRB, s)
-            || TryEnableAction("LT", profile.LT, s.LeftTrigger > 0.5, _pLTHeld, s)
-            || TryEnableAction("RT", profile.RT, s.RightTrigger > 0.5, _pRTHeld, s)
-            || TryEnableAction("LS", profile.LS, s.LS, _pLS, s)
-            || TryEnableAction("RS", profile.RS, s.RS, _pRS, s)
-            || TryEnableAction("View", profile.View, s.View, _pView, s)
-            || TryEnableAction("Menu", profile.Menu, s.Menu, _pMenu, s)
-            || TryEnableAction("DUp", profile.DUp, s.DUp, _pDUp, s)
-            || TryEnableAction("DDown", profile.DDown, s.DDown, _pDDown, s)
-            || TryEnableAction("DLeft", profile.DLeft, s.DLeft, _pDLeft, s)
-            || TryEnableAction("DRight", profile.DRight, s.DRight, _pDRight, s);
-
-        private bool TryEnableAction(
-            string button,
-            ButtonBinding binding,
-            bool held,
-            bool previous,
-            in GamepadSnapshot snapshot)
-        {
-            if (binding.Action != "EnableInput" && binding.Action != "ToggleInput") return false;
-            if (binding.Modifier)
+            moveX = moveY = scrollX = scrollY = 0;
+            foreach (var binding in bindings)
             {
-                if (held && AnyOtherPhysicalButtonHeld(button, snapshot))
-                    _modifierButtonsUsed.Add(button);
-                if (held || !previous || _modifierButtonsUsed.Remove(button)
-                    || AnyOtherPhysicalButtonHeld(button, snapshot)) return false;
+                if (binding.Buttons.Count != 1) continue;
+                double value = InputValue(s, binding.Buttons[0]);
+                if (value <= 0) continue;
+                switch (binding.Action)
+                {
+                    case "MoveLeftCursorUp": leftY += value; break;
+                    case "MoveLeftCursorDown": leftY -= value; break;
+                    case "MoveLeftCursorLeft": leftX -= value; break;
+                    case "MoveLeftCursorRight": leftX += value; break;
+                    case "MoveRightCursorUp": rightY += value; break;
+                    case "MoveRightCursorDown": rightY -= value; break;
+                    case "MoveRightCursorLeft": rightX -= value; break;
+                    case "MoveRightCursorRight": rightX += value; break;
+                    case "MouseMoveUp": moveY -= value; break;
+                    case "MouseMoveDown": moveY += value; break;
+                    case "MouseMoveLeft": moveX -= value; break;
+                    case "MouseMoveRight": moveX += value; break;
+                    case "AnalogScrollUp": scrollY += value; break;
+                    case "AnalogScrollDown": scrollY -= value; break;
+                    case "AnalogScrollLeft": scrollX -= value; break;
+                    case "AnalogScrollRight": scrollX += value; break;
+                }
             }
-            else if (!held || previous)
-            {
-                return false;
-            }
-            SetInputEnabled(true);
-            return true;
+            NormalizeVector(ref leftX, ref leftY);
+            NormalizeVector(ref rightX, ref rightY);
+            NormalizeVector(ref moveX, ref moveY);
         }
+
+        private static void NormalizeVector(ref double x, ref double y)
+        {
+            double magnitude = Math.Sqrt(x * x + y * y);
+            if (magnitude <= 1) return;
+            x /= magnitude;
+            y /= magnitude;
+        }
+
+        private void SendVerticalScroll(int delta) => _sender.MouseWheel(delta);
+
+        private void SendHorizontalScroll(int delta) => _sender.MouseHWheel(delta);
+
+        // ── Ordered profile bindings ──────────────────────────────────────────
 
         private bool TryEnableFromProfile(
             in GamepadSnapshot s,
-            List<CustomComboBinding> combos)
+            List<ProfileBinding> bindings)
         {
-            foreach (var binding in combos)
+            foreach (var binding in bindings)
             {
                 if (binding.Action != "EnableInput" && binding.Action != "ToggleInput")
                     continue;
 
                 var parts = binding.Buttons;
+                if (parts.Count == 1)
+                {
+                    string button = parts[0];
+                    bool held = InputValue(s, button) >= 0.5;
+                    var singleState = GetBindingState(binding.Id);
+                    bool previous = singleState.Previous;
+                    if (binding.Modifier)
+                    {
+                        if (held && AnyOtherPhysicalButtonHeld(button, s))
+                            singleState.UsedAsModifier = true;
+                        bool used = singleState.UsedAsModifier;
+                        if (!held) singleState.UsedAsModifier = false;
+                        if (held || !previous || used
+                            || AnyOtherPhysicalButtonHeld(button, s)) continue;
+                    }
+                    else if (!held || previous)
+                    {
+                        continue;
+                    }
+                    SetInputEnabled(true);
+                    return true;
+                }
                 if (parts.Count < 2) continue;
                 var state = GetComboState(binding.Id);
 
                 bool modifiersHeld = true;
                 for (int i = 0; i < parts.Count - 1; i++)
                 {
-                    if (!s.Button(parts[i]))
+                    if (InputValue(s, parts[i]) < 0.5)
                     {
                         modifiersHeld = false;
                         break;
@@ -427,15 +336,15 @@ namespace GamepadKeyboard
                 }
 
                 string last = parts[^1];
-                bool held = modifiersHeld && s.Button(last);
+                bool lastHeld = InputValue(s, last) >= 0.5;
+                bool held = modifiersHeld && lastHeld;
                 bool previous = state.LastButtonHeld;
-                state.LastButtonHeld = s.Button(last);
+                state.LastButtonHeld = lastHeld;
                 if (held && !previous)
                 {
                     foreach (var part in parts)
                     {
                         _comboConsumedButtons.Add(part);
-                        _modifierButtonsUsed.Add(part);
                     }
                     App.Log("input enabled by profile binding: " + string.Join("+", parts));
                     SetInputEnabled(true);
@@ -451,22 +360,22 @@ namespace GamepadKeyboard
         /// </summary>
         private void EvaluateCombos(
             in GamepadSnapshot s,
-            List<CustomComboBinding> combos)
+            List<ProfileBinding> bindings)
         {
             var currentIds = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var binding in combos)
+            foreach (var binding in bindings)
             {
-                currentIds.Add(binding.Id);
                 var parts = binding.Buttons;
                 if (parts.Count < 2) continue;
+                currentIds.Add(binding.Id);
                 var state = GetComboState(binding.Id);
 
                 bool prefixHeld = true;
                 for (int i = 0; i < parts.Count - 1; i++)
-                    if (!s.Button(parts[i])) { prefixHeld = false; break; }
+                    if (InputValue(s, parts[i]) < 0.5) { prefixHeld = false; break; }
 
                 string last = parts[^1];
-                bool lastHeld = s.Button(last);
+                bool lastHeld = InputValue(s, last) >= 0.5;
 
                 if (state.ActionHeld && !lastHeld)
                 {
@@ -490,7 +399,6 @@ namespace GamepadKeyboard
                     foreach (var part in parts)
                     {
                         _comboConsumedButtons.Add(part);
-                        _modifierButtonsUsed.Add(part);
                     }
                     if (!state.Active)
                     {
@@ -530,7 +438,7 @@ namespace GamepadKeyboard
             return state;
         }
 
-        private void AcquireComboModifiers(CustomComboBinding binding, ComboRuntimeState state)
+        private void AcquireComboModifiers(ProfileBinding binding, ComboRuntimeState state)
         {
             if (binding.Ctrl) AcquireComboModifier(Vk.LControl, state);
             if (binding.Shift) AcquireComboModifier(Vk.LShift, state);
@@ -583,44 +491,170 @@ namespace GamepadKeyboard
             DispatchButton(action, false, ref previous);
         }
 
-        private void DispatchProfileButton(
-            string button,
-            ButtonBinding binding,
+        private void DispatchSingleBindings(
+            List<ProfileBinding> bindings,
+            in GamepadSnapshot snapshot,
+            bool keyboardMode)
+        {
+            foreach (var binding in bindings)
+            {
+                if (binding.Buttons.Count != 1) continue;
+                var state = GetBindingState(binding.Id);
+                bool continuous = IsContinuousAction(binding.Action);
+                if (!string.Equals(state.Action, binding.Action, StringComparison.Ordinal)
+                    || state.Modifier != binding.Modifier
+                    || state.Continuous != continuous)
+                {
+                    ReleaseBindingState(state);
+                    state.Action = binding.Action;
+                }
+
+                if (continuous)
+                {
+                    state.Previous = false;
+                    state.Modifier = false;
+                    state.Continuous = true;
+                    continue;
+                }
+
+                state.Continuous = false;
+                bool held = InputValue(snapshot, binding.Buttons[0]) >= 0.5;
+                DispatchProfileBinding(binding, held, state, snapshot);
+                bool modeChanged = keyboardMode ? MouseMode : !MouseMode;
+                if (!InputEnabled || modeChanged) break;
+            }
+        }
+
+        private void DispatchProfileBinding(
+            ProfileBinding binding,
             bool held,
-            ref bool previous,
+            BindingRuntimeState state,
             in GamepadSnapshot snapshot)
         {
+            string button = binding.Buttons[0];
+            bool previous = state.Previous;
+            state.Modifier = binding.Modifier;
+            state.Action = binding.Action;
             if (!binding.Modifier)
             {
-                DispatchButton(binding.Action, held, ref previous);
+                DispatchButton(binding.Action, held, ref state.Previous);
                 return;
             }
 
             if (held && !previous)
-                _modifierButtonsUsed.Remove(button);
+                state.UsedAsModifier = false;
             if (held && AnyOtherPhysicalButtonHeld(button, snapshot))
-                _modifierButtonsUsed.Add(button);
+                state.UsedAsModifier = true;
             if (!held && previous)
             {
-                bool used = _modifierButtonsUsed.Remove(button)
+                bool used = state.UsedAsModifier
                     || _comboConsumedButtons.Contains(button)
                     || AnyOtherPhysicalButtonHeld(button, snapshot);
+                state.UsedAsModifier = false;
                 if (!used) RunActionOnce(binding.Action);
             }
-            previous = held;
+            state.Previous = held;
         }
 
         private static readonly string[] PhysicalButtons =
         {
             "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "LS", "RS",
-            "View", "Menu", "Home", "DUp", "DDown", "DLeft", "DRight"
+            "View", "Menu", "Home", "DUp", "DDown", "DLeft", "DRight",
+            "LUp", "LDown", "LLeft", "LRight", "RUp", "RDown", "RLeft", "RRight"
         };
 
         private static bool AnyOtherPhysicalButtonHeld(string button, in GamepadSnapshot snapshot)
         {
             foreach (string candidate in PhysicalButtons)
-                if (candidate != button && snapshot.Button(candidate)) return true;
+                if (candidate != button && InputValue(snapshot, candidate) >= 0.5) return true;
             return false;
+        }
+
+        private static double InputValue(in GamepadSnapshot s, string button)
+        {
+            return button switch
+            {
+                "A" => s.A ? 1 : 0, "B" => s.B ? 1 : 0,
+                "X" => s.X ? 1 : 0, "Y" => s.Y ? 1 : 0,
+                "LB" => s.LB ? 1 : 0, "RB" => s.RB ? 1 : 0,
+                "LT" => s.LeftTrigger, "RT" => s.RightTrigger,
+                "LS" => s.LS ? 1 : 0, "RS" => s.RS ? 1 : 0,
+                "View" => s.View ? 1 : 0, "Menu" => s.Menu ? 1 : 0,
+                "Home" => s.Home ? 1 : 0,
+                "DUp" => s.DUp ? 1 : 0, "DDown" => s.DDown ? 1 : 0,
+                "DLeft" => s.DLeft ? 1 : 0, "DRight" => s.DRight ? 1 : 0,
+                "LUp" => Math.Max(0, ApplyStickCurve(s.LY)),
+                "LDown" => Math.Max(0, -ApplyStickCurve(s.LY)),
+                "LLeft" => Math.Max(0, -ApplyStickCurve(s.LX)),
+                "LRight" => Math.Max(0, ApplyStickCurve(s.LX)),
+                "RUp" => Math.Max(0, ApplyStickCurve(s.RY)),
+                "RDown" => Math.Max(0, -ApplyStickCurve(s.RY)),
+                "RLeft" => Math.Max(0, -ApplyStickCurve(s.RX)),
+                "RRight" => Math.Max(0, ApplyStickCurve(s.RX)),
+                _ => 0
+            };
+        }
+
+        private static bool IsContinuousAction(string action) => action is
+            "MoveLeftCursorUp" or "MoveLeftCursorDown" or "MoveLeftCursorLeft" or "MoveLeftCursorRight"
+            or "MoveRightCursorUp" or "MoveRightCursorDown" or "MoveRightCursorLeft" or "MoveRightCursorRight"
+            or "MouseMoveUp" or "MouseMoveDown" or "MouseMoveLeft" or "MouseMoveRight"
+            or "AnalogScrollUp" or "AnalogScrollDown" or "AnalogScrollLeft" or "AnalogScrollRight";
+
+        private BindingRuntimeState GetBindingState(string id)
+        {
+            if (_bindingStates.TryGetValue(id, out var state)) return state;
+            state = new BindingRuntimeState();
+            _bindingStates[id] = state;
+            return state;
+        }
+
+        private void ReleaseBindingState(BindingRuntimeState state)
+        {
+            if (state.Previous && !state.Modifier && !state.Continuous)
+                DispatchButton(state.Action, false, ref state.Previous);
+            state.Previous = false;
+            state.Modifier = false;
+            state.Continuous = false;
+            state.UsedAsModifier = false;
+        }
+
+        private void CaptureBindingEdges(in GamepadSnapshot snapshot, List<ProfileBinding> bindings)
+        {
+            foreach (var binding in bindings)
+            {
+                if (binding.Buttons.Count == 1)
+                {
+                    var state = GetBindingState(binding.Id);
+                    state.Action = binding.Action;
+                    state.Modifier = binding.Modifier;
+                    state.Continuous = IsContinuousAction(binding.Action);
+                    state.Previous = InputValue(snapshot, binding.Buttons[0]) >= 0.5;
+                    if (!state.Previous) state.UsedAsModifier = false;
+                    else if (binding.Modifier && AnyOtherPhysicalButtonHeld(binding.Buttons[0], snapshot))
+                        state.UsedAsModifier = true;
+                }
+                else if (binding.Buttons.Count > 1)
+                {
+                    GetComboState(binding.Id).LastButtonHeld =
+                        InputValue(snapshot, binding.Buttons[^1]) >= 0.5;
+                }
+            }
+        }
+
+        private void CleanupRuntimeBindings(List<ProfileBinding> bindings)
+        {
+            var activeIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var binding in bindings)
+                if (binding.Buttons.Count == 1) activeIds.Add(binding.Id);
+            _staleBindingKeys.Clear();
+            foreach (string id in _bindingStates.Keys)
+                if (!activeIds.Contains(id)) _staleBindingKeys.Add(id);
+            foreach (string id in _staleBindingKeys)
+            {
+                ReleaseBindingState(_bindingStates[id]);
+                _bindingStates.Remove(id);
+            }
         }
 
         private void FinishComboFrame(in GamepadSnapshot s)
@@ -629,7 +663,7 @@ namespace GamepadKeyboard
             // Collect released buttons first, then mutate the set separately.
             _releasedComboButtons.Clear();
             foreach (var button in _comboConsumedButtons)
-                if (!s.Button(button)) _releasedComboButtons.Add(button);
+                if (InputValue(s, button) < 0.5) _releasedComboButtons.Add(button);
             foreach (var button in _releasedComboButtons)
                 _comboConsumedButtons.Remove(button);
         }
@@ -904,6 +938,14 @@ namespace GamepadKeyboard
                 case "AnalogScrollDown":
                 case "AnalogScrollLeft":
                 case "AnalogScrollRight":
+                case "MoveLeftCursorUp":
+                case "MoveLeftCursorDown":
+                case "MoveLeftCursorLeft":
+                case "MoveLeftCursorRight":
+                case "MoveRightCursorUp":
+                case "MoveRightCursorDown":
+                case "MoveRightCursorLeft":
+                case "MoveRightCursorRight":
                     break; // handled elsewhere / no-op
 
                 default:
@@ -1063,8 +1105,12 @@ namespace GamepadKeyboard
                 state.ActionPrevious = false;
                 state.Modifiers.Clear();
             }
-            _pLUpAxis = _pLDownAxis = _pLLeftAxis = _pLRightAxis = false;
-            _pRUpAxis = _pRDownAxis = _pRLeftAxis = _pRRightAxis = false;
+            foreach (var state in _bindingStates.Values)
+            {
+                state.Previous = false;
+                state.Modifier = false;
+                state.UsedAsModifier = false;
+            }
             ReleaseHeldClicks();  // no stuck mouse buttons on disable / mode switch
             ReleaseHeldRayKeys(); // no stuck held-typed keys
         }
@@ -1180,7 +1226,12 @@ namespace GamepadKeyboard
 
         // ── Ray and cursor geometry ───────────────────────────────────────────
 
-        private void UpdateKeyboardCursors(in GamepadSnapshot s)
+        private void UpdateKeyboardCursors(
+            in GamepadSnapshot s,
+            double mappedLeftX,
+            double mappedLeftY,
+            double mappedRightX,
+            double mappedRightY)
         {
             var settings = AppSettings.Instance;
             var points = settings.StickPointsProfile;
@@ -1205,25 +1256,21 @@ namespace GamepadKeyboard
             if (settings.FreeCursorEnabled)
             {
                 double speed = Math.Max(0, settings.FreeCursorSpeed);
-                ApplyRadialStickCurve(s.LX, s.LY, out double leftX, out double leftY);
-                ApplyRadialStickCurve(s.RX, s.RY, out double rightX, out double rightY);
-                _leftTargetX = Math.Clamp(_leftTargetX + leftX * speed * dt, 4, 4 + KeyboardWidth());
-                _leftTargetY = Math.Clamp(_leftTargetY - leftY * speed * dt, 4, 4 + KeyboardHeight());
-                _rightTargetX = Math.Clamp(_rightTargetX + rightX * speed * dt, 4, 4 + KeyboardWidth());
-                _rightTargetY = Math.Clamp(_rightTargetY - rightY * speed * dt, 4, 4 + KeyboardHeight());
+                _leftTargetX = Math.Clamp(_leftTargetX + mappedLeftX * speed * dt, 4, 4 + KeyboardWidth());
+                _leftTargetY = Math.Clamp(_leftTargetY - mappedLeftY * speed * dt, 4, 4 + KeyboardHeight());
+                _rightTargetX = Math.Clamp(_rightTargetX + mappedRightX * speed * dt, 4, 4 + KeyboardWidth());
+                _rightTargetY = Math.Clamp(_rightTargetY - mappedRightY * speed * dt, 4, 4 + KeyboardHeight());
                 LeftCursorActive = RightCursorActive = true;
             }
             else
             {
-                double leftMagnitude = Math.Sqrt(s.LX * s.LX + s.LY * s.LY);
-                double rightMagnitude = Math.Sqrt(s.RX * s.RX + s.RY * s.RY);
+                double leftMagnitude = Math.Sqrt(mappedLeftX * mappedLeftX + mappedLeftY * mappedLeftY);
+                double rightMagnitude = Math.Sqrt(mappedRightX * mappedRightX + mappedRightY * mappedRightY);
                 double maxRay = MaxRayLength();
-                ApplyRadialStickCurve(s.LX, s.LY, out double leftX, out double leftY);
-                ApplyRadialStickCurve(s.RX, s.RY, out double rightX, out double rightY);
-                _leftTargetX = leftOriginX + leftX * maxRay * points.LeftRayLength;
-                _leftTargetY = leftOriginY - leftY * maxRay * points.LeftRayLength;
-                _rightTargetX = rightOriginX + rightX * maxRay * points.RightRayLength;
-                _rightTargetY = rightOriginY - rightY * maxRay * points.RightRayLength;
+                _leftTargetX = leftOriginX + mappedLeftX * maxRay * points.LeftRayLength;
+                _leftTargetY = leftOriginY - mappedLeftY * maxRay * points.LeftRayLength;
+                _rightTargetX = rightOriginX + mappedRightX * maxRay * points.RightRayLength;
+                _rightTargetY = rightOriginY - mappedRightY * maxRay * points.RightRayLength;
                 LeftCursorActive = settings.CursorLagEnabled || leftMagnitude >= 0.08;
                 RightCursorActive = settings.CursorLagEnabled || rightMagnitude >= 0.08;
             }
@@ -1307,24 +1354,13 @@ namespace GamepadKeyboard
             curvedY = y * scale;
         }
 
-        // ── edge bookkeeping ──────────────────────────────────────────────────
-
-        private void SaveEdges(in GamepadSnapshot s)
+        private sealed class BindingRuntimeState
         {
-            _pA = s.A; _pB = s.B; _pX = s.X; _pY = s.Y;
-            _pLB = s.LB; _pRB = s.RB; _pLS = s.LS; _pRS = s.RS;
-            _pDUp = s.DUp; _pDDown = s.DDown; _pDLeft = s.DLeft; _pDRight = s.DRight;
-            _pView = s.View; _pMenu = s.Menu;
-            _pLTHeld = s.LeftTrigger > 0.5; _pRTHeld = s.RightTrigger > 0.5;
-        }
-
-        private void ClearAllEdges(in GamepadSnapshot s)
-        {
-            _pA = s.A; _pB = s.B; _pX = s.X; _pY = s.Y;
-            _pLB = s.LB; _pRB = s.RB; _pLS = s.LS; _pRS = s.RS;
-            _pDUp = s.DUp; _pDDown = s.DDown; _pDLeft = s.DLeft; _pDRight = s.DRight;
-            _pView = s.View; _pMenu = s.Menu;
-            _pLTHeld = s.LeftTrigger > 0.5; _pRTHeld = s.RightTrigger > 0.5;
+            public bool Previous;
+            public bool Modifier;
+            public bool Continuous;
+            public bool UsedAsModifier;
+            public string Action = "None";
         }
 
         private sealed class ComboRuntimeState
@@ -1337,7 +1373,5 @@ namespace GamepadKeyboard
             public List<ushort> Modifiers { get; } = new();
         }
 
-        // edge fields used only in some modes
-        private bool _pView, _pMenu, _pLTHeld, _pRTHeld;
     }
 }

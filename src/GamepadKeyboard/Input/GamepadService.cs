@@ -727,18 +727,6 @@ namespace GamepadKeyboard.Input
                 r.LeftTrigger, r.RightTrigger, home);
         }
 
-        /// <summary>Reads a physical button by mapping-profile name (A, B, LB, RB, LT, RT, LS, RS, View, Menu, DUp…).</summary>
-        public bool Button(string name) => name switch
-        {
-            "A" => A, "B" => B, "X" => X, "Y" => Y,
-            "LB" => LB, "RB" => RB,
-            "LT" => LeftTrigger > 0.5, "RT" => RightTrigger > 0.5,
-            "LS" => LS, "RS" => RS,
-            "View" => View, "Menu" => Menu, "Home" => Home,
-            "DUp" => DUp, "DDown" => DDown, "DLeft" => DLeft, "DRight" => DRight,
-            _ => false
-        };
-
         public bool Equals(GamepadSnapshot other) =>
             LX == other.LX && LY == other.LY && RX == other.RX && RY == other.RY &&
             A == other.A && B == other.B && X == other.X && Y == other.Y &&

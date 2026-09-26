@@ -36,8 +36,6 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _mouseSpeed = new() { Text = "" };
         private readonly TextBox _boost = new() { Text = "" };
         private readonly TextBox _scroll = new() { Text = "" };
-        private readonly CheckBox _invertScroll = new() { Content = "Invert vertical mouse scroll direction" };
-        private readonly CheckBox _invertHorizontalScroll = new() { Content = "Invert horizontal mouse scroll direction" };
         private readonly TextBox _deadzone = new() { Text = "" };
         private readonly TextBox _mouseDeadzone = new() { Text = "" };
         private readonly TextBox _curveExponent = new()
@@ -79,8 +77,6 @@ namespace GamepadKeyboard.UI
             _mouseSpeed.Text = s.MouseSpeed.ToString("0.#");
             _boost.Text = s.MouseSpeedBoostMultiplier.ToString("0.##");
             _scroll.Text = s.ScrollSpeed.ToString("0.#");
-            _invertScroll.IsChecked = s.InvertVerticalScroll;
-            _invertHorizontalScroll.IsChecked = s.InvertHorizontalScroll;
             _deadzone.Text = s.StickDeadzone.ToString("0.###");
             _mouseDeadzone.Text = s.MouseStickDeadzone.ToString("0.###");
             _curveExponent.Text = s.AnalogStickCurveExponent.ToString("0.##");
@@ -128,8 +124,7 @@ namespace GamepadKeyboard.UI
                 Content = MakeSettingsForm(
                     ("Key spacing (px gap between keys):", _spacing),
                     ("Keyboard move speed:", _keyboardMoveSpeed),
-                    ("Stick deadzone (0.000–0.5):", _deadzone),
-                    ("Analog sensitivity curve (0.1–5; 1 = linear):", _curveExponent))
+                    ("Stick deadzone (0.000–0.5):", _deadzone))
             });
             tabs.Items.Add(new TabItem
             {
@@ -139,8 +134,7 @@ namespace GamepadKeyboard.UI
                     ("Mouse speed boost multiplier:", _boost),
                     ("Scroll speed:", _scroll),
                     ("Stick deadzone (0.000–0.5):", _mouseDeadzone),
-                    ("", _invertScroll),
-                    ("", _invertHorizontalScroll))
+                    ("Analog sensitivity curve (0.1–5; 1 = linear):", _curveExponent))
             });
             tabs.Items.Add(new TabItem
             {
@@ -243,8 +237,6 @@ namespace GamepadKeyboard.UI
             s.MouseSpeed = ReadValidatedNumber(_mouseSpeed);
             s.MouseSpeedBoostMultiplier = ReadValidatedNumber(_boost);
             s.ScrollSpeed = ReadValidatedNumber(_scroll);
-            s.InvertVerticalScroll = _invertScroll.IsChecked == true;
-            s.InvertHorizontalScroll = _invertHorizontalScroll.IsChecked == true;
             s.StickDeadzone = ReadValidatedNumber(_deadzone);
             s.MouseStickDeadzone = ReadValidatedNumber(_mouseDeadzone);
             s.AnalogStickCurveExponent = ReadValidatedNumber(_curveExponent);

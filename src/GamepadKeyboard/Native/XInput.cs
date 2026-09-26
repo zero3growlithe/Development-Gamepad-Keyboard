@@ -4,9 +4,11 @@ using System.Runtime.InteropServices;
 namespace GamepadKeyboard.Native
 {
     /// <summary>
-    /// XInput polling (xinput1_4.dll with xinput9_1_0.dll fallback). Fallback input
-    /// path when Windows.Gaming.Input cannot read the pad (HidHide hiding the real
-    /// device, DS4Windows / Steam Input virtual Xbox pads, etc.).
+    /// XInput polling across the Windows 8+, legacy redistributable, and system
+    /// compatibility runtimes. Some virtual-pad stacks expose different state
+    /// through these runtimes as foreground ownership changes, so a disconnected
+    /// response from one runtime must not suppress the others. This is the
+    /// fallback when Windows.Gaming.Input cannot read a hidden or virtual pad.
     /// </summary>
     public static class XInput
     {
@@ -44,30 +46,46 @@ namespace GamepadKeyboard.Native
         public const ushort BTN_X = 0x4000;
         public const ushort BTN_Y = 0x8000;
 
-        private static bool _tried14, _ok14, _tried910, _ok910;
+        private static volatile bool _probed;
+        private static bool _ok14, _ok13, _ok910;
+        private static readonly object ProbeLock = new();
 
         [DllImport("xinput1_4.dll")]
         private static extern int XInputGetState14(int dwUserIndex, ref XINPUT_STATE pState);
+
+        [DllImport("xinput1_3.dll")]
+        private static extern int XInputGetState13(int dwUserIndex, ref XINPUT_STATE pState);
 
         [DllImport("xinput9_1_0.dll")]
         private static extern int XInputGetState910(int dwUserIndex, ref XINPUT_STATE pState);
 
         private static void Probe()
         {
-            if (!_tried14)
+            if (_probed) return;
+            lock (ProbeLock)
             {
-                _tried14 = true;
-                try { var s = new XINPUT_STATE(); XInputGetState14(0, ref s); _ok14 = true; }
-                catch (DllNotFoundException) { }
-                catch (EntryPointNotFoundException) { }
-                catch (BadImageFormatException) { }
+                if (_probed) return;
+                _ok14 = RuntimeAvailable(XInputGetState14);
+                _ok13 = RuntimeAvailable(XInputGetState13);
+                _ok910 = RuntimeAvailable(XInputGetState910);
+                _probed = true;
             }
-            if (!_ok14 && !_tried910)
+        }
+
+        private delegate int GetStateDelegate(int index, ref XINPUT_STATE state);
+
+        private static bool RuntimeAvailable(GetStateDelegate getState)
+        {
+            try
             {
-                _tried910 = true;
-                try { var s = new XINPUT_STATE(); XInputGetState910(0, ref s); _ok910 = true; }
-                catch { }
+                var state = new XINPUT_STATE();
+                getState(0, ref state);
+                return true;
             }
+            catch (DllNotFoundException) { return false; }
+            catch (EntryPointNotFoundException) { return false; }
+            catch (BadImageFormatException) { return false; }
+            catch { return false; }
         }
 
         public static bool Available
@@ -75,7 +93,7 @@ namespace GamepadKeyboard.Native
             get
             {
                 Probe();
-                return _ok14 || _ok910;
+                return _ok14 || _ok13 || _ok910;
             }
         }
 
@@ -83,9 +101,23 @@ namespace GamepadKeyboard.Native
         public static int GetState(int index, ref XINPUT_STATE state)
         {
             Probe();
-            if (_ok14) return XInputGetState14(index, ref state);
-            if (_ok910) return XInputGetState910(index, ref state);
-            return unchecked((int)0x8007048F); // device not connected
+            int error = unchecked((int)0x8007048F); // device not connected
+            if (_ok14)
+            {
+                error = XInputGetState14(index, ref state);
+                if (error == 0) return 0;
+            }
+            if (_ok13)
+            {
+                error = XInputGetState13(index, ref state);
+                if (error == 0) return 0;
+            }
+            if (_ok910)
+            {
+                error = XInputGetState910(index, ref state);
+                if (error == 0) return 0;
+            }
+            return error;
         }
     }
 }

@@ -13,7 +13,7 @@ namespace GamepadKeyboard.Settings
         private static readonly object SaveLock = new();
         private static string? _lastSavedJson;
 
-        public int SettingsVersion { get; set; } = 4;
+        public int SettingsVersion { get; set; } = 5;
 
         public double KeySpacing { get; set; } = 6.0;
         public double StickDeadzone { get; set; } = 0.005;
@@ -26,8 +26,6 @@ namespace GamepadKeyboard.Settings
         public double MouseSpeed { get; set; } = 12.0;
         public double MouseSpeedBoostMultiplier { get; set; } = 2.5;
         public double ScrollSpeed { get; set; } = 3.0;
-        public bool InvertVerticalScroll { get; set; } = false;
-        public bool InvertHorizontalScroll { get; set; } = false;
         public bool CursorLagEnabled { get; set; } = false;
         public double CursorLagSeconds { get; set; } = 0.15;
         public bool HideRaysInCursorLag { get; set; } = false;
@@ -145,16 +143,8 @@ namespace GamepadKeyboard.Settings
                 .ToList();
             if (KeyboardProfiles.Count == 0) KeyboardProfiles.Add(new KeyboardProfile());
             if (MouseProfiles.Count == 0) MouseProfiles.Add(new MouseProfile());
-            foreach (var profile in KeyboardProfiles)
-            {
-                profile.ComboBindings ??= new List<CustomComboBinding>();
-                NormalizeCombos(profile.ComboBindings);
-            }
-            foreach (var profile in MouseProfiles)
-            {
-                profile.ComboBindings ??= new List<CustomComboBinding>();
-                NormalizeCombos(profile.ComboBindings);
-            }
+            foreach (var profile in KeyboardProfiles) NormalizeBindings(profile);
+            foreach (var profile in MouseProfiles) NormalizeBindings(profile);
             if (StickPointsProfiles.Count == 0) StickPointsProfiles.Add(new StickPointsProfile());
 
             ActiveProfile = Math.Clamp(ActiveProfile, 0, KeyboardProfiles.Count - 1);
@@ -163,131 +153,127 @@ namespace GamepadKeyboard.Settings
             if (!double.IsFinite(AnalogStickCurveExponent) || AnalogStickCurveExponent <= 0)
                 AnalogStickCurveExponent = 1.0;
             AnalogStickCurveExponent = Math.Clamp(AnalogStickCurveExponent, 0.1, 5.0);
-            SettingsVersion = 4;
+            SettingsVersion = 5;
         }
 
-        private static void NormalizeCombos(List<CustomComboBinding>? combos)
+        private static void NormalizeBindings(BindingProfile profile)
         {
-            if (combos == null) return;
-            foreach (var combo in combos)
+            profile.Bindings ??= new List<ProfileBinding>();
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var binding in profile.Bindings)
             {
-                combo.Buttons ??= new List<string>();
-                if (string.IsNullOrWhiteSpace(combo.Id)) combo.Id = Guid.NewGuid().ToString("N");
-                combo.Action ??= "None";
+                binding.Buttons ??= new List<string>();
+                binding.Buttons = binding.Buttons
+                    .Where(button => !string.IsNullOrWhiteSpace(button))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                if (string.IsNullOrWhiteSpace(binding.Id) || !ids.Add(binding.Id))
+                {
+                    binding.Id = Guid.NewGuid().ToString("N");
+                    ids.Add(binding.Id);
+                }
+                binding.Action ??= "None";
             }
         }
     }
 
     /// <summary>
-    /// One keyboard-mode button mapping profile. Stick origins and ray behavior
-    /// live in independent <see cref="StickPointsProfile"/> instances.
+    /// Shared ordered binding collection for keyboard and mouse profiles.
     /// </summary>
-    public sealed class KeyboardProfile
+    public abstract class BindingProfile
     {
         public string Name { get; set; } = "Default";
-
-        // ── button mappings (physical pad -> action name) ────────────────────
-        public ButtonBinding A { get; set; } = new("Space");
-        public ButtonBinding B { get; set; } = new("MouseMode");
-        public ButtonBinding X { get; set; } = new("Tab");
-        public ButtonBinding Y { get; set; } = new("None");
-
-        /// <summary>Default submit buttons for the independently highlighted cursors.</summary>
-        public ButtonBinding LB { get; set; } = new("SubmitLeft");
-        public ButtonBinding RB { get; set; } = new("SubmitRight");
-
-        /// <summary>Hold-type modifier (tap = toggle): HoldShift / HoldCtrl / HoldAlt / HoldWin, or any action.</summary>
-        public ButtonBinding LT { get; set; } = new("HoldShift");
-        public ButtonBinding RT { get; set; } = new("HoldCtrl");
-        public ButtonBinding LS { get; set; } = new("ToggleMoveScaleKeyboard");
-        public ButtonBinding RS { get; set; } = new("None");
-
-        public ButtonBinding View { get; set; } = new("DisableInput");
-        public ButtonBinding Menu { get; set; } = new("ToggleKeyboardMouseMode");
-
-        public ButtonBinding DUp { get; set; } = new("ArrowUp");
-        public ButtonBinding DDown { get; set; } = new("ArrowDown");
-        public ButtonBinding DLeft { get; set; } = new("ArrowLeft");
-        public ButtonBinding DRight { get; set; } = new("ArrowRight");
-
-        /// <summary>Structured multi-button bindings; the final gamepad button triggers.</summary>
-        public List<CustomComboBinding> ComboBindings { get; set; } = new()
-        {
-            new(new[] { "LS", "RS", "LB", "RB" }, "EnableInput")
-        };
+        public List<ProfileBinding> Bindings { get; set; } = new();
     }
 
-    public sealed class MouseProfile
+    public sealed class KeyboardProfile : BindingProfile
     {
-        public string Name { get; set; } = "Default";
-
-        public ButtonBinding A { get; set; } = new("LeftClick");
-        public ButtonBinding B { get; set; } = new("RightClick");
-        public ButtonBinding X { get; set; } = new("MiddleClick");
-        public ButtonBinding Y { get; set; } = new("KeyboardMode");
-
-        public ButtonBinding LB { get; set; } = new("LeftClick");
-        public ButtonBinding RB { get; set; } = new("RightClick");
-        public ButtonBinding LT { get; set; } = new("MiddleClick");
-        public ButtonBinding RT { get; set; } = new("SpeedBoost");
-
-        public ButtonBinding DUp { get; set; } = new("ScrollUp");
-        public ButtonBinding DDown { get; set; } = new("ScrollDown");
-        public ButtonBinding DLeft { get; set; } = new("ScrollLeft");
-        public ButtonBinding DRight { get; set; } = new("ScrollRight");
-
-        public ButtonBinding LS { get; set; } = new("None");
-        public ButtonBinding RS { get; set; } = new("None");
-
-        public ButtonBinding View { get; set; } = new("DisableInput");
-        public ButtonBinding Menu { get; set; } = new("ToggleKeyboardMouseMode");
-
-        // Analog directions can run continuous mouse/scroll actions or any
-        // digital action (including held keyboard keys).
-        public ButtonBinding LUp { get; set; } = new("AnalogScrollDown");
-        public ButtonBinding LDown { get; set; } = new("AnalogScrollUp");
-        public ButtonBinding LLeft { get; set; } = new("AnalogScrollLeft");
-        public ButtonBinding LRight { get; set; } = new("AnalogScrollRight");
-        public ButtonBinding RUp { get; set; } = new("MouseMoveUp");
-        public ButtonBinding RDown { get; set; } = new("MouseMoveDown");
-        public ButtonBinding RLeft { get; set; } = new("MouseMoveLeft");
-        public ButtonBinding RRight { get; set; } = new("MouseMoveRight");
-
-        /// <summary>Structured multi-button bindings; the final gamepad button triggers.</summary>
-        public List<CustomComboBinding> ComboBindings { get; set; } = new()
+        public KeyboardProfile()
         {
-            new(new[] { "LS", "RS", "LB", "RB" }, "EnableInput")
-        };
-    }
-
-    public sealed class ButtonBinding
-    {
-        public string Action { get; set; } = "None";
-        public bool Modifier { get; set; }
-
-        public ButtonBinding() { }
-        public ButtonBinding(string action, bool modifier = false)
-        {
-            Action = action;
-            Modifier = modifier;
+            Bindings = DefaultBindings.Keyboard();
         }
     }
 
-    public sealed class CustomComboBinding
+    public sealed class MouseProfile : BindingProfile
+    {
+        public MouseProfile()
+        {
+            Bindings = DefaultBindings.Mouse();
+        }
+    }
+
+    public sealed class ProfileBinding
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public List<string> Buttons { get; set; } = new();
         public string Action { get; set; } = "None";
+        public bool Modifier { get; set; }
         public bool HoldLast { get; set; }
         public bool Ctrl { get; set; }
         public bool Shift { get; set; }
         public bool Alt { get; set; }
 
-        public CustomComboBinding() { }
-        public CustomComboBinding(IEnumerable<string> buttons, string action)
+        public ProfileBinding() { }
+        public ProfileBinding(string button, string action, bool modifier = false)
+        {
+            Buttons.Add(button);
+            Action = action;
+            Modifier = modifier;
+        }
+        public ProfileBinding(IEnumerable<string> buttons, string action)
         {
             Buttons = buttons.ToList();
             Action = action;
+        }
+    }
+
+    internal static class DefaultBindings
+    {
+        private static ProfileBinding B(string button, string action) => new(button, action);
+        private static List<ProfileBinding> CommonDigital(
+            string a, string b, string x, string y,
+            string lb, string rb, string lt, string rt,
+            string ls = "ToggleMoveScaleKeyboard", string rs = "None",
+            string dUp = "ArrowUp", string dDown = "ArrowDown",
+            string dLeft = "ArrowLeft", string dRight = "ArrowRight") => new()
+        {
+            B("A", a), B("B", b), B("X", x), B("Y", y),
+            B("LB", lb), B("RB", rb), B("LT", lt), B("RT", rt),
+            B("LS", ls), B("RS", rs),
+            B("View", "DisableInput"), B("Menu", "ToggleKeyboardMouseMode"), B("Home", "None"),
+            B("DUp", dUp), B("DDown", dDown), B("DLeft", dLeft), B("DRight", dRight)
+        };
+
+        public static List<ProfileBinding> Keyboard()
+        {
+            var bindings = CommonDigital("Space", "MouseMode", "Tab", "None",
+                "SubmitLeft", "SubmitRight", "HoldShift", "HoldCtrl");
+            bindings.AddRange(new[]
+            {
+                B("LUp", "MoveLeftCursorUp"), B("LDown", "MoveLeftCursorDown"),
+                B("LLeft", "MoveLeftCursorLeft"), B("LRight", "MoveLeftCursorRight"),
+                B("RUp", "MoveRightCursorUp"), B("RDown", "MoveRightCursorDown"),
+                B("RLeft", "MoveRightCursorLeft"), B("RRight", "MoveRightCursorRight"),
+                new ProfileBinding(new[] { "LS", "RS", "LB", "RB" }, "EnableInput")
+            });
+            return bindings;
+        }
+
+        public static List<ProfileBinding> Mouse()
+        {
+            var bindings = CommonDigital("LeftClick", "RightClick", "MiddleClick", "KeyboardMode",
+                "LeftClick", "RightClick", "MiddleClick", "SpeedBoost",
+                ls: "None", dUp: "ScrollUp", dDown: "ScrollDown",
+                dLeft: "ScrollLeft", dRight: "ScrollRight");
+            bindings.AddRange(new[]
+            {
+                B("LUp", "AnalogScrollDown"), B("LDown", "AnalogScrollUp"),
+                B("LLeft", "AnalogScrollLeft"), B("LRight", "AnalogScrollRight"),
+                B("RUp", "MouseMoveUp"), B("RDown", "MouseMoveDown"),
+                B("RLeft", "MouseMoveLeft"), B("RRight", "MouseMoveRight"),
+                new ProfileBinding(new[] { "LS", "RS", "LB", "RB" }, "EnableInput")
+            });
+            return bindings;
         }
     }
 

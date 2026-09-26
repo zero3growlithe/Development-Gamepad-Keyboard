@@ -23,7 +23,6 @@ namespace GamepadKeyboard
         private readonly StatusToastOverlay _toast = new();
         private readonly LegendOverlay _legend = new();
         private NotifyIcon? _tray;
-        private ToolStripMenuItem? _overlayItem;
         private ToolStripMenuItem? _enabledItem;
 
         private static System.Windows.MessageBoxButton MessageBoxButton_OK() => System.Windows.MessageBoxButton.OK;
@@ -204,18 +203,6 @@ namespace GamepadKeyboard
                     "Gamepad diagnostics", MessageBoxButton_OK(), MessageBoxImage_Information());
             };
 
-            var overlayItem = new ToolStripMenuItem("Show keyboard");
-            overlayItem.CheckOnClick = true;
-            overlayItem.Checked = Settings.AppSettings.Instance.ShowOverlay;
-            overlayItem.Click += (_, __) =>
-            {
-                bool show = overlayItem.Checked;
-                Settings.AppSettings.Instance.ShowOverlay = show;
-                Settings.AppSettings.Save();
-                if (show) ShowKeyboard(); else { _keyboardShown = false; _keyboard.Hide(); }
-            };
-            _overlayItem = overlayItem;
-
             var resetKeyboardPositionItem = new ToolStripMenuItem("Reset keyboard position");
             resetKeyboardPositionItem.Click += (_, __) => ResetKeyboardPosition();
 
@@ -267,7 +254,6 @@ namespace GamepadKeyboard
             exitItem.Click += (_, __) => Exit();
 
             menu.Items.Add(enabledItem);
-            menu.Items.Add(overlayItem);
             menu.Items.Add(resetKeyboardPositionItem);
             menu.Items.Add(monitorItem);
             menu.Items.Add(diagItem);
@@ -281,14 +267,6 @@ namespace GamepadKeyboard
 
             _tray.ContextMenuStrip = menu;
             _tray.DoubleClick += (_, __) => SettingsWindow.ShowSingleton();
-        }
-
-        /// <summary>Tray item used by the ToggleOverlay action to sync the checkmark.</summary>
-        public void SetOverlayChecked(bool isChecked)
-        {
-            var item = _overlayItem;
-            if (item == null) return;
-            _keyboard.Dispatcher.BeginInvoke(new Action(() => item.Checked = isChecked));
         }
 
         private static Icon? _appIcon;
@@ -475,9 +453,6 @@ namespace GamepadKeyboard
                     _keyboardShown = false;
                     _keyboard.Hide();
                 }
-                // keep the tray checkmark in sync (mapped ToggleOverlay flips it too)
-                if (_overlayItem != null && _overlayItem.Checked != wantShown)
-                    _overlayItem.Checked = wantShown;
                 _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             }
             if (!_mapper.MouseMode)
@@ -514,29 +489,25 @@ namespace GamepadKeyboard
 
         private System.Collections.Generic.IReadOnlyList<(string key, string action)> LegendEntries()
         {
-            if (_mapper.MouseMode)
-            {
-                var p = Settings.AppSettings.Instance.MouseProfile;
-                return new (string, string)[]
-                {
-                    ("A", p.A.Action), ("B", p.B.Action), ("X", p.X.Action), ("Y", p.Y.Action),
-                    ("LB", p.LB.Action), ("RB", p.RB.Action), ("LT", p.LT.Action), ("RT", p.RT.Action),
-                    ("Left stick", p.LUp.Action + "/" + p.LDown.Action + "/" + p.LLeft.Action + "/" + p.LRight.Action),
-                    ("Right stick", p.RUp.Action + "/" + p.RDown.Action + "/" + p.RLeft.Action + "/" + p.RRight.Action),
-                    ("DUp", p.DUp.Action), ("DDown", p.DDown.Action),
-                    ("DLeft", p.DLeft.Action), ("DRight", p.DRight.Action)
-                };
-            }
-            var k = Settings.AppSettings.Instance.Profile;
-            return new (string, string)[]
-            {
-                ("A", k.A.Action), ("B", k.B.Action), ("X", k.X.Action), ("Y", k.Y.Action),
-                ("LB", k.LB.Action), ("RB", k.RB.Action), ("LT", k.LT.Action), ("RT", k.RT.Action),
-                ("LStick", k.LS.Action), ("RStick", k.RS.Action),
-                ("D-pad", k.DUp.Action + "/" + k.DDown.Action + "/" + k.DLeft.Action + "/" + k.DRight.Action),
-                ("View", k.View.Action), ("Menu", k.Menu.Action)
-            };
+            var bindings = _mapper.MouseMode
+                ? Settings.AppSettings.Instance.MouseProfile.Bindings
+                : Settings.AppSettings.Instance.Profile.Bindings;
+            return bindings
+                .Where(binding => binding.Buttons.Count > 0 && binding.Action != "None")
+                .Select(binding => (
+                    string.Join("+", binding.Buttons.Select(LegendInputName)),
+                    binding.Action))
+                .ToArray();
         }
+
+        private static string LegendInputName(string input) => input switch
+        {
+            "LS" => "L3", "RS" => "R3",
+            "DUp" => "D↑", "DDown" => "D↓", "DLeft" => "D←", "DRight" => "D→",
+            "LUp" => "L↑", "LDown" => "L↓", "LLeft" => "L←", "LRight" => "L→",
+            "RUp" => "R↑", "RDown" => "R↓", "RLeft" => "R←", "RRight" => "R→",
+            _ => input
+        };
 
         public void Exit()
         {
