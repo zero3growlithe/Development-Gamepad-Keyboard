@@ -303,19 +303,19 @@ namespace GamepadKeyboard
                 if (parts.Count == 1)
                 {
                     string button = parts[0];
-                    bool held = InputValue(s, button) >= 0.5;
+                    bool singleHeld = InputValue(s, button) >= 0.5;
                     var singleState = GetBindingState(binding.Id);
-                    bool previous = singleState.Previous;
+                    bool singleWasHeld = singleState.Previous;
                     if (binding.Modifier)
                     {
-                        if (held && AnyOtherPhysicalButtonHeld(button, s))
+                        if (singleHeld && AnyOtherPhysicalButtonHeld(button, s))
                             singleState.UsedAsModifier = true;
                         bool used = singleState.UsedAsModifier;
-                        if (!held) singleState.UsedAsModifier = false;
-                        if (held || !previous || used
+                        if (!singleHeld) singleState.UsedAsModifier = false;
+                        if (singleHeld || !singleWasHeld || used
                             || AnyOtherPhysicalButtonHeld(button, s)) continue;
                     }
-                    else if (!held || previous)
+                    else if (!singleHeld || singleWasHeld)
                     {
                         continue;
                     }
