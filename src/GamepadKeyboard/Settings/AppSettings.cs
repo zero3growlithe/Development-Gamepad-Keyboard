@@ -15,26 +15,26 @@ namespace GamepadKeyboard.Settings
 
         public int SettingsVersion { get; set; } = 5;
 
-        public double KeySpacing { get; set; } = 6.0;
-        public double StickDeadzone { get; set; } = 0.005;
-        public double MouseStickDeadzone { get; set; } = 0.005;   // separate deadzone for mouse mode
+        public double KeySpacing { get; set; } = 1.0;
+        public double StickDeadzone { get; set; } = 0.1;
+        public double MouseStickDeadzone { get; set; } = 0.1;   // separate deadzone for mouse mode
         public double OverlayScale { get; set; } = 1.0;
         public double OverlayMoveSpeed { get; set; } = 6.0;
         public double AnalogStickCurveExponent { get; set; } = 1.0;
         public double OverlayLeft { get; set; } = 100;
         public double OverlayTop { get; set; } = 100;
-        public double MouseSpeed { get; set; } = 12.0;
-        public double MouseSpeedBoostMultiplier { get; set; } = 2.5;
-        public double ScrollSpeed { get; set; } = 3.0;
+        public double MouseSpeed { get; set; } = 8.0;
+        public double MouseSpeedBoostMultiplier { get; set; } = 2;
+        public double ScrollSpeed { get; set; } = 1.0;
         public bool CursorLagEnabled { get; set; } = false;
-        public double CursorLagSeconds { get; set; } = 0.15;
+        public double CursorLagSeconds { get; set; } = 0.2;
         public bool HideRaysInCursorLag { get; set; } = false;
-        public bool FreeCursorEnabled { get; set; } = false;
-        public double FreeCursorSpeed { get; set; } = 420.0;
+        public bool FreeCursorEnabled { get; set; } = true;
+        public double FreeCursorSpeed { get; set; } = 600.0;
         public bool HideCenterPointsAndRaysInFreeCursor { get; set; } = false;
         public double PointEditStickSpeed { get; set; } = 0.8;
         public bool ShowOverlay { get; set; } = true;
-        public bool AlwaysShowKeyboardAtCursorPosition { get; set; } = false;
+        public bool AlwaysShowKeyboardAtCursorPosition { get; set; } = true;
         public bool RunOnStartup { get; set; } = false;
         public bool ShowButtonLegend { get; set; } = true;
         public double LegendOpacity { get; set; } = 0.85;
