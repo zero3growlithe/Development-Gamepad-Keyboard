@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using GamepadKeyboard.Settings;
@@ -18,6 +19,7 @@ namespace GamepadKeyboard.UI
     public sealed class BindingsEditorWindow : Window
     {
         private const string PoolItem = "Pool for keyboard key...";
+        private const string BindingDragFormat = "GamepadKeyboard.ProfileBindingId";
 
         private readonly bool _mouse;
         private readonly ComboBox _profileBox = new() { MinWidth = 170 };
@@ -90,7 +92,7 @@ namespace GamepadKeyboard.UI
             // ── hint ──
             var hint = new TextBlock
             {
-                Text = "Bindings run from top to bottom. Add, edit, delete, duplicate, or rearrange any default or custom binding.",
+                Text = "Bindings run from top to bottom. Double-click to edit, or drag a binding to rearrange it.",
                 Foreground = Brushes.Gray,
                 Margin = new Thickness(0, 0, 0, 6),
                 TextWrapping = TextWrapping.Wrap
@@ -265,13 +267,15 @@ namespace GamepadKeyboard.UI
         private UIElement MakeBindingRow(ProfileBinding binding)
         {
             string capturedId = binding.Id;
+            Point? dragStart = null;
             var border = new Border
             {
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(8, 5, 6, 5),
-                Margin = new Thickness(0, 0, 0, 5)
+                Margin = new Thickness(0, 0, 0, 5),
+                AllowDrop = true
             };
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -318,7 +322,70 @@ namespace GamepadKeyboard.UI
             grid.Children.Add(text);
             grid.Children.Add(controls);
             border.Child = grid;
+
+            border.PreviewMouseLeftButtonDown += (_, e) =>
+            {
+                if (IsRowControl(e.OriginalSource as DependencyObject, border))
+                {
+                    dragStart = null;
+                    return;
+                }
+
+                if (e.ClickCount == 2)
+                {
+                    dragStart = null;
+                    ShowBindingEditor(ActiveBindings.FirstOrDefault(x => x.Id == capturedId));
+                    e.Handled = true;
+                    return;
+                }
+
+                dragStart = e.GetPosition(border);
+            };
+            border.PreviewMouseMove += (_, e) =>
+            {
+                if (!dragStart.HasValue || e.LeftButton != MouseButtonState.Pressed)
+                {
+                    dragStart = null;
+                    return;
+                }
+
+                Point current = e.GetPosition(border);
+                if (Math.Abs(current.X - dragStart.Value.X) < SystemParameters.MinimumHorizontalDragDistance
+                    && Math.Abs(current.Y - dragStart.Value.Y) < SystemParameters.MinimumVerticalDragDistance)
+                    return;
+
+                dragStart = null;
+                var data = new DataObject(BindingDragFormat, capturedId);
+                DragDrop.DoDragDrop(border, data, DragDropEffects.Move);
+            };
+            border.DragOver += (_, e) =>
+            {
+                string? draggedId = e.Data.GetData(BindingDragFormat) as string;
+                e.Effects = !string.IsNullOrEmpty(draggedId) && draggedId != capturedId
+                    ? DragDropEffects.Move
+                    : DragDropEffects.None;
+                e.Handled = true;
+            };
+            border.Drop += (_, e) =>
+            {
+                string? draggedId = e.Data.GetData(BindingDragFormat) as string;
+                if (string.IsNullOrEmpty(draggedId) || draggedId == capturedId) return;
+                bool insertAfter = e.GetPosition(border).Y >= border.ActualHeight / 2;
+                ReorderBinding(draggedId, capturedId, insertAfter);
+                e.Handled = true;
+            };
             return border;
+        }
+
+        private static bool IsRowControl(DependencyObject? source, Border row)
+        {
+            for (DependencyObject? current = source;
+                 current != null && current != row;
+                 current = VisualTreeHelper.GetParent(current))
+            {
+                if (current is ButtonBase) return true;
+            }
+            return false;
         }
 
         private static Button RowButton(string text, Action action)
@@ -335,6 +402,29 @@ namespace GamepadKeyboard.UI
             int to = from + direction;
             if (from < 0 || to < 0 || to >= list.Count) return;
             (list[from], list[to]) = (list[to], list[from]);
+            Persist();
+            BuildBindingList();
+        }
+
+        private void ReorderBinding(string draggedId, string targetId, bool insertAfter)
+        {
+            var list = ActiveBindings;
+            int from = list.FindIndex(x => x.Id == draggedId);
+            int target = list.FindIndex(x => x.Id == targetId);
+            if (from < 0 || target < 0) return;
+
+            int insertionIndex = target + (insertAfter ? 1 : 0);
+            ProfileBinding binding = list[from];
+            list.RemoveAt(from);
+            if (from < insertionIndex) insertionIndex--;
+            insertionIndex = Math.Clamp(insertionIndex, 0, list.Count);
+            if (insertionIndex == from)
+            {
+                list.Insert(from, binding);
+                return;
+            }
+
+            list.Insert(insertionIndex, binding);
             Persist();
             BuildBindingList();
         }
