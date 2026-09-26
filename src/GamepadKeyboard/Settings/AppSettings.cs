@@ -237,23 +237,47 @@ namespace GamepadKeyboard.Settings
             string dUp = "ArrowUp", string dDown = "ArrowDown",
             string dLeft = "ArrowLeft", string dRight = "ArrowRight") => new()
         {
-            B("A", a), B("B", b), B("X", x), B("Y", y),
-            B("LB", lb), B("RB", rb), B("LT", lt), B("RT", rt),
-            B("LS", ls), B("RS", rs),
-            B("View", "DisableInput"), B("Menu", "ToggleKeyboardMouseMode"), B("Home", "None"),
-            B("DUp", dUp), B("DDown", dDown), B("DLeft", dLeft), B("DRight", dRight)
+            B("A", a),
+            B("B", b),
+            B("X", x),
+            B("Y", y),
+            B("LB", lb),
+            B("RB", rb),
+            B("LT", lt),
+            B("RT", rt),
+            B("LS", ls),
+            B("RS", rs),
+            B("View", "DisableInput"),
+            B("Menu", "ToggleKeyboardMouseMode"),
+            B("Home", "None"),
+            B("DUp", dUp),
+            B("DDown", dDown),
+            B("DLeft", dLeft),
+            B("DRight", dRight)
         };
 
         public static List<ProfileBinding> Keyboard()
         {
-            var bindings = CommonDigital("Space", "MouseMode", "Tab", "None",
-                "SubmitLeft", "SubmitRight", "HoldShift", "HoldCtrl");
+            var bindings = CommonDigital(
+                "Space",
+                "MouseMode",
+                "Tab",
+                "None",
+                "SubmitLeft",
+                "SubmitRight",
+                "HoldShift",
+                "HoldCtrl"
+            );
             bindings.AddRange(new[]
             {
-                B("LUp", "MoveLeftCursorUp"), B("LDown", "MoveLeftCursorDown"),
-                B("LLeft", "MoveLeftCursorLeft"), B("LRight", "MoveLeftCursorRight"),
-                B("RUp", "MoveRightCursorUp"), B("RDown", "MoveRightCursorDown"),
-                B("RLeft", "MoveRightCursorLeft"), B("RRight", "MoveRightCursorRight"),
+                B("LUp", "MoveLeftCursorUp"),
+                B("LDown", "MoveLeftCursorDown"),
+                B("LLeft", "MoveLeftCursorLeft"),
+                B("LRight", "MoveLeftCursorRight"),
+                B("RUp", "MoveRightCursorUp"),
+                B("RDown", "MoveRightCursorDown"),
+                B("RLeft", "MoveRightCursorLeft"),
+                B("RRight", "MoveRightCursorRight"),
                 new ProfileBinding(new[] { "LS", "RS", "LB", "RB" }, "EnableInput")
             });
             return bindings;
@@ -261,16 +285,31 @@ namespace GamepadKeyboard.Settings
 
         public static List<ProfileBinding> Mouse()
         {
-            var bindings = CommonDigital("LeftClick", "RightClick", "MiddleClick", "KeyboardMode",
-                "LeftClick", "RightClick", "MiddleClick", "SpeedBoost",
-                ls: "None", dUp: "ScrollUp", dDown: "ScrollDown",
-                dLeft: "ScrollLeft", dRight: "ScrollRight");
+            var bindings = CommonDigital(
+                "LeftClick",
+                "RightClick",
+                "MiddleClick",
+                "KeyboardMode",
+                "LeftClick",
+                "RightClick",
+                "MiddleClick",
+                "SpeedBoost",
+                ls: "None",
+                dUp: "ScrollUp",
+                dDown: "ScrollDown",
+                dLeft: "ScrollLeft",
+                dRight: "ScrollRight"
+            );
             bindings.AddRange(new[]
             {
-                B("LUp", "AnalogScrollDown"), B("LDown", "AnalogScrollUp"),
-                B("LLeft", "AnalogScrollLeft"), B("LRight", "AnalogScrollRight"),
-                B("RUp", "MouseMoveUp"), B("RDown", "MouseMoveDown"),
-                B("RLeft", "MouseMoveLeft"), B("RRight", "MouseMoveRight"),
+                B("LUp", "AnalogScrollDown"),
+                B("LDown", "AnalogScrollUp"),
+                B("LLeft", "AnalogScrollLeft"),
+                B("LRight", "AnalogScrollRight"),
+                B("RUp", "MouseMoveUp"),
+                B("RDown", "MouseMoveDown"),
+                B("RLeft", "MouseMoveLeft"),
+                B("RRight", "MouseMoveRight"),
                 new ProfileBinding(new[] { "LS", "RS", "LB", "RB" }, "EnableInput")
             });
             return bindings;
@@ -282,7 +321,7 @@ namespace GamepadKeyboard.Settings
     {
         public string Name { get; set; } = "Default";
         public double LeftX { get; set; } = 0.32;
-        public double LeftY { get; set; } = 0.553;
+        public double LeftY { get; set; } = 0.53;
         public double RightX { get; set; } = 0.51;
         public double RightY { get; set; } = 0.53;
         public double LeftRayLength { get; set; } = 0.4;
