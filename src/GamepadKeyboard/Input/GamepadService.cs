@@ -20,8 +20,7 @@ namespace GamepadKeyboard.Input
         private string _lastPollError = "";
         private DateTime _lastPollErrorLog = DateTime.MinValue;
         private int _resetCachesRequested;
-        private int _preferredXInputSlot = -1;
-        private int _preferredXInputFailures;
+        private bool _stickyWgi;   // WGI delivered input -> stay on WGI until topology changes
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -98,6 +97,7 @@ namespace GamepadKeyboard.Input
                 if (raws.Count != _lastRawCount)
                 {
                     ClearDeviceCaches();
+                    _stickyWgi = false;   // re-evaluate source on topology change
                     _lastRawCount = raws.Count;
                     var names = new List<string>();
                     foreach (var r in raws)
@@ -110,28 +110,13 @@ namespace GamepadKeyboard.Input
                 bool foundIdle = false;
                 bool anyInput = false;
 
-                // An XInput controller is also exposed through WGI on many systems.
-                // Once input identifies an XInput slot, keep using that one source
-                // until disconnect so button edges cannot alternate between two
-                // views of the same physical controller.
-                bool sourceSelected = TryReadPreferredXInput(
-                    ref chosen, ref chosenName, ref foundIdle, ref anyInput);
-
-                if (!sourceSelected && Native.XInput.Available)
-                {
-                    for (int i = 0; i < 4; i++)
-                    {
-                        if (!TryReadXInput(i, out var snap) || !snap.AnyInput) continue;
-                        _preferredXInputSlot = i;
-                        _preferredXInputFailures = 0;
-                        chosen = snap;
-                        chosenName = "XInput slot " + i;
-                        foundIdle = anyInput = sourceSelected = true;
-                        if (_loggedExtras.Add("xinput-slot" + i))
-                            App.Log("using XInput slot " + i + " as the stable input source");
-                        break;
-                    }
-                }
+                // WGI first: physical controllers (Xbox included) are read through
+                // RawGameController/Gamepad — the same path the DualSense uses. The
+                // XInput stack is known to drop out while synthetic input (SendInput)
+                // is being injected, which made an Xbox pad dead inside elevated apps
+                // while a DualSense (WGI raw) kept working. Once a WGI device has
+                // produced real input, stay on WGI until the device list changes.
+                bool sourceSelected = _stickyWgi;
 
                 if (!sourceSelected)
                 {
@@ -159,6 +144,12 @@ namespace GamepadKeyboard.Input
                                 chosen = snap;
                                 chosenName = raw.DisplayName;
                                 anyInput = true;
+                                if (!_stickyWgi)
+                                {
+                                    _stickyWgi = true;
+                                    if (_loggedExtras.Add("wgi-sticky"))
+                                        App.Log("WGI input active -> WGI becomes the source (XInput fallback parked)");
+                                }
                                 break;
                             }
                             if (!foundIdle)
@@ -173,6 +164,22 @@ namespace GamepadKeyboard.Input
                             ForgetRawController(raw);
                             LogPollError("WGI device read failed", ex);
                         }
+                    }
+                }
+
+                // XInput fallback: only when WGI has nothing delivering input at all
+                // (hidden/virtual pads — HidHide, Steam Input, DS4Windows).
+                if (!sourceSelected && Native.XInput.Available)
+                {
+                    for (int i = 0; i < 4; i++)
+                    {
+                        if (!TryReadXInput(i, out var snap) || !snap.AnyInput) continue;
+                        chosen = snap;
+                        chosenName = "XInput slot " + i;
+                        foundIdle = anyInput = sourceSelected = true;
+                        if (_loggedExtras.Add("xinput-slot" + i))
+                            App.Log("WGI idle -> using XInput slot " + i + " as the stable input source");
+                        break;
                     }
                 }
 
@@ -195,40 +202,6 @@ namespace GamepadKeyboard.Input
             {
                 LogPollError("poll failed", ex);
             }
-        }
-
-        private bool TryReadPreferredXInput(
-            ref GamepadSnapshot chosen,
-            ref string chosenName,
-            ref bool foundIdle,
-            ref bool anyInput)
-        {
-            if (_preferredXInputSlot < 0) return false;
-            if (!TryReadXInput(_preferredXInputSlot, out var snap))
-            {
-                _preferredXInputFailures++;
-                if (_preferredXInputFailures <= Math.Max(30, PollHz * 2))
-                {
-                    // Some XInput stacks briefly return DEVICE_NOT_CONNECTED while
-                    // a synthetic mouse button is injected or a hidden device node
-                    // is refreshed. Keep ownership of this slot and retry instead of
-                    // permanently falling over to a stale WGI/raw source.
-                    chosen = default;
-                    chosenName = "XInput slot " + _preferredXInputSlot;
-                    foundIdle = true;
-                    return true;
-                }
-                _preferredXInputSlot = -1;
-                _preferredXInputFailures = 0;
-                return false;
-            }
-
-            _preferredXInputFailures = 0;
-            chosen = snap;
-            chosenName = "XInput slot " + _preferredXInputSlot;
-            foundIdle = true;
-            anyInput = snap.AnyInput;
-            return true;
         }
 
         private static bool TryReadXInput(int slot, out GamepadSnapshot snapshot)
@@ -350,9 +323,8 @@ namespace GamepadKeyboard.Input
             _calibrations.Clear();
             _buttonMaps.Clear();
             _rawBuffers.Clear();
-            // Raw/WGI device-list churn (including HidHide refreshes) must not
-            // discard a healthy XInput source. TryReadPreferredXInput owns its
-            // disconnect grace period and clears the slot only after sustained failure.
+            // Cache clear = topology-level reset; the WGI-vs-XInput source decision
+            // is re-evaluated from scratch by the poll loop afterwards.
         }
 
         private void ForgetRawController(Windows.Gaming.Input.RawGameController raw)
@@ -497,13 +469,19 @@ namespace GamepadKeyboard.Input
         public int A, B, X, Y, LB, RB, LS, RS, View, Menu;
         public int[] DPad = new int[4];   // Up Down Left Right (button indices)
 
+        // raw axis indices — layouts differ per device family
+        public int LX, LY, RX, RY, LTA, RTA;
+
         public static readonly RawButtonMap Generic = new()
         {
             A = 0, B = 1, X = 2, Y = 3,
             LB = 4, RB = 5,
             View = 6, Menu = 7,
             LS = 8, RS = 9,
-            DPad = new[] { 10, 11, 12, 13 }
+            DPad = new[] { 10, 11, 12, 13 },
+            // XInput-compatible HID ordering (physical Xbox): sticks 0/1 + 4/5,
+            // analog triggers on axes 2/3 (rest at 0, raw passthrough)
+            LX = 0, LY = 1, RX = 4, RY = 5, LTA = 2, RTA = 3
         };
 
         public static readonly RawButtonMap Sony = new()
@@ -512,7 +490,9 @@ namespace GamepadKeyboard.Input
             LB = 4, RB = 5,
             LS = 10, RS = 11,
             View = 8, Menu = 9,                  // Create, Options
-            DPad = new[] { -1, -1, -1, -1 }      // dpad = hat switch, not buttons
+            DPad = new[] { -1, -1, -1, -1 },     // dpad = hat switch, not buttons
+            // DualSense (user-measured): LX=0 LY=1 RX=2 LT=3 RT=4 RY=5
+            LX = 0, LY = 1, RX = 2, RY = 5, LTA = 3, RTA = 4
         };
 
         public static RawButtonMap Detect(Windows.Gaming.Input.RawGameController raw)
@@ -635,35 +615,26 @@ namespace GamepadKeyboard.Input
                 dRight = B(map.DPad[3]);
             }
 
-            // triggers: pick axes whose captured neutral is near 0 (idle) — trigger
-            // axes rest at 0 on DualSense ([0..1] analog), stick axes rest at 0.5
-            int ltAxis = -1, rtAxis = -1;
-            if (map == RawButtonMap.Sony && axes.Length > 4)
+            // trigger axes come from the device map (rest at 0, raw [0..1]);
+            // unknown layouts fall back to a captured-neutral probe
+            int ltAxis = map.LTA, rtAxis = map.RTA;
+            if (ltAxis < 0 || ltAxis >= axes.Length || rtAxis < 0 || rtAxis >= axes.Length)
             {
-                // DualSense raw layout is known; do not let a transient startup
-                // sample make a centered stick axis look like a trigger.
-                ltAxis = 3;
-                rtAxis = 4;
-            }
-            else
-            {
+                ltAxis = rtAxis = -1;
                 for (int i = 0; i < raw.AxisCount && rtAxis < 0; i++)
                 {
-                    double n = cal.NeutralOf(i);
-                    if (n < 0.25)
+                    if (cal.NeutralOf(i) < 0.25)
                     {
                         if (ltAxis < 0) ltAxis = i; else rtAxis = i;
                     }
                 }
                 if (ltAxis < 0 || rtAxis < 0) { ltAxis = 3; rtAxis = 4; }
             }
-            double lt = ltAxis >= 0 && ltAxis < axes.Length ? Clamp01(axes[ltAxis]) : 0;
-            double rt = rtAxis >= 0 && rtAxis < axes.Length ? Clamp01(axes[rtAxis]) : 0;
-            // DualSense raw axis order (user-measured): 0=LX 1=LY 2=RX,
-            // 3=LT, 4=RT, 5=RY.
+            double lt = Clamp01(axes[ltAxis]);
+            double rt = Clamp01(axes[rtAxis]);
             return new GamepadSnapshot(
-                Axis(0), -Axis(1),
-                Axis(2), -Axis(5),
+                Axis(map.LX), -Axis(map.LY),
+                Axis(map.RX), -Axis(map.RY),
                 B(map.A), B(map.B), B(map.X), B(map.Y),
                 B(map.LB), B(map.RB),
                 B(map.LS), B(map.RS),
