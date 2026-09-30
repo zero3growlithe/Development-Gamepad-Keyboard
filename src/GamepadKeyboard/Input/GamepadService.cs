@@ -7,7 +7,10 @@ namespace GamepadKeyboard.Input
     /// Gamepad polling service. Uses Windows.Gaming.Input: RawGameController for
     /// enumeration/names, Gamepad wrapper for readings. Multi-pad aware: the pad
     /// with active input wins; otherwise the first idle pad provides zeros.
-    /// Every state transition and controller change is logged to crash.log.
+    /// WGI delivers real readings only while a window of this process owns the
+    /// foreground (OS focus gate); while unfocused, XInput — which has no such
+    /// gate — carries all pads. Every state transition and controller change is
+    /// logged to crash.log.
     /// </summary>
     public sealed class GamepadService : IDisposable
     {
@@ -111,14 +114,27 @@ namespace GamepadKeyboard.Input
                 bool sourceSelected = false;
                 string inputSource = "";
 
-                // Per-tick WGI priority: read every WGI device each tick and choose
-                // whichever one delivers real input. Physical Xbox pads thus read
-                // through RawGameController/Gamepad — the same path the DualSense
-                // uses — which stays stable while synthetic input (SendInput) is
-                // being injected, unlike the XInput stack. XInput is only consulted
-                // when NO WGI device delivered input this tick (hidden/virtual pads —
-                // HidHide, Steam Input, DS4Windows). No latch: a transient glitch
-                // can never park one source for the whole session.
+                // Focus gate, not a filter: Windows.Gaming.Input readings are OS-gated
+                // on our own window owning the foreground (WGI returns rest/frozen
+                // values when another app's window is focused — SFML #2428,
+                // Chromium #392661398). While unfocused, only XInput can deliver real
+                // input, so WGI must not win source selection or it blocks the
+                // fallback with its zeros.
+                bool wgiFocused = Native.NativeMethods.IsOwnWindowForeground();
+
+                // Per-tick source priority: whichever path delivers real input wins,
+                // with one hard gate — WGI may win ONLY while our own window owns
+                // the foreground, because Windows.Gaming.Input readings are OS-gated
+                // on the calling process owning focus (unfocused: rest values/frozen
+                // zeros — SFML #2428, Chromium #392661398). While unfocused, XInput
+                // (process-independent) is the only source that can deliver real
+                // input, so the focus-frozen WGI snapshot must not block it.
+                // XInput stays fallback-only for OTHER reasons: physical pads must
+                // read through WGI when focused (WGI stays stable where the XInput
+                // stack hiccups while SendInput injects), and hidden/virtual pads
+                // (HidHide, Steam Input, DS4Windows) are visible ONLY via XInput.
+                // No latch: a transient glitch can never park one source for the
+                // whole session.
                 foreach (var raw in raws)
                 {
                     try
@@ -138,7 +154,7 @@ namespace GamepadKeyboard.Input
                             snap = GamepadSnapshot.FromRaw(raw, buffers.Buttons, buffers.Switches,
                                 buffers.Axes, ReadHome(raw, buffers.Buttons), cal, map);
                         }
-                        if (snap.AnyInput)
+                        if (wgiFocused && snap.AnyInput)
                         {
                             chosen = snap;
                             chosenName = raw.DisplayName;
@@ -160,7 +176,9 @@ namespace GamepadKeyboard.Input
                     }
                 }
 
-                // XInput fallback: only when no WGI device reported input this tick
+                // XInput fallback: when no WGI device reported input this tick OR our
+                // process is unfocused (WGI cannot report real input then — the pad
+                // still reads here; XInput state is not window-gated).
                 if (!sourceSelected && Native.XInput.Available)
                 {
                     for (int i = 0; i < 4; i++)
@@ -224,6 +242,26 @@ namespace GamepadKeyboard.Input
                 return false;
             }
         }
+
+        /// <summary>
+        /// True when a window of THIS process owns the foreground. WGI readings are
+        /// OS-gated on the calling process owning focus — unfocused they arrive
+        /// rest-valued/frozen, so the poll loop consults XInput instead (XInput is
+        /// process-independent). Cheap call on the poll thread, no thread affinity.
+        /// </summary>
+        internal static bool IsOwnWindowForeground()
+        {
+            try
+            {
+                Native.NativeMethods.GetWindowThreadProcessId(
+                    Native.NativeMethods.GetForegroundWindow(), out uint owner);
+                return owner != 0 && owner == GetCurrentProcessId();
+            }
+            catch { return false; }
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern uint GetCurrentProcessId();
 
         private void LogPollError(string context, Exception ex)
         {
@@ -345,7 +383,10 @@ namespace GamepadKeyboard.Input
         {
             var lines = new System.Collections.Generic.List<string>
             {
-                "input path: " + (_lastActivePad.StartsWith("XInput") ? "XINPUT (fallback)" : "WGI"),
+                "input path: " + (_lastActivePad.StartsWith("XInput")
+                    ? "XINPUT (unfocused fallback)"
+                    : "WGI"),
+                "wgi readings active: " + (IsOwnWindowForeground() ? "yes (our window focused)" : "no (another app focused)"),
                 ""
             };
             var raws = Windows.Gaming.Input.RawGameController.RawGameControllers;

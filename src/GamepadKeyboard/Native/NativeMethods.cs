@@ -135,5 +135,12 @@ namespace GamepadKeyboard.Native
 
         [DllImport("winmm.dll")]
         public static extern uint TimeEndPeriod(uint ms);
+
+        // ── Window focus (WGI is OS-gated on our window's focus) ───────────────
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     }
 }

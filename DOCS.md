@@ -120,6 +120,7 @@ Keys held or toggled through Hold*/Toggle* bindings get a **semi-transparent gre
 ## Hardware support
 
 - **Windows.Gaming.Input (WGI)** primary path + **raw RawGameController** fallback (used for DualSense, which WGI wraps unreliably) + **XInput** fallback.
+- **Unfocused input (focus gate)**: Windows itself restricts WGI readings to the process whose window is focused — unfocused they arrive rest-valued/frozen (SFML #2428, Chromium #392661398). The poll loop therefore lets WGI win source selection ONLY while one of the app's own windows is focused; while another app is focused, every pad — including the DualSense where hardware allows — is carried by the **XInput** fallback, which is not focus-gated. The input monitor shows the live choice (`input path: XINPUT (unfocused fallback)` / `wgi readings active: yes/no`).
 - **DualSense (PS5) via USB**: raw path with auto-calibration (stick neutral 0.5 → ±1.0, triggers 0–1), Sony button-order map (Square/Cross/Circle/Triangle, L1/R1, L2/R2, Create/Options, L3/R3, PS, touchpad), D-pad as hat switch.
 - Works alongside DS4Windows-style virtual controllers (detected as "Xbox 360 Controller for Windows").
 - One-time diagnostics are logged (button labels, axis calibration) to `crash.log` next to the exe; all state changes and input errors are logged there too.
