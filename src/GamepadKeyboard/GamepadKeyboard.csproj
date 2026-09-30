@@ -25,7 +25,7 @@
   <!-- Build fingerprint for crash.log ("build: <sha>") — GITHUB_SHA is set only on CI builds. -->
   <Target Name="WriteBuildInfo" AfterTargets="PrepareForBuild">
     <WriteLinesToFile File="$(IntermediateOutputPath)BuildInfo.g.cs"
-                      Lines="namespace GamepadKeyboard { internal static class BuildInfo { public const string Sha = &quot;$(GITHUB_SHA)&quot;; } }"
+                      Lines="namespace GamepadKeyboard { internal static class BuildInfo { public const string Sha = &quot;$(GITHUB_SHA)&quot;%3B } }"
                       Overwrite="true" />
     <ItemGroup>
       <Compile Include="$(IntermediateOutputPath)BuildInfo.g.cs" />
