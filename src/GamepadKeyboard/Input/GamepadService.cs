@@ -25,6 +25,7 @@ namespace GamepadKeyboard.Input
         private int _resetCachesRequested;
         private string _lastInputSource = "";   // "WGI" | "XInput" — drives the source-flip log
         private DateTime _lastFlipLog = DateTime.MinValue;   // rate limit for source-flip lines
+        private bool _lastWgiFocused;                        // logs the focus-gate transition once
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -121,6 +122,13 @@ namespace GamepadKeyboard.Input
                 // input, so WGI must not win source selection or it blocks the
                 // fallback with its zeros.
                 bool wgiFocused = IsOwnWindowForeground();
+                if (wgiFocused != _lastWgiFocused)
+                {
+                    _lastWgiFocused = wgiFocused;
+                    App.Log("wgi readings " + (wgiFocused
+                        ? "active -> live (our window focused)"
+                        : "frozen -> XInput carries input while another app is focused"));
+                }
 
                 // Per-tick source priority: whichever path delivers real input wins,
                 // with one hard gate — WGI may win ONLY while our own window owns

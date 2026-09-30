@@ -47,6 +47,7 @@ namespace GamepadKeyboard
             }
 
             Log("=== launch ===");
+            Log(DescribeBuild());
 
             Input.GamepadSnapshot.Deadzone = Settings.AppSettings.Instance.StickDeadzone;
             // overlay position is restored in KeyboardOverlay ctor via OverlayLeft/Top
@@ -82,6 +83,21 @@ namespace GamepadKeyboard
                     DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + message + Environment.NewLine);
             }
             catch { /* logging must never crash the app */ }
+        }
+
+        /// <summary>
+        /// Version + build provenance for crash.log diagnostics: the binary can
+        /// identify itself when field reports and deployments drift apart.
+        /// BuildInfo.Sha is generated at build time from CI's GITHUB_SHA (local
+        /// builds embed "-local").
+        /// </summary>
+        private static string DescribeBuild()
+        {
+            string sha;
+            try { sha = GamepadKeyboard.BuildInfo.Sha; }
+            catch { sha = ""; }
+            if (string.IsNullOrWhiteSpace(sha) || sha == "$(GITHUB_SHA)") sha = "-local";
+            return "version 0.2.0 (" + Environment.OSVersion.VersionString + "; build " + sha + ")";
         }
 
         protected override void OnExit(ExitEventArgs e)
