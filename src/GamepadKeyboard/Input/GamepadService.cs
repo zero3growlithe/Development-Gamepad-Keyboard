@@ -20,7 +20,8 @@ namespace GamepadKeyboard.Input
         private string _lastPollError = "";
         private DateTime _lastPollErrorLog = DateTime.MinValue;
         private int _resetCachesRequested;
-        private bool _stickyWgi;   // WGI delivered input -> stay on WGI until topology changes
+        private string _lastInputSource = "";   // "WGI" | "XInput" — drives the source-flip log
+        private DateTime _lastFlipLog = DateTime.MinValue;   // rate limit for source-flip lines
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -97,7 +98,6 @@ namespace GamepadKeyboard.Input
                 if (raws.Count != _lastRawCount)
                 {
                     ClearDeviceCaches();
-                    _stickyWgi = false;   // re-evaluate source on topology change
                     _lastRawCount = raws.Count;
                     var names = new List<string>();
                     foreach (var r in raws)
@@ -108,67 +108,59 @@ namespace GamepadKeyboard.Input
                 GamepadSnapshot chosen = default;
                 string chosenName = "";
                 bool foundIdle = false;
-                bool anyInput = false;
+                bool sourceSelected = false;
+                string inputSource = "";
 
-                // WGI first: physical controllers (Xbox included) are read through
-                // RawGameController/Gamepad — the same path the DualSense uses. The
-                // XInput stack is known to drop out while synthetic input (SendInput)
-                // is being injected, which made an Xbox pad dead inside elevated apps
-                // while a DualSense (WGI raw) kept working. Once a WGI device has
-                // produced real input, stay on WGI until the device list changes.
-                bool sourceSelected = _stickyWgi;
-
-                if (!sourceSelected)
+                // Per-tick WGI priority: read every WGI device each tick and choose
+                // whichever one delivers real input. Physical Xbox pads thus read
+                // through RawGameController/Gamepad — the same path the DualSense
+                // uses — which stays stable while synthetic input (SendInput) is
+                // being injected, unlike the XInput stack. XInput is only consulted
+                // when NO WGI device delivered input this tick (hidden/virtual pads —
+                // HidHide, Steam Input, DS4Windows). No latch: a transient glitch
+                // can never park one source for the whole session.
+                foreach (var raw in raws)
                 {
-                    foreach (var raw in raws)
+                    try
                     {
-                        try
+                        GamepadSnapshot snap;
+                        var gp = GetPad(raw);
+                        if (gp != null)
                         {
-                            GamepadSnapshot snap;
-                            var gp = GetPad(raw);
-                            if (gp != null)
-                            {
-                                snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
-                            }
-                            else
-                            {
-                                // No Gamepad wrapper for this device (e.g. DualSense
-                                // standalone) — read the raw controller directly.
-                                var buffers = ReadRaw(raw);
-                                var (cal, map) = GetCalibration(raw, buffers.Axes);
-                                snap = GamepadSnapshot.FromRaw(raw, buffers.Buttons, buffers.Switches,
-                                    buffers.Axes, ReadHome(raw, buffers.Buttons), cal, map);
-                            }
-                            if (snap.AnyInput)
-                            {
-                                chosen = snap;
-                                chosenName = raw.DisplayName;
-                                anyInput = true;
-                                if (!_stickyWgi)
-                                {
-                                    _stickyWgi = true;
-                                    if (_loggedExtras.Add("wgi-sticky"))
-                                        App.Log("WGI input active -> WGI becomes the source (XInput fallback parked)");
-                                }
-                                break;
-                            }
-                            if (!foundIdle)
-                            {
-                                chosen = snap;
-                                chosenName = raw.DisplayName;
-                                foundIdle = true;
-                            }
+                            snap = GamepadSnapshot.From(gp.GetCurrentReading(), ReadHome(raw));
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            ForgetRawController(raw);
-                            LogPollError("WGI device read failed", ex);
+                            // No Gamepad wrapper for this device (e.g. DualSense
+                            // standalone) — read the raw controller directly.
+                            var buffers = ReadRaw(raw);
+                            var (cal, map) = GetCalibration(raw, buffers.Axes);
+                            snap = GamepadSnapshot.FromRaw(raw, buffers.Buttons, buffers.Switches,
+                                buffers.Axes, ReadHome(raw, buffers.Buttons), cal, map);
                         }
+                        if (snap.AnyInput)
+                        {
+                            chosen = snap;
+                            chosenName = raw.DisplayName;
+                            inputSource = "WGI";
+                            sourceSelected = true;
+                            break;
+                        }
+                        if (!foundIdle)
+                        {
+                            chosen = snap;
+                            chosenName = raw.DisplayName;
+                            foundIdle = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        ForgetRawController(raw);
+                        LogPollError("WGI device read failed", ex);
                     }
                 }
 
-                // XInput fallback: only when WGI has nothing delivering input at all
-                // (hidden/virtual pads — HidHide, Steam Input, DS4Windows).
+                // XInput fallback: only when no WGI device reported input this tick
                 if (!sourceSelected && Native.XInput.Available)
                 {
                     for (int i = 0; i < 4; i++)
@@ -176,17 +168,30 @@ namespace GamepadKeyboard.Input
                         if (!TryReadXInput(i, out var snap) || !snap.AnyInput) continue;
                         chosen = snap;
                         chosenName = "XInput slot " + i;
-                        foundIdle = anyInput = sourceSelected = true;
+                        inputSource = "XInput";
+                        foundIdle = sourceSelected = true;
                         if (_loggedExtras.Add("xinput-slot" + i))
                             App.Log("WGI idle -> using XInput slot " + i + " as the stable input source");
                         break;
                     }
                 }
 
+                // A flip between WGI and XInput mid-session is diagnostic gold when a
+                // pad dies in one app type (XInput hiccups while SendInput injects).
+                // Rate-limited: one line per actual source change, capped to one per
+                // minute so rapid oscillation cannot flood crash.log.
+                if (sourceSelected && inputSource != _lastInputSource &&
+                    (DateTime.UtcNow - _lastFlipLog).TotalMinutes >= 1)
+                {
+                    _lastInputSource = inputSource;
+                    _lastFlipLog = DateTime.UtcNow;
+                    App.Log("input source: " + inputSource + " (pad \"" + chosenName + "\")");
+                }
+
                 GamepadSnapshot previous = _last;
                 _last = chosen;
 
-                if (anyInput)
+                if (sourceSelected)
                 {
                     if (chosenName != _lastActivePad)
                     {
@@ -323,8 +328,8 @@ namespace GamepadKeyboard.Input
             _calibrations.Clear();
             _buttonMaps.Clear();
             _rawBuffers.Clear();
-            // Cache clear = topology-level reset; the WGI-vs-XInput source decision
-            // is re-evaluated from scratch by the poll loop afterwards.
+            // The WGI-vs-XInput source choice is made fresh on every poll tick —
+            // device-list churn can never strand a previously chosen source.
         }
 
         private void ForgetRawController(Windows.Gaming.Input.RawGameController raw)

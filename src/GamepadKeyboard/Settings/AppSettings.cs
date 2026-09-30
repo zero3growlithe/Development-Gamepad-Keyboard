@@ -102,6 +102,17 @@ namespace GamepadKeyboard.Settings
                     if (loaded != null)
                     {
                         loaded.Normalize();
+                        if (!_warnedEmptyBindings && EmptyBothBindingLists(loaded))
+                        {
+                            // Schema drift or an emptied file can leave BOTH profiles
+                            // without a single binding row — dispatch then has nothing
+                            // to do and the app looks completely dead. One-time
+                            // in-memory fallback to factory defaults; the user's
+                            // settings.json is never rewritten or deleted by this.
+                            _warnedEmptyBindings = true;
+                            App.Log("settings: empty bindings after load -> factory defaults");
+                            loaded = new AppSettings();
+                        }
                         Instance = loaded;
                         _lastSavedJson = json;
                     }
@@ -109,6 +120,13 @@ namespace GamepadKeyboard.Settings
             }
             catch { /* corrupted settings -> defaults */ }
         }
+
+        private static bool _warnedEmptyBindings;
+
+        /// <summary>True when neither profile carries a single binding row.</summary>
+        private static bool EmptyBothBindingLists(AppSettings s) =>
+            !s.KeyboardProfiles.Any(p => p.Bindings.Count > 0) &&
+            !s.MouseProfiles.Any(p => p.Bindings.Count > 0);
 
         public static void Save()
         {
