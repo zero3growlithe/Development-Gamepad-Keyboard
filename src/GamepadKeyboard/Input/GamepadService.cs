@@ -120,7 +120,7 @@ namespace GamepadKeyboard.Input
                 // Chromium #392661398). While unfocused, only XInput can deliver real
                 // input, so WGI must not win source selection or it blocks the
                 // fallback with its zeros.
-                bool wgiFocused = Native.NativeMethods.IsOwnWindowForeground();
+                bool wgiFocused = IsOwnWindowForeground();
 
                 // Per-tick source priority: whichever path delivers real input wins,
                 // with one hard gate — WGI may win ONLY while our own window owns
