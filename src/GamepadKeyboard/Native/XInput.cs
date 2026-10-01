@@ -59,22 +59,24 @@ namespace GamepadKeyboard.Native
         [DllImport("xinput9_1_0.dll")]
         private static extern int XInputGetState910(int dwUserIndex, ref XINPUT_STATE pState);
 
+        private static readonly string[] ProbeErrors = new string[3];
+
         private static void Probe()
         {
             if (_probed) return;
             lock (ProbeLock)
             {
                 if (_probed) return;
-                _ok14 = RuntimeAvailable(XInputGetState14);
-                _ok13 = RuntimeAvailable(XInputGetState13);
-                _ok910 = RuntimeAvailable(XInputGetState910);
+                _ok14 = RuntimeAvailable("xinput1_4.dll", XInputGetState14, 0);
+                _ok13 = RuntimeAvailable("xinput1_3.dll", XInputGetState13, 1);
+                _ok910 = RuntimeAvailable("xinput9_1_0.dll", XInputGetState910, 2);
                 _probed = true;
             }
         }
 
         private delegate int GetStateDelegate(int index, ref XINPUT_STATE state);
 
-        private static bool RuntimeAvailable(GetStateDelegate getState)
+        private static bool RuntimeAvailable(string dll, GetStateDelegate getState, int slot)
         {
             try
             {
@@ -82,10 +84,30 @@ namespace GamepadKeyboard.Native
                 getState(0, ref state);
                 return true;
             }
-            catch (DllNotFoundException) { return false; }
-            catch (EntryPointNotFoundException) { return false; }
-            catch (BadImageFormatException) { return false; }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                // record WHY the DLL could not be used — "file missing" vs "load
+                // blocked" are different problems with different fixes
+                ProbeErrors[slot] = dll + ": " + ex.GetType().Name + " (" + ex.Message + ")";
+                return false;
+            }
+        }
+
+        /// <summary>One-time per-DLL probe outcomes for diagnostics (null until probed).</summary>
+        public static string?[] DescribeProbe()
+        {
+            Probe();
+            var lines = new string?[4];
+            lines[0] = _ok14 ? "xinput1_4.dll: ok" : ProbeErrors[0] ?? "xinput1_4.dll: failed (no detail)";
+            lines[1] = _ok13 ? "xinput1_3.dll: ok" : ProbeErrors[1] ?? "xinput1_3.dll: failed (no detail)";
+            lines[2] = _ok910 ? "xinput9_1_0.dll: ok" : ProbeErrors[2] ?? "xinput9_1_0.dll: failed (no detail)";
+            lines[3] = "sys32 files present: xinput1_4=" +
+                System.IO.File.Exists(System.IO.Path.Combine(System.Environment.SystemDirectory, "xinput1_4.dll")) +
+                " xinput1_3=" +
+                System.IO.File.Exists(System.IO.Path.Combine(System.Environment.SystemDirectory, "xinput1_3.dll")) +
+                " xinput9_1_0=" +
+                System.IO.File.Exists(System.IO.Path.Combine(System.Environment.SystemDirectory, "xinput9_1_0.dll"));
+            return lines;
         }
 
         public static bool Available

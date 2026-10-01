@@ -343,7 +343,8 @@ namespace GamepadKeyboard.Input
             }
             else
             {
-                xinputSummary = "no XInput runtime available (all three DLL probes failed)";
+                // per-DLL ground truth: which runtime failed with which exception
+                xinputSummary = "no XInput runtime — " + string.Join("; ", Native.XInput.DescribeProbe());
             }
 
             App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "]");
