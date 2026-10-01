@@ -26,6 +26,8 @@ namespace GamepadKeyboard.Input
         private string _lastInputSource = "";   // "WGI" | "XInput" — drives the source-flip log
         private DateTime _lastFlipLog = DateTime.MinValue;   // rate limit for source-flip lines
         private bool _lastWgiFocused;                        // logs the focus-gate transition once
+        private DateTime _lastUnfocusedProbe = DateTime.MinValue;  // ground-truth probe cadence
+        private int _unfocusedProbeBudget = 90;              // cap probe lines per session
 
         public event Action<GamepadSnapshot>? StateChanged;
 
@@ -228,6 +230,9 @@ namespace GamepadKeyboard.Input
 
                 if (inputEnabled || !chosen.Equals(previous))
                     StateChanged?.Invoke(chosen);
+
+                if (!wgiFocused)
+                    RunUnfocusedProbe(raws);
             }
             catch (Exception ex)
             {
@@ -270,6 +275,81 @@ namespace GamepadKeyboard.Input
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern uint GetCurrentProcessId();
+
+        /// <summary>
+        /// While unfocused: every 5 s (first 90 probes only) dump what EVERY reading
+        /// path sees for the foreground-foreign pad — WGI raw reading, the raw
+        /// buttons/axes arrays, and every available XInput runtime — so crash.log
+        /// shows which path is frozen, erroring, or silent instead of a guess.
+        /// </summary>
+        private void RunUnfocusedProbe(System.Collections.Generic.IReadOnlyList<
+            Windows.Gaming.Input.RawGameController> raws)
+        {
+            var now = DateTime.UtcNow;
+            if (_unfocusedProbeBudget <= 0 ||
+                (now - _lastUnfocusedProbe).TotalSeconds < 5) return;
+            _lastUnfocusedProbe = now;
+            _unfocusedProbeBudget--;
+
+            string wgiSummary = "(no WGI controllers)";
+            if (raws.Count > 0)
+            {
+                var parts = new List<string>();
+                foreach (var raw in raws)
+                {
+                    try
+                    {
+                        var buffers = ReadRaw(raw);
+                        int pressed = 0;
+                        for (int i = 0; i < buffers.Buttons.Length; i++)
+                            if (buffers.Buttons[i]) pressed++;
+                        var axes = new List<string>();
+                        for (int i = 0; i < buffers.Axes.Length; i++)
+                            axes.Add(buffers.Axes[i].ToString("0.00"));
+                        parts.Add("\"" + raw.DisplayName + "\" down=" + pressed +
+                                  "/" + buffers.Buttons.Length + " axes=[" + string.Join(",", axes) + "]");
+                    }
+                    catch (Exception ex)
+                    {
+                        parts.Add("\"" + raw.DisplayName + "\" read failed: " + ex.Message);
+                    }
+                }
+                wgiSummary = string.Join(" | ", parts);
+            }
+
+            string xinputSummary;
+            if (Native.XInput.Available)
+            {
+                var slots = new List<string>();
+                for (int i = 0; i < 4; i++)
+                {
+                    int err = Native.XInput.GetState(i, ref _probeState);
+                    if (err != 0)
+                    {
+                        slots.Add("slot " + i + ": err " + err);
+                        continue;
+                    }
+                    int pressed = 0;
+                    for (int bit = 0; bit < 12; bit++)
+                        if ((_probeState.Game.wButtons & (1 << bit)) != 0) pressed++;
+                    slots.Add("slot " + i + ": packet " + _probeState.dwPacketNumber +
+                              " btn=0x" + _probeState.Game.wButtons.ToString("X4") +
+                              " LX=" + _probeState.Game.sThumbLX +
+                              " LY=" + _probeState.Game.sThumbLY +
+                              " LT=" + _probeState.Game.bLeftTrigger +
+                              " RT=" + _probeState.Game.bRightTrigger);
+                }
+                xinputSummary = string.Join(", ", slots);
+            }
+            else
+            {
+                xinputSummary = "no XInput runtime available (all three DLL probes failed)";
+            }
+
+            App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "]");
+        }
+
+        private readonly Native.XInput.XINPUT_STATE _probeState = new();
 
         private void LogPollError(string context, Exception ex)
         {
