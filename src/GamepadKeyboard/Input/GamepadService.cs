@@ -847,8 +847,15 @@ namespace GamepadKeyboard.Input
         public static GamepadSnapshot FromXInput(Native.XInput.XINPUT_STATE st)
         {
             double dz = Deadzone;
-            double Axis(short v) => Math.Abs(v) < dz * short.MaxValue
-                ? 0 : (v - Math.Sign(v) * dz * short.MaxValue) / ((1.0 - dz) * short.MaxValue);
+            // Divide BEFORE any Math.Abs/Math.Sign: Math.Abs(short.MinValue) throws
+            // OverflowException ("negating the minimum value"), which killed every
+            // read whose stick sat exactly on the full left/down rail (-32768).
+            // As double this is just -1.0 and safe for the whole range.
+            double Axis(short v)
+            {
+                double f = v / 32768.0;
+                return Math.Abs(f) < dz ? 0 : (f - Math.Sign(f) * dz) / (1.0 - dz);
+            }
             ushort b = st.Game.wButtons;
             return new GamepadSnapshot(
                 Axis(st.Game.sThumbLX), Axis(st.Game.sThumbLY),
