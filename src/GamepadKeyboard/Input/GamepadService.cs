@@ -348,7 +348,13 @@ namespace GamepadKeyboard.Input
                 var slots = new List<string>();
                 for (int i = 0; i < 4; i++)
                 {
-                    int err = Native.XInput.GetState(i, ref _probeState);
+                    int err;
+                    try { err = Native.XInput.GetState(i, ref _probeState); }
+                    catch (Exception ex)
+                    {
+                        slots.Add("slot " + i + ": READ FAULT " + ex.GetType().Name + " (" + ex.Message + ")");
+                        continue;
+                    }
                     if (err != 0)
                     {
                         slots.Add("slot " + i + ": err " + err);

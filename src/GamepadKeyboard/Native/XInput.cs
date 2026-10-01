@@ -119,27 +119,68 @@ namespace GamepadKeyboard.Native
             }
         }
 
-        /// <summary>0 = OK, nonzero = error / device not connected.</summary>
+        /// <summary>0 = OK, nonzero = error / device not connected. A runtime DLL
+        /// that throws (proxy driver fault, SEH surfaced as a managed exception) is
+        /// demoted for the rest of the session and the next runtime reads the pad —
+        /// one runtime's fault must never suppress the others.</summary>
         public static int GetState(int index, ref XINPUT_STATE state)
         {
             Probe();
             int error = unchecked((int)0x8007048F); // device not connected
             if (_ok14)
             {
-                error = XInputGetState14(index, ref state);
-                if (error == 0) return 0;
+                try
+                {
+                    error = XInputGetState14(index, ref state);
+                    if (error == 0) return 0;
+                }
+                catch (Exception ex) { DemoteRuntime(0, ex); }
             }
             if (_ok13)
             {
-                error = XInputGetState13(index, ref state);
-                if (error == 0) return 0;
+                try
+                {
+                    error = XInputGetState13(index, ref state);
+                    if (error == 0) return 0;
+                }
+                catch (Exception ex) { DemoteRuntime(1, ex); }
             }
             if (_ok910)
             {
-                error = XInputGetState910(index, ref state);
-                if (error == 0) return 0;
+                try
+                {
+                    error = XInputGetState910(index, ref state);
+                    if (error == 0) return 0;
+                }
+                catch (Exception ex) { DemoteRuntime(2, ex); }
             }
             return error;
         }
+
+        /// <summary>Disables one runtime after a thrown call and logs the real
+        /// exception once — the fallback keeps working through the remaining ones.</summary>
+        private static void DemoteRuntime(int runtime, Exception ex)
+        {
+            switch (runtime)
+            {
+                case 0: _ok14 = false; break;
+                case 1: _ok13 = false; break;
+                default: _ok910 = false; break;
+            }
+            if (ProbeErrors[runtime] is null)
+            {
+                ProbeErrors[runtime] = "runtime fault after enable: " +
+                    ex.GetType().Name + " (" + ex.Message + ")";
+                GamepadKeyboard.App.Log("xinput " + DllName(runtime) + " disabled after runtime fault: " +
+                    ex.GetType().Name + " (" + ex.Message + ")");
+            }
+        }
+
+        private static string DllName(int runtime) => runtime switch
+        {
+            0 => "xinput1_4.dll",
+            1 => "xinput1_3.dll",
+            _ => "xinput9_1_0.dll"
+        };
     }
 }
