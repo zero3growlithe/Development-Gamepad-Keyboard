@@ -27,12 +27,15 @@ namespace GamepadKeyboard
         public string MapperTrace()
         {
             var s2 = _lastProcessed;
+            // Invariant + explicit sign: custom signed formats are culture-sensitive
+            // (Polish locale rendered "-+0,00" double signs in trace lines).
+            string Signed(double v) => (v < 0 ? "-" : "+") + Math.Abs(v).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
             return "mode=" + Mode +
                    " enabled=" + InputEnabled +
-                   " snap[LX=" + s2.LX.ToString("+0.00;-0.00") +
-                   " LY=" + s2.LY.ToString("+0.00;-0.00") +
-                   " RX=" + s2.RX.ToString("+0.00;-0.00") +
-                   " RY=" + s2.RY.ToString("+0.00;-0.00") + "]" +
+                   " snap[LX=" + Signed(s2.LX) +
+                   " LY=" + Signed(s2.LY) +
+                   " RX=" + Signed(s2.RX) +
+                   " RY=" + Signed(s2.RY) + "]" +
                    (MouseMode
                        ? " mouseD=(" + _lastMouseDx.ToString("+0;-0") + "," + _lastMouseDy.ToString("+0;-0") + ")"
                        : " rays[L=" + LeftCursorX.ToString("0") + "," + LeftCursorY.ToString("0") +
