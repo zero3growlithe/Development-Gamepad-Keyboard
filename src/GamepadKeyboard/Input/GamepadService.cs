@@ -257,8 +257,7 @@ namespace GamepadKeyboard.Input
 
         private static bool TryReadXInput(int slot, out GamepadSnapshot snapshot)
         {
-            bool ok = TryReadXInputDetailed(slot, out snapshot, out _);
-            return ok;
+            return TryReadXInputDetailed(slot, out snapshot, out _) == 0;
         }
 
         /// <summary>Reads one XInput slot, converting to a snapshot and returning the
