@@ -19,6 +19,27 @@ namespace GamepadKeyboard
         private readonly InputSender _sender = new();
         private readonly KeyboardLayout _layout;
         private readonly Stopwatch _cursorClock = Stopwatch.StartNew();
+        private GamepadSnapshot _lastProcessed;                    // last snapshot Process() consumed
+        private double _lastMouseDx, _lastMouseDy;                 // last cursor deltas sent (mouse mode)
+
+        /// <summary>One-line mapper state for the unfocused probe: proves whether
+        /// analog values reach the mapper and what movement it computed.</summary>
+        public string MapperTrace()
+        {
+            var s2 = _lastProcessed;
+            return "mode=" + (MouseMode ? "mouse" : "keyboard") +
+                   " enabled=" + InputEnabled +
+                   " snap[LX=" + s2.LX.ToString("+0.00;-0.00") +
+                   " LY=" + s2.LY.ToString("+0.00;-0.00") +
+                   " RX=" + s2.RX.ToString("+0.00;-0.00") +
+                   " RY=" + s2.RY.ToString("+0.00;-0.00") + "]" +
+                   (MouseMode
+                       ? " mouseD=(" + _lastMouseDx.ToString("+0;-0") + "," + _lastMouseDy.ToString("+0;-0") + ")"
+                       : " rays[L=" + LeftCursorX.ToString("0") + "," + LeftCursorY.ToString("0") +
+                         (LeftHit != null ? " HIT" : " -") +
+                         " R=" + RightCursorX.ToString("0") + "," + RightCursorY.ToString("0") +
+                         (RightHit != null ? " HIT" : " -") + "]");
+        }
         private double _lastCursorTime;
         private bool _cursorInitialized;
         private bool _lastFreeCursor;
@@ -133,6 +154,7 @@ namespace GamepadKeyboard
 
         public void Process(in GamepadSnapshot s)
         {
+            _lastProcessed = s;
             if (!InputEnabled)
             {
                 var bindings = MouseMode
@@ -210,6 +232,7 @@ namespace GamepadKeyboard
 
             int dx = (int)Math.Round(moveX * speed);
             int dy = (int)Math.Round(moveY * speed);
+            _lastMouseDx = dx; _lastMouseDy = dy;
             if (dx != 0 || dy != 0) _sender.MouseMove(dx, dy);
             int vertical = (int)Math.Round(scrollY * 120 * st.ScrollSpeed / 3.0);
             int horizontal = (int)Math.Round(scrollX * 120 * st.ScrollSpeed / 3.0);

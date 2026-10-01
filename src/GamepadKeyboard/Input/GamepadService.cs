@@ -84,6 +84,9 @@ namespace GamepadKeyboard.Input
         /// <summary>Optional mode probe (true = mouse mode) for the per-mode stick deadzone.</summary>
         public static Func<bool>? MouseModeProbe;
         public static Func<bool>? InputEnabledProbe;
+        /// <summary>Optional mapper-state trace appended to the unfocused probe line
+        /// (wired by AppOrchestrator; the poll layer cannot reference the mapper).</summary>
+        public static Func<string>? MapperStateProbe;
 
         public void ResetDeviceCaches() =>
             System.Threading.Interlocked.Exchange(ref _resetCachesRequested, 1);
@@ -347,7 +350,8 @@ namespace GamepadKeyboard.Input
                 xinputSummary = "no XInput runtime — " + string.Join("; ", Native.XInput.DescribeProbe());
             }
 
-            App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "]");
+            App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "] mapper[" +
+                        (MapperStateProbe?.Invoke() ?? "n/a") + "]");
         }
 
         private Native.XInput.XINPUT_STATE _probeState = new();
