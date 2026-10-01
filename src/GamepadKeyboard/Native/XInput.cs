@@ -50,13 +50,13 @@ namespace GamepadKeyboard.Native
         private static bool _ok14, _ok13, _ok910;
         private static readonly object ProbeLock = new();
 
-        [DllImport("xinput1_4.dll")]
+        [DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]
         private static extern int XInputGetState14(int dwUserIndex, ref XINPUT_STATE pState);
 
-        [DllImport("xinput1_3.dll")]
+        [DllImport("xinput1_3.dll", EntryPoint = "XInputGetState")]
         private static extern int XInputGetState13(int dwUserIndex, ref XINPUT_STATE pState);
 
-        [DllImport("xinput9_1_0.dll")]
+        [DllImport("xinput9_1_0.dll", EntryPoint = "XInputGetState")]
         private static extern int XInputGetState910(int dwUserIndex, ref XINPUT_STATE pState);
 
         private static readonly string[] ProbeErrors = new string[3];
