@@ -132,7 +132,9 @@ namespace GamepadKeyboard.Input
                     _lastWgiFocused = wgiFocused;
                     App.Log("wgi readings " + (wgiFocused
                         ? "active -> live (our window focused)"
-                        : "frozen -> XInput carries input while another app is focused"));
+                        : "frozen -> XInput carries input while another app is focused") +
+                        " " + OutcomeTrace() + " mapper[" +
+                        (MapperStateProbe?.Invoke() ?? "n/a") + "]");
                 }
 
                 // Per-tick source priority: whichever path delivers real input wins,
@@ -246,18 +248,17 @@ namespace GamepadKeyboard.Input
                 if (inputEnabled || !chosen.Equals(previous))
                     StateChanged?.Invoke(chosen);
 
-                if (!wgiFocused)
+                // Probe only while input is DISABLED: once the diagnosis tools did
+                // their job, steady-state unfocused sessions (input enabled) should
+                // not grow the log. Counters keep accumulating either way; every
+                // focus transition dumps them once below.
+                if (!wgiFocused && !inputEnabled)
                     RunUnfocusedProbe(raws);
             }
             catch (Exception ex)
             {
                 LogPollError("poll failed", ex);
             }
-        }
-
-        private static bool TryReadXInput(int slot, out GamepadSnapshot snapshot)
-        {
-            return TryReadXInputDetailed(slot, out snapshot, out _) == 0;
         }
 
         /// <summary>Reads one XInput slot, converting to a snapshot and returning the
@@ -286,7 +287,6 @@ namespace GamepadKeyboard.Input
                     App.Log("xinput slot " + slot + " read fault: " + ex.GetType().Name +
                             " (" + ex.Message + ")");
                 }
-                lastErr = -1;
                 return -1;
             }
         }

@@ -71,6 +71,9 @@ namespace GamepadKeyboard.Native
         [DllImport("user32.dll", SetLastError = true)]
         public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern unsafe uint SendInputUnsafe(uint nInputs, INPUT* pInputs, int cbSize);
+
         // ── Window styles for the overlay ─────────────────────────────────────
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_LAYERED = 0x00080000;

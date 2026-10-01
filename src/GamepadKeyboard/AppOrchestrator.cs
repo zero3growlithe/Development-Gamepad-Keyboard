@@ -40,7 +40,8 @@ namespace GamepadKeyboard
             Keyboard.KeyboardLayout layout = new();
             layout.Build();
             _mapper = new ControllerMapper(layout);
-            Input.GamepadService.MouseModeProbe = () => _mapper.MouseMode;   // per-mode deadzone
+            Input.GamepadService.MouseModeProbe =
+                () => _mapper.Mode != ControllerMapper.MapperMode.Keyboard;   // per-mode deadzone
             Input.GamepadService.InputEnabledProbe = () => _mapper.InputEnabled;
             Input.GamepadService.MapperStateProbe = () => _mapper.MapperTrace();
             _keyboard = new KeyboardOverlay(layout);
@@ -90,7 +91,9 @@ namespace GamepadKeyboard
             // a profile-defined EnableInput binding starts the tool normally
             _keyboard.Hide();
             _legend.Hide();
-            _mapper.MouseMode = Settings.AppSettings.Instance.StartInMouseMode;
+            _mapper.Mode = Settings.AppSettings.Instance.StartInMouseMode
+                ? ControllerMapper.MapperMode.Mouse
+                : ControllerMapper.MapperMode.Keyboard;
             _enabledItem!.Checked = false;   // tray checkbox reflects the disabled start
         }
 

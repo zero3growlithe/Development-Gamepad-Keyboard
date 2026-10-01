@@ -142,19 +142,24 @@ namespace GamepadKeyboard.Input
 
         private static bool _lastFailed;
 
-        private static void Dispatch(Span<NativeMethods.INPUT> inputs)
+        private static unsafe void Dispatch(Span<NativeMethods.INPUT> inputs)
         {
-            var arr = inputs.ToArray();
-            uint sent = NativeMethods.SendInput((uint)arr.Length, arr, NativeMethods.INPUT.Size);
-            if (sent == arr.Length)
+            // SendInput wants a pointer; fixed passes the stack buffer straight
+            // through — the previous ToArray() allocated on every key/mouse
+            // event at up to poll frequency.
+            fixed (NativeMethods.INPUT* p = inputs)
             {
-                _lastFailed = false;
-            }
-            else if (!_lastFailed)
-            {
-                _lastFailed = true;
-                App.Log("SendInput failed: sent " + sent + "/" + arr.Length +
-                        " err=" + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+                uint sent = NativeMethods.SendInputUnsafe((uint)inputs.Length, p, NativeMethods.INPUT.Size);
+                if (sent == inputs.Length)
+                {
+                    _lastFailed = false;
+                }
+                else if (!_lastFailed)
+                {
+                    _lastFailed = true;
+                    App.Log("SendInput failed: sent " + sent + "/" + inputs.Length +
+                            " err=" + System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+                }
             }
         }
     }

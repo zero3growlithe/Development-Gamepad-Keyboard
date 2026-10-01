@@ -14,6 +14,7 @@
     <RootNamespace>GamepadKeyboard</RootNamespace>
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <Version>0.2.0</Version>

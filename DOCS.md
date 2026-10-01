@@ -55,7 +55,7 @@ Every mappable button accepts any of these actions:
 - **Keys**: Space, Backspace, Tab, Enter, Escape, Delete, Insert, arrows, PageUp/PageDown, Home/End, CapsLock, NumLock, F1–F12 — sent as taps (edge-triggered)
 - **Media/volume**: VolumeUp / VolumeDown / VolumeMute, MediaPlayPause / MediaNext / MediaPrev
 - **Keyboard-overlay actions**: CommitLeft / CommitRight (commit the highlighted key on the left/right ray)
-- **App control**: DisableInput (free the gamepad for games), ToggleKeyboardMouseMode (switch modes), KeyboardMode / MouseMode, ToggleOverlay / ToggleKeyboard (show-hide keyboard), ToggleLegend, SwitchKeyboardProfile / SwitchMouseProfile (cycle profiles)
+- **App control**: DisableInput (free the gamepad for games), ToggleKeyboardMouseMode (switch keyboard/mouse), KeyboardMode / MouseMode, **DirectInputMode / CycleInputMode** (DirectInput mode: raw pad actions for game bridging — plumbing live, feature lands next; CycleInputMode steps Keyboard→Mouse→DirectInput→Keyboard for one-button mode cycling), ToggleOverlay / ToggleKeyboard (show-hide keyboard), ToggleLegend, SwitchKeyboardProfile / SwitchMouseProfile (cycle profiles)
 - **Any keyboard key**: `Key:<name>` — arbitrary single key press (set via the bindings editor's "Pool for keyboard key…")
 - **None** — unbound
 
@@ -124,6 +124,7 @@ Keys held or toggled through Hold*/Toggle* bindings get a **semi-transparent gre
 - **DualSense (PS5) via USB**: raw path with auto-calibration (stick neutral 0.5 → ±1.0, triggers 0–1), Sony button-order map (Square/Cross/Circle/Triangle, L1/R1, L2/R2, Create/Options, L3/R3, PS, touchpad), D-pad as hat switch.
 - Works alongside DS4Windows-style virtual controllers (detected as "Xbox 360 Controller for Windows").
 - One-time diagnostics are logged (button labels, axis calibration) to `crash.log` next to the exe; all state changes and input errors are logged there too.
+- Log size policy (steady state, long sessions): the unfocused probe dumps only while **input is disabled** (diagnosis phase); while input is enabled you get only transitions — focus flips (one line per flip, carrying the poll counters), source flips (rate-limited 1/min), `active pad` changes, enable/disable and HidHide reservation lines. No per-tick or per-combo-press logging.
 - **Stick deadzone** (default 0.005) applies to all input paths, re-read live every tick.
 
 ## Limitations (Windows shell)

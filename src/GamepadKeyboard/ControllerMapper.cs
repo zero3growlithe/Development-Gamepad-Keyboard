@@ -27,7 +27,7 @@ namespace GamepadKeyboard
         public string MapperTrace()
         {
             var s2 = _lastProcessed;
-            return "mode=" + (MouseMode ? "mouse" : "keyboard") +
+            return "mode=" + Mode +
                    " enabled=" + InputEnabled +
                    " snap[LX=" + s2.LX.ToString("+0.00;-0.00") +
                    " LY=" + s2.LY.ToString("+0.00;-0.00") +
@@ -45,7 +45,16 @@ namespace GamepadKeyboard
         private bool _lastFreeCursor;
         private double _leftTargetX, _leftTargetY, _rightTargetX, _rightTargetY;
 
-        public bool MouseMode { get; set; }
+        /// <summary>Which profile family the mapper processes. Keyboard = ray
+        /// overlay + typing; Mouse = real cursor; DirectInput = raw pad actions
+        /// for game bridging (mode plumbing only today — feature lands next).</summary>
+        public enum MapperMode { Keyboard, Mouse, DirectInput }
+
+        public MapperMode Mode { get; set; }
+
+        /// <summary>True for every mode that HIDES the keyboard overlay and uses
+        /// the mouse-mode deadzone (Mouse and DirectInput both qualify).</summary>
+        public bool MouseMode => Mode != MapperMode.Keyboard;
 
         /// <summary>When disabled the pad is passed through untouched (game use).</summary>
         public bool InputEnabled { get; private set; }   // starts disabled: gamepad free for games until enable combo
@@ -115,6 +124,8 @@ namespace GamepadKeyboard
         private readonly Dictionary<string, ComboRuntimeState> _comboStates = new(StringComparer.Ordinal);
         private readonly HashSet<string> _comboConsumedButtons = new();
         private readonly List<string> _staleComboKeys = new();
+        private readonly HashSet<string> _activeComboIds = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _activeBindingIds = new(StringComparer.Ordinal);
         private readonly List<string> _releasedComboButtons = new();
         private readonly Dictionary<ushort, int> _heldKeyCounts = new();
         private readonly Dictionary<ushort, double> _nextKeyRepeat = new();
@@ -157,9 +168,7 @@ namespace GamepadKeyboard
             _lastProcessed = s;
             if (!InputEnabled)
             {
-                var bindings = MouseMode
-                    ? AppSettings.Instance.MouseProfile.Bindings
-                    : AppSettings.Instance.Profile.Bindings;
+                var bindings = ActiveBindings();
                 if (TryEnableFromProfile(s, bindings))
                 {
                     CaptureBindingEdges(s, bindings);
@@ -175,18 +184,25 @@ namespace GamepadKeyboard
                 return;
             }
 
-            if (MouseMode)
-                ProcessMouse(s);
-            else
-                ProcessKeyboardMode(s);
+            switch (Mode)
+            {
+                case MapperMode.Mouse: ProcessMouse(s); break;
+                case MapperMode.DirectInput: ProcessMouse(s); break; // stub until the DirectInput feature lands
+                default: ProcessKeyboardMode(s); break;
+            }
 
             RepeatHeldKeys();
-            CleanupRuntimeBindings(MouseMode
-                ? AppSettings.Instance.MouseProfile.Bindings
-                : AppSettings.Instance.Profile.Bindings);
+            CleanupRuntimeBindings(ActiveBindings());
         }
 
         // ── Keyboard mode ─────────────────────────────────────────────────────
+
+        /// <summary>Binding list of the ACTIVE mode (DirectInput shares the mouse
+        /// profile until its own profile type lands).</summary>
+        private List<ProfileBinding> ActiveBindings() =>
+            Mode == MapperMode.Keyboard
+                ? AppSettings.Instance.Profile.Bindings
+                : AppSettings.Instance.MouseProfile.Bindings;
 
         private void ProcessKeyboardMode(in GamepadSnapshot s)
         {
@@ -385,12 +401,12 @@ namespace GamepadKeyboard
             in GamepadSnapshot s,
             List<ProfileBinding> bindings)
         {
-            var currentIds = new HashSet<string>(StringComparer.Ordinal);
+            _activeComboIds.Clear();
             foreach (var binding in bindings)
             {
                 var parts = binding.Buttons;
                 if (parts.Count < 2) continue;
-                currentIds.Add(binding.Id);
+                _activeComboIds.Add(binding.Id);
                 var state = GetComboState(binding.Id);
 
                 bool prefixHeld = true;
@@ -428,7 +444,6 @@ namespace GamepadKeyboard
                         AcquireComboModifiers(binding, state);
                         state.Active = true;
                     }
-                    App.Log("combo binding: " + string.Join("+", parts) + " -> " + binding.Action);
                     if (binding.HoldLast)
                     {
                         state.Action = binding.Action;
@@ -445,7 +460,7 @@ namespace GamepadKeyboard
 
             _staleComboKeys.Clear();
             foreach (var key in _comboStates.Keys)
-                if (!currentIds.Contains(key)) _staleComboKeys.Add(key);
+                if (!_activeComboIds.Contains(key)) _staleComboKeys.Add(key);
             foreach (var key in _staleComboKeys)
             {
                 ReleaseComboState(_comboStates[key]);
@@ -667,12 +682,12 @@ namespace GamepadKeyboard
 
         private void CleanupRuntimeBindings(List<ProfileBinding> bindings)
         {
-            var activeIds = new HashSet<string>(StringComparer.Ordinal);
+            _activeBindingIds.Clear();
             foreach (var binding in bindings)
-                if (binding.Buttons.Count == 1) activeIds.Add(binding.Id);
+                if (binding.Buttons.Count == 1) _activeBindingIds.Add(binding.Id);
             _staleBindingKeys.Clear();
             foreach (string id in _bindingStates.Keys)
-                if (!activeIds.Contains(id)) _staleBindingKeys.Add(id);
+                if (!_activeBindingIds.Contains(id)) _staleBindingKeys.Add(id);
             foreach (string id in _staleBindingKeys)
             {
                 ReleaseBindingState(_bindingStates[id]);
@@ -896,17 +911,28 @@ namespace GamepadKeyboard
 
                 case "ToggleKeyboardMouseMode":
                     ReleaseAllModifiers();
-                    MouseMode = !MouseMode;
+                    Mode = Mode == MapperMode.Keyboard ? MapperMode.Mouse : MapperMode.Keyboard;
                     StateChanged?.Invoke();
                     break;
+                case "CycleInputMode":
+                    ReleaseAllModifiers();
+                    Mode = (MapperMode)(((int)Mode + 1) % 3);
+                    StateChanged?.Invoke();
+                    Notification?.Invoke("mode: " + Mode);
+                    break;
                 case "KeyboardMode":
-                    if (MouseMode) ReleaseAllModifiers();
-                    MouseMode = false;
+                    if (Mode != MapperMode.Keyboard) ReleaseAllModifiers();
+                    Mode = MapperMode.Keyboard;
                     StateChanged?.Invoke();
                     break;
                 case "MouseMode":
-                    if (!MouseMode) ReleaseAllModifiers();
-                    MouseMode = true;
+                    if (Mode == MapperMode.Keyboard) ReleaseAllModifiers();
+                    Mode = MapperMode.Mouse;
+                    StateChanged?.Invoke();
+                    break;
+                case "DirectInputMode":
+                    if (Mode == MapperMode.Keyboard) ReleaseAllModifiers();
+                    Mode = MapperMode.DirectInput;
                     StateChanged?.Invoke();
                     break;
 
