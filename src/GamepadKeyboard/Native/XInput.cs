@@ -123,9 +123,23 @@ namespace GamepadKeyboard.Native
         /// that throws (proxy driver fault, SEH surfaced as a managed exception) is
         /// demoted for the rest of the session and the next runtime reads the pad —
         /// one runtime's fault must never suppress the others.</summary>
+        // XInput state reads are serialized: the poll thread (250 Hz), the input
+        // monitor (8 Hz) and the unfocused probe currently called this concurrently,
+        // and virtualized pads (ViGEm/DS4Windows proxy) fault under that race while
+        // single-threaded reads of the same device succeed.
+        private static readonly object StateChainLock = new();
+
         public static int GetState(int index, ref XINPUT_STATE state)
         {
             Probe();
+            lock (StateChainLock)
+            {
+                return GetStateLocked(index, ref state);
+            }
+        }
+
+        private static int GetStateLocked(int index, ref XINPUT_STATE state)
+        {
             int error = unchecked((int)0x8007048F); // device not connected
             if (_ok14)
             {

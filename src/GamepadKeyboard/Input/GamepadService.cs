@@ -262,6 +262,8 @@ namespace GamepadKeyboard.Input
 
         /// <summary>Reads one XInput slot, converting to a snapshot and returning the
         /// raw XInput error code (0 = ok) plus the DLL-level lastError for probes.</summary>
+        private static DateTime _lastReadFaultLog = DateTime.MinValue;   // rate limit for read-fault lines
+
         private static int TryReadXInputDetailed(int slot, out GamepadSnapshot snapshot, out int lastErr)
         {
             snapshot = default;
@@ -274,8 +276,16 @@ namespace GamepadKeyboard.Input
                 snapshot = GamepadSnapshot.FromXInput(state);
                 return 0;
             }
-            catch
+            catch (Exception ex)
             {
+                lastErr = -1;   // thrown, not an XInput error code — see fault line
+                var now = DateTime.UtcNow;
+                if ((now - _lastReadFaultLog).TotalSeconds >= 5)
+                {
+                    _lastReadFaultLog = now;
+                    App.Log("xinput slot " + slot + " read fault: " + ex.GetType().Name +
+                            " (" + ex.Message + ")");
+                }
                 lastErr = -1;
                 return -1;
             }
