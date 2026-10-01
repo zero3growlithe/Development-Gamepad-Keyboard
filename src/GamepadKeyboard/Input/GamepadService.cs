@@ -349,7 +349,7 @@ namespace GamepadKeyboard.Input
             App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "]");
         }
 
-        private readonly Native.XInput.XINPUT_STATE _probeState = new();
+        private Native.XInput.XINPUT_STATE _probeState = new();
 
         private void LogPollError(string context, Exception ex)
         {
