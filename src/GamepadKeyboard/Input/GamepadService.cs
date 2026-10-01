@@ -196,7 +196,11 @@ namespace GamepadKeyboard.Input
                 {
                     for (int i = 0; i < 4; i++)
                     {
-                        if (!TryReadXInput(i, out var snap) || !snap.AnyInput) continue;
+                        _xiAttempts++;
+                        int xiErr = TryReadXInputDetailed(i, out var snap, out int lastErr);
+                        _xiLastError[i] = lastErr;
+                        if (xiErr != 0) { _xiReadFails++; continue; }
+                        if (!snap.AnyInput) { _xiOkIdle++; continue; }
                         chosen = snap;
                         chosenName = "XInput slot " + i;
                         inputSource = "XInput";
@@ -206,6 +210,14 @@ namespace GamepadKeyboard.Input
                         break;
                     }
                 }
+
+                if (sourceSelected)
+                {
+                    if (inputSource == "WGI") _ticksWgiWin++;
+                    else _ticksXiWin++;
+                }
+                else if (foundIdle) _ticksIdleCarried++;
+                else _ticksNoSource++;
 
                 // A flip between WGI and XInput mid-session is diagnostic gold when a
                 // pad dies in one app type (XInput hiccups while SendInput injects).
@@ -245,17 +257,28 @@ namespace GamepadKeyboard.Input
 
         private static bool TryReadXInput(int slot, out GamepadSnapshot snapshot)
         {
+            bool ok = TryReadXInputDetailed(slot, out snapshot, out _);
+            return ok;
+        }
+
+        /// <summary>Reads one XInput slot, converting to a snapshot and returning the
+        /// raw XInput error code (0 = ok) plus the DLL-level lastError for probes.</summary>
+        private static int TryReadXInputDetailed(int slot, out GamepadSnapshot snapshot, out int lastErr)
+        {
             snapshot = default;
+            lastErr = 0;
             try
             {
                 var state = new Native.XInput.XINPUT_STATE();
-                if (Native.XInput.GetState(slot, ref state) != 0) return false;
+                int err = Native.XInput.GetState(slot, ref state);
+                if (err != 0) { lastErr = err; return err; }
                 snapshot = GamepadSnapshot.FromXInput(state);
-                return true;
+                return 0;
             }
             catch
             {
-                return false;
+                lastErr = -1;
+                return -1;
             }
         }
 
@@ -339,6 +362,8 @@ namespace GamepadKeyboard.Input
                               " btn=0x" + _probeState.Game.wButtons.ToString("X4") +
                               " LX=" + _probeState.Game.sThumbLX +
                               " LY=" + _probeState.Game.sThumbLY +
+                              " RX=" + _probeState.Game.sThumbRX +
+                              " RY=" + _probeState.Game.sThumbRY +
                               " LT=" + _probeState.Game.bLeftTrigger +
                               " RT=" + _probeState.Game.bRightTrigger);
                 }
@@ -350,11 +375,31 @@ namespace GamepadKeyboard.Input
                 xinputSummary = "no XInput runtime — " + string.Join("; ", Native.XInput.DescribeProbe());
             }
 
-            App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "] mapper[" +
+            App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "] " +
+                        OutcomeTrace() + " mapper[" +
                         (MapperStateProbe?.Invoke() ?? "n/a") + "]");
         }
 
         private Native.XInput.XINPUT_STATE _probeState = new();
+
+        // ── Poll outcome distribution (cumulative since launch; dumped by the
+        // unfocused probe) — distinguishes "XInput read errors" from "XInput ok
+        // but AnyInput false" from "WGI idle zeros carried the tick".
+        private long _ticksWgiWin, _ticksXiWin, _ticksIdleCarried, _ticksNoSource;
+        private long _xiAttempts, _xiReadFails, _xiOkIdle;
+        private readonly int[] _xiLastError = new int[4];
+
+        /// <summary>Compact per-tick outcome counters for the unfocused probe.</summary>
+        private string OutcomeTrace()
+        {
+            string errs = "";
+            for (int i = 0; i < 4; i++)
+                errs += (i > 0 ? "," : "") + _xiLastError[i];
+            return "ticks[wgi=" + _ticksWgiWin + " xi=" + _ticksXiWin +
+                   " idle=" + _ticksIdleCarried + " none=" + _ticksNoSource +
+                   "] xread[tries=" + _xiAttempts + " fail=" + _xiReadFails +
+                   " okIdle=" + _xiOkIdle + " lastErr[" + errs + "]]";
+        }
 
         private void LogPollError(string context, Exception ex)
         {
