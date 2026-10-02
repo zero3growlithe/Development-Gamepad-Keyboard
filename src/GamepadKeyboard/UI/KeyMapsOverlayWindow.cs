@@ -286,7 +286,7 @@ namespace GamepadKeyboard.UI
         public void Update(ControllerMapper mapper)
         {
             bool ready = mapper.InputEnabled
-                         && mapper.Mode == MapperMode.DirectInput
+                         && mapper.Mode == ControllerMapper.MapperMode.DirectInput
                          && AppSettings.Instance.KeyMaps.ShowOverlay;
             if (ready != _lastReady)
             {

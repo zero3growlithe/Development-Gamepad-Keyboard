@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using GamepadKeyboard.Native;
 using GamepadKeyboard.Settings;
 
