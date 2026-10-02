@@ -67,6 +67,8 @@ namespace GamepadKeyboard.Settings
             new StickPointsProfile()
         };
 
+        public KeyMapsSettings KeyMaps { get; set; } = new();
+
         [JsonIgnore]
         public KeyboardProfile Profile =>
             KeyboardProfiles.Count == 0 ? new KeyboardProfile() : KeyboardProfiles[Math.Clamp(ActiveProfile, 0, KeyboardProfiles.Count - 1)];
@@ -155,6 +157,8 @@ namespace GamepadKeyboard.Settings
             MouseProfiles ??= new List<MouseProfile>();
             StickPointsProfiles ??= new List<StickPointsProfile>();
             HidHideDeviceInstancePaths ??= new List<string>();
+            KeyMaps ??= new KeyMapsSettings();
+            KeyMaps.Normalize();
             HidHideDeviceInstancePaths = HidHideDeviceInstancePaths
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -344,5 +348,178 @@ namespace GamepadKeyboard.Settings
         public double RightY { get; set; } = 0.53;
         public double LeftRayLength { get; set; } = 0.4;
         public double RightRayLength { get; set; } = 0.4;
+    }
+
+    /// <summary>
+    /// Key Maps mode (DirectInput) configuration: the five fixed maps with their
+    /// per-slot key names (existing input-sender key vocabulary; a single
+    /// punctuation character taps its exact glyph via a Unicode event) and the
+    /// tap thresholds. Persisted like every other settings object; the settings
+    /// UI for editing the slots is a later task.
+    /// </summary>
+    public sealed class KeyMapsSettings
+    {
+        public double StickTapThreshold { get; set; } = 0.55;
+        public bool ShowOverlay { get; set; } = true;
+        public List<KeyMapDefinition> Maps { get; set; } = new()
+        {
+            new KeyMapDefinition("Utility"),
+            new KeyMapDefinition("Symbols 1"),
+            new KeyMapDefinition("Symbols 2"),
+            new KeyMapDefinition("Symbols 3"),
+            new KeyMapDefinition("Function Keys")
+        };
+
+        /// <summary>Clamp to exactly the spec's five maps (repair drifted files).</summary>
+        public void Normalize()
+        {
+            if (Maps.Count == 5)
+            {
+                foreach (KeyMapDefinition map in Maps)
+                {
+                    map.Normalize();
+                }
+                return;
+            }
+            Maps = new List<KeyMapDefinition>
+            {
+                new KeyMapDefinition("Utility"),
+                new KeyMapDefinition("Symbols 1"),
+                new KeyMapDefinition("Symbols 2"),
+                new KeyMapDefinition("Symbols 3"),
+                new KeyMapDefinition("Function Keys")
+            };
+        }
+    }
+
+    /// <summary>One map's physical-slot → key-name table ("" = unbound).</summary>
+    public sealed class KeyMapDefinition
+    {
+        public string Name { get; set; } = "";
+
+        public string Select { get; set; }
+        public string Start { get; set; }
+        public string DPadUp { get; set; }
+        public string DPadDown { get; set; }
+        public string DPadLeft { get; set; }
+        public string DPadRight { get; set; }
+        public string FaceY { get; set; }
+        public string FaceA { get; set; }
+        public string FaceX { get; set; }
+        public string FaceB { get; set; }
+        public string LeftStickUp { get; set; }
+        public string LeftStickDown { get; set; }
+        public string LeftStickLeft { get; set; }
+        public string LeftStickRight { get; set; }
+        public string LeftStickPress { get; set; }
+        public string RightStickUp { get; set; }
+        public string RightStickDown { get; set; }
+        public string RightStickLeft { get; set; }
+        public string RightStickRight { get; set; }
+        public string RightStickPress { get; set; }
+
+        public KeyMapDefinition(string name)
+        {
+            Name = name;
+            Select = "";
+            Start = "";
+            ApplyDefaults(name);
+        }
+
+        /// <summary>Spec defaults; empty string = unbound (kept "" by repair).</summary>
+        private void ApplyDefaults(string name)
+        {
+            DPadUp = "ArrowUp";
+            DPadDown = "ArrowDown";
+            DPadLeft = "ArrowLeft";
+            DPadRight = "ArrowRight";
+            FaceY = "Delete";
+            FaceA = "Enter";
+            FaceX = "Space";
+            FaceB = "Backspace";
+            LeftStickUp = "PageUp";
+            LeftStickDown = "PageDown";
+            LeftStickLeft = "Home";
+            LeftStickRight = "End";
+            LeftStickPress = "CapsLock";
+            RightStickUp = "Insert";
+            RightStickDown = "PrintScreen";
+            RightStickLeft = "Escape";
+            RightStickRight = "Tab";
+            RightStickPress = "Windows";
+            Select = "";
+            Start = "MouseMode";
+            if (name == "Symbols 1")
+            {
+                DPadUp = "W"; DPadDown = "S"; DPadLeft = "A"; DPadRight = "D";
+                FaceY = "I"; FaceA = "K"; FaceX = "J"; FaceB = "L";
+                LeftStickUp = "E"; LeftStickDown = "Z"; LeftStickLeft = "Q"; LeftStickRight = "C";
+                RightStickUp = "U"; RightStickDown = "M"; RightStickLeft = "O"; RightStickRight = "P";
+            }
+            else if (name == "Symbols 2")
+            {
+                DPadUp = "R"; DPadDown = "C"; DPadLeft = "F"; DPadRight = "T";
+                FaceY = "Y"; FaceA = "B"; FaceX = "G"; FaceB = "H";
+                LeftStickUp = "+"; LeftStickDown = "-"; LeftStickLeft = "["; LeftStickRight = "]";
+                RightStickUp = "'"; RightStickDown = "`"; RightStickLeft = "V"; RightStickRight = "N";
+                LeftStickPress = ".";
+                RightStickPress = ",";
+            }
+            else if (name == "Symbols 3")
+            {
+                DPadUp = "1"; DPadDown = "2"; DPadLeft = "3"; DPadRight = "4";
+                FaceY = "5"; FaceA = "6"; FaceX = "7"; FaceB = "8";
+                LeftStickUp = "0"; LeftStickDown = ","; LeftStickLeft = "'"; LeftStickRight = ";";
+                RightStickUp = "9"; RightStickDown = "."; RightStickLeft = "-"; RightStickRight = "=";
+                LeftStickPress = "/";
+                RightStickPress = "\\";
+            }
+            else if (name == "Function Keys")
+            {
+                DPadUp = "F1"; DPadDown = "F2"; DPadLeft = "F3"; DPadRight = "F4";
+                FaceY = "F5"; FaceA = "F6"; FaceX = "F7"; FaceB = "F8";
+                LeftStickUp = "F9"; LeftStickDown = "F10"; LeftStickLeft = "F11"; LeftStickRight = "F12";
+                LeftStickPress = "XButton1";
+                RightStickUp = "VolumeUp";
+                RightStickDown = "VolumeDown";
+                RightStickLeft = "BrowserStop";
+                RightStickRight = "MediaPlayPause";
+                RightStickPress = "XButton2";
+                Select = "ScrollLock";
+                Start = "PauseBreak";
+            }
+        }
+
+        /// <summary>
+        /// JSON repair: System.Text.Json runs the (name) constructor first, which
+        /// lays in the spec defaults for the map's name, then overwrites every
+        /// property present in the file — so a drifted file already falls back
+        /// to defaults slot-by-slot. Only explicit nulls from hand edits remain;
+        /// refill those from a probe built on the map's name.
+        /// </summary>
+        public void Normalize()
+        {
+            KeyMapDefinition defaults = new KeyMapDefinition(string.IsNullOrWhiteSpace(Name) ? "Utility" : Name);
+            Select = Select ?? defaults.Select;
+            Start = Start ?? defaults.Start;
+            DPadUp = DPadUp ?? defaults.DPadUp;
+            DPadDown = DPadDown ?? defaults.DPadDown;
+            DPadLeft = DPadLeft ?? defaults.DPadLeft;
+            DPadRight = DPadRight ?? defaults.DPadRight;
+            FaceY = FaceY ?? defaults.FaceY;
+            FaceA = FaceA ?? defaults.FaceA;
+            FaceX = FaceX ?? defaults.FaceX;
+            FaceB = FaceB ?? defaults.FaceB;
+            LeftStickUp = LeftStickUp ?? defaults.LeftStickUp;
+            LeftStickDown = LeftStickDown ?? defaults.LeftStickDown;
+            LeftStickLeft = LeftStickLeft ?? defaults.LeftStickLeft;
+            LeftStickRight = LeftStickRight ?? defaults.LeftStickRight;
+            LeftStickPress = LeftStickPress ?? defaults.LeftStickPress;
+            RightStickUp = RightStickUp ?? defaults.RightStickUp;
+            RightStickDown = RightStickDown ?? defaults.RightStickDown;
+            RightStickLeft = RightStickLeft ?? defaults.RightStickLeft;
+            RightStickRight = RightStickRight ?? defaults.RightStickRight;
+            RightStickPress = RightStickPress ?? defaults.RightStickPress;
+        }
     }
 }

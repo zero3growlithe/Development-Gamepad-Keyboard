@@ -55,7 +55,7 @@ Every mappable button accepts any of these actions:
 - **Keys**: Space, Backspace, Tab, Enter, Escape, Delete, Insert, arrows, PageUp/PageDown, Home/End, CapsLock, NumLock, F1–F12 — sent as taps (edge-triggered)
 - **Media/volume**: VolumeUp / VolumeDown / VolumeMute, MediaPlayPause / MediaNext / MediaPrev
 - **Keyboard-overlay actions**: CommitLeft / CommitRight (commit the highlighted key on the left/right ray)
-- **App control**: DisableInput (free the gamepad for games), ToggleKeyboardMouseMode (switch keyboard/mouse), KeyboardMode / MouseMode, **DirectInputMode / CycleInputMode** (DirectInput mode: raw pad actions for game bridging — plumbing live, feature lands next; CycleInputMode steps Keyboard→Mouse→DirectInput→Keyboard for one-button mode cycling), ToggleOverlay / ToggleKeyboard (show-hide keyboard), ToggleLegend, SwitchKeyboardProfile / SwitchMouseProfile (cycle profiles)
+- **App control**: DisableInput (free the gamepad for games), ToggleKeyboardMouseMode (switch keyboard/mouse), KeyboardMode / MouseMode, **DirectInputMode / KeyMapsMode / CycleInputMode** (DirectInput/Key Maps mode = gamepad-as-keyboard via 5 switchable maps, see below; CycleInputMode steps Keyboard→Mouse→DirectInput→Keyboard for one-button mode cycling), ToggleOverlay / ToggleKeyboard (show-hide keyboard), ToggleLegend, SwitchKeyboardProfile / SwitchMouseProfile (cycle profiles)
 - **Any keyboard key**: `Key:<name>` — arbitrary single key press (set via the bindings editor's "Pool for keyboard key…")
 - **None** — unbound
 
@@ -105,6 +105,50 @@ Tray → **Settings…**:
 - **Normalized X/Y sliders** for left (orange) and right (blue) ray origin points — every change **refreshes the points in real time on the virtual keyboard**.
 - **Ray length sliders** (0.05–1.00) per stick: 1.0 = the LeftCtrl→Backspace key-distance maximum; live preview.
 - Note: editors persist instantly — the Settings window's Cancel cannot undo editor changes.
+
+---
+
+## Key Maps mode (DirectInput)
+
+The gamepad as a chord keyboard: five switchable **maps** of key assignments. A new mode alongside keyboard/mouse ('`KeyMapsMode`' action, also reachable by `CycleInputMode`). While a map slot's button/deflection **presses**, the mapped key is tapped once (edge-triggered — a held stick never repeats); typing is discrete by construction.
+
+**Modifiers** (not map slots): **L2 holds Shift, L1 holds Ctrl, R1 holds Alt** — real OS key-down/up pairs, so held modifiers combine with every tapped map key (e.g. L1+R2-select + X = Ctrl+J).
+
+**Map switching**: hold **R2** (the maps key) and pick with the shoulders —
+R2 → Symbols 1, R2+R1 → Symbols 2, R2+L1 → Symbols 3, R2+L1+R1 → Function Keys. Release R2 → **Utility**. Windows is a mappable key (Utility: right-stick press), not a modifier input.
+
+### Default maps
+
+| Slot | Utility | Symbols 1 | Symbols 2 | Symbols 3 | Function Keys |
+|---|---|---|---|---|---|
+| DPad ↑/↓/←/→ | ArrowUp / ArrowDown / ArrowLeft / ArrowRight | W / S / A / D | R / C / F / T | 1 / 2 / 3 / 4 | F1 / F2 / F3 / F4 |
+| Y / A / X / B | Delete / Enter / Space / Backspace | I / K / J / L | Y / B / G / H | 5 / 6 / 7 / 8 | F5 / F6 / F7 / F8 |
+| LSt ↑/↓/←/→ | PageUp / PageDown / Home / End | E / Z / Q / C | + / - / [ / ] | 0 / , / ' / ; | F9 / F10 / F11 / F12 |
+| L3 press | CapsLock (tap) | — | . | / | XButton1 (hold, mouse back) |
+| RSt ↑/↓/←/→ | Insert / PrintScreen / Escape / Tab | U / M / O / P | ' / \` / V / N | 9 / . / - / = | VolumeUp / VolumeDown / (stop) / MediaPlayPause |
+| R3 press | Windows key (tap LWin) | — | , | \\ | XButton2 (hold, mouse forward) |
+| Select | unbound | unbound | unbound | unbound | ScrollLock |
+| Start | switch to mouse mode | unbound | unbound | unbound | PauseBreak |
+
+Punctuation slots send the exact character via a Unicode key event (a plain VK tap of `+` would emit `=` on a US layout, and held Ctrl/Alt would rewrite the glyph further). `(stop)` maps to the media **Stop** key (VK_MEDIA_STOP): no browser-stop VK exists in the app's key table, so the closest existing vocabulary is used, per spec.
+
+### Key Maps overlay
+
+- Shown **only while input is enabled AND mode == DirectInput** (and `KeyMaps:ShowOverlay` on, default true). Click-through, never takes focus; driven at 60 Hz.
+- **Modifier row at top**: `[Ctrl] [Shift] [Alt] [Windows] CurrentMapName` — Ctrl/Shift/Alt tint green while held; Windows is a reminder chip only.
+- Gamepad-like grid below: all five maps share **one fixed position grid**; the active map renders opaque, the others as ~50%-transparent **shadow keys at the same positions** while R2 is held (L1-combo map keys are always readable at their slot's position, so combos never move the muscle-memory target — swapping maps only swaps opacities). Unbound slots show a dim dash; Select/Start appear only on the maps where they are bound.
+
+Settings (`%APPDATA%\DevelopmentGamepadKeyboard\settings.json`):
+
+```json
+"KeyMaps": {
+  "StickTapThreshold": 0.55,
+  "ShowOverlay": true,
+  "Maps": [ { "Name": "Utility", "DPadUp": "ArrowUp", … }, … ]
+}
+```
+
+Per-map slots: Select/Start, DPad ×4, face Y/A/X/B, left stick ↑/↓/←/→ + press, right stick ↑/↓/←/→ + press. Slot values use the input-sender key vocabulary (`ArrowUp`, `F1`, single punctuation characters …, `XButton1`, app actions like `MouseMode`), `""` or `"None"` = unbound. The five maps are always present in settings (blank/drifted files refill with spec defaults). The slot **editing UI is a later task** — defaults ship exactly as above.
 
 ---
 

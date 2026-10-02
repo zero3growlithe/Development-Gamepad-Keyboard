@@ -20,6 +20,7 @@ namespace GamepadKeyboard
         private readonly ControllerMapper _mapper;
         private readonly HidHideSession _hidHide = new();
         private readonly KeyboardOverlay _keyboard;
+        private readonly KeyMapsOverlayWindow _keyMapsOverlay = new();
         private readonly StatusToastOverlay _toast = new();
         private readonly LegendOverlay _legend = new();
         private NotifyIcon? _tray;
@@ -30,6 +31,8 @@ namespace GamepadKeyboard
         private bool _settingsDirty;
         private long _lastUiRefreshTimestamp;
         private int _uiRefreshQueued;
+        private long _lastKeyMapsUiTimestamp;
+        private int _keyMapsUiQueued;
         private static readonly long UiRefreshInterval = Math.Max(1, System.Diagnostics.Stopwatch.Frequency / 60);
         private readonly System.Windows.Threading.DispatcherTimer _saveTimer =
             new() { Interval = TimeSpan.FromSeconds(2) };
@@ -91,6 +94,7 @@ namespace GamepadKeyboard
             // a profile-defined EnableInput binding starts the tool normally
             _keyboard.Hide();
             _legend.Hide();
+            _keyMapsOverlay.Update(_mapper);
             _mapper.Mode = Settings.AppSettings.Instance.StartInMouseMode
                 ? ControllerMapper.MapperMode.Mouse
                 : ControllerMapper.MapperMode.Keyboard;
@@ -322,6 +326,22 @@ namespace GamepadKeyboard
                     RefreshUiCore(refreshStatic: false);
                 }));
             }
+            if (_mapper.MouseMode)
+            {
+                // Key Maps mode lives in the "mouse-like" deadzone family, so the
+                // keyboard branch above skips it. Queue its 60 Hz overlay pass.
+                if (_mapper.Mode != ControllerMapper.MapperMode.DirectInput) return;
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                long previous = System.Threading.Interlocked.Read(ref _lastKeyMapsUiTimestamp);
+                if (now - previous < UiRefreshInterval) return;
+                if (System.Threading.Interlocked.CompareExchange(ref _keyMapsUiQueued, 1, 0) != 0) return;
+                System.Threading.Interlocked.Exchange(ref _lastKeyMapsUiTimestamp, now);
+                _keyboard.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    System.Threading.Interlocked.Exchange(ref _keyMapsUiQueued, 0);
+                    _keyMapsOverlay.Update(_mapper);
+                }));
+            }
         }
 
         private void OnInputEnabledChanged(bool enabled)
@@ -459,6 +479,9 @@ namespace GamepadKeyboard
                 }
                 _keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
             }
+            // Key Maps overlay follows mode/enable transitions (mode switch,
+            // disable) that arrive as StateChanged instead of a poll tick.
+            _keyMapsOverlay.Update(_mapper);
             if (!_mapper.MouseMode)
             {
                 _keyboard.UpdateCursor(true, _mapper.LeftRayX, _mapper.LeftRayY,
@@ -528,6 +551,7 @@ namespace GamepadKeyboard
             _hidHide.Dispose();
             _pad.Dispose();
             _toast.Close();
+            _keyMapsOverlay.Close();
             if (_tray != null)
             {
                 _tray.Visible = false;

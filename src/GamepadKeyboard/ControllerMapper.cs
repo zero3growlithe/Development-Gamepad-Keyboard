@@ -143,6 +143,8 @@ namespace GamepadKeyboard
         public ControllerMapper(KeyboardLayout layout)
         {
             _layout = layout;
+            _keyMaps = new KeyMapsMapper(_sender);
+            _keyMaps.ActionRequested = action => _pendingKeyMapsAction = action;
             ResetKeyboardCursors();
         }
 
@@ -190,7 +192,7 @@ namespace GamepadKeyboard
             switch (Mode)
             {
                 case MapperMode.Mouse: ProcessMouse(s); break;
-                case MapperMode.DirectInput: ProcessMouse(s); break; // stub until the DirectInput feature lands
+                case MapperMode.DirectInput: ProcessKeyMaps(s); break;
                 default: ProcessKeyboardMode(s); break;
             }
 
@@ -263,6 +265,31 @@ namespace GamepadKeyboard
             DispatchSingleBindings(profile.Bindings, s, keyboardMode: false);
             FinishComboFrame(s);
         }
+
+        // ── Key Maps mode (DirectInput) ───────────────────────────────────────
+
+        private readonly KeyMapsMapper _keyMaps;
+
+        private void ProcessKeyMaps(in GamepadSnapshot s)
+        {
+            // The mapper swallows + rate-limits its own errors; the app-level
+            // action (Start = MouseMode) runs after the tick so it cannot be
+            // interrupted mid-dispatch.
+            _keyMaps.Process(s);
+            string? requestedAction = _pendingKeyMapsAction;
+            _pendingKeyMapsAction = null;
+            if (requestedAction != null)
+            {
+                RunActionOnce(requestedAction);
+            }
+        }
+
+        private string? _pendingKeyMapsAction;
+
+        /// <summary>Overlay state of the Key Maps mode (null outside it — the
+        /// overlay hides on null). Poll-thread written, UI-thread read; the
+        /// bools are single writes, races degrade gracefully.</summary>
+        public Input.KeyMapsMapper? KeyMaps => Mode == MapperMode.DirectInput ? _keyMaps : null;
 
         private static bool IsActionHeld(List<ProfileBinding> bindings, string action, in GamepadSnapshot s)
         {
@@ -934,9 +961,12 @@ namespace GamepadKeyboard
                     StateChanged?.Invoke();
                     break;
                 case "DirectInputMode":
+                case "KeyMapsMode":
                     if (Mode == MapperMode.Keyboard) ReleaseAllModifiers();
                     Mode = MapperMode.DirectInput;
                     StateChanged?.Invoke();
+                    App.Log("key maps mode: entered");
+                    Notification?.Invoke("mode: Key Maps");
                     break;
 
                 case "ToggleMoveScaleKeyboard":
@@ -1165,9 +1195,10 @@ namespace GamepadKeyboard
             }
             ReleaseHeldClicks();  // no stuck mouse buttons on disable / mode switch
             ReleaseHeldRayKeys(); // no stuck held-typed keys
+            _keyMaps.ReleaseAll(); // no stuck Side-mouse/modifiers from Key Maps taps
         }
 
-        private static bool IsExtendedKey(ushort vk) => vk is
+        internal static bool IsExtendedKey(ushort vk) => vk is
             Vk.Delete or Vk.Insert or Vk.Up or Vk.Down or Vk.Left or Vk.Right
             or Vk.PageUp or Vk.PageDown or Vk.Home or Vk.End;
 
@@ -1205,7 +1236,7 @@ namespace GamepadKeyboard
             for (int i = mods.Count - 1; i >= 0; i--) _sender.KeyUp(mods[i]);
         }
 
-        private static ushort NamedVk(string name)
+        internal static ushort NamedVk(string name)
         {
             if (name.Length == 1)
             {
@@ -1241,9 +1272,28 @@ namespace GamepadKeyboard
                 "NumPad0" => Vk.NumPad0, "NumPad1" => 0x61, "NumPad2" => 0x62, "NumPad3" => 0x63,
                 "NumPad4" => 0x64, "NumPad5" => 0x65, "NumPad6" => 0x66, "NumPad7" => 0x67,
                 "NumPad8" => 0x68, "NumPad9" => Vk.NumPad9,
+                "Windows" or "LeftWindows" => Vk.LWin,
+                "RightWindows" => Vk.RWin,
+                "ScrollLock" or "ScrlLock" => Vk.Scroll,
+                "PauseBreak" => Vk.Pause,
+                "PrintScreen" or "PrntScrn" => Vk.Print,
+                // No VK_BROWSER_STOP in the app's Vk table; the closest existing
+                // media action is the stop transport key (VK_MEDIA_PLAY_PAUSE's
+                // sibling) — the spec asks "if present, else closest existing".
+                "BrowserStop" => Vk.MediaStop,
                 _ => Vk.None
             };
         }
+
+        /// <summary>True for actions that are app-level commands, not key taps or
+        /// mouse buttons — a Key Maps slot can request them (Mode switch,
+        /// profiles), and every consumer treats them as tap edges.</summary>
+        internal static bool IsAppLevelAction(string action) => action is
+            "KeyboardMode" or "MouseMode" or "DirectInputMode" or "CycleInputMode"
+            or "ToggleKeyboardMouseMode" or "EnableInput" or "DisableInput" or "ToggleInput"
+            or "SwitchKeyboardProfile" or "SwitchMouseProfile" or "SwitchStickPointsProfile"
+            or "ToggleOverlay" or "ToggleKeyboard" or "ToggleLegend"
+            or "ToggleMoveScaleKeyboard";
 
         private void SwitchProfile(int dir)
         {

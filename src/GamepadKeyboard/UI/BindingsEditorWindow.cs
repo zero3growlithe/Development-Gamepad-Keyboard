@@ -718,7 +718,7 @@ namespace GamepadKeyboard.UI
             "MoveRightCursorUp", "MoveRightCursorDown", "MoveRightCursorLeft", "MoveRightCursorRight",
             // app control
             "EnableInput", "DisableInput", "ToggleInput",
-            "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode", "DirectInputMode", "CycleInputMode",
+            "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode", "DirectInputMode", "KeyMapsMode", "CycleInputMode",
             "ToggleMoveScaleKeyboard",
             "ToggleKeyboard", "ToggleLegend",
             "SwitchKeyboardProfile", "SwitchMouseProfile", "SwitchStickPointsProfile",
