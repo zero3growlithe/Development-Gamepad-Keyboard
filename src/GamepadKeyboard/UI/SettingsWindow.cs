@@ -295,7 +295,7 @@ namespace GamepadKeyboard.UI
             return rows.ToArray();
         }
 
-        private void InitializeKeyMapsLayoutEditors(AppSettings s)
+        private void InitializeKeyMapsLayoutEditors(Settings.AppSettings s)
         {
             KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
             _keyMapsKeySize.Text = layout.KeySize.ToString("0.##");
@@ -375,7 +375,7 @@ namespace GamepadKeyboard.UI
         }
 
         /// <summary>Pushes validated Key Maps layout values back into settings.</summary>
-        private void SaveKeyMapsLayout(AppSettings s)
+        private void SaveKeyMapsLayout(Settings.AppSettings s)
         {
             KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
             layout.KeySize = ReadValidatedNumber(_keyMapsKeySize);
