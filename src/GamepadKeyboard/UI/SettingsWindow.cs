@@ -297,16 +297,16 @@ namespace GamepadKeyboard.UI
 
         private void InitializeKeyMapsLayoutEditors(Settings.AppSettings s)
         {
-            KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
+            Settings.KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
             _keyMapsKeySize.Text = layout.KeySize.ToString("0.##");
             foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
             {
-                double value = typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 0.0;
+                double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 0.0;
                 pair.Value.Text = value.ToString("0.#");
             }
             foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
             {
-                double value = typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 1.0;
+                double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 1.0;
                 pair.Value.Text = value.ToString("0.##");
             }
             ConfigureNumericValidation(_keyMapsKeySize, value => value is >= 0.6 and <= 2.0, "0.##");
@@ -377,16 +377,16 @@ namespace GamepadKeyboard.UI
         /// <summary>Pushes validated Key Maps layout values back into settings.</summary>
         private void SaveKeyMapsLayout(Settings.AppSettings s)
         {
-            KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
+            Settings.KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
             layout.KeySize = ReadValidatedNumber(_keyMapsKeySize);
             foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
             {
-                typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
+                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
                     layout, ReadValidatedNumber(pair.Value));
             }
             foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
             {
-                typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
+                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
                     layout, ReadValidatedNumber(pair.Value));
             }
             layout.Normalize();
