@@ -250,15 +250,34 @@ namespace GamepadKeyboard.UI
                 _chips.Add(new ChipView { Border = chipBorder, ModIndex = index });
             }
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
-            double comboRowY = 14 * boardScale;
-            double comboX = ChipColumnX(3, boardScale) + ChipWidth * boardScale + 18 * boardScale;
-            _comboChips[0] = MakeComboChip("L1", comboX, comboRowY, boardScale);
-            _comboChips[1] = MakeComboChip("R1", comboX + 56 * boardScale, comboRowY, boardScale);
-            _comboChips[2] = MakeComboChip("L+R", comboX + 112 * boardScale, comboRowY, boardScale);
-            double mapNameLeft = ChipColumnX(3, boardScale) + ChipWidth * boardScale + 150 * boardScale;
+            double mapNameLeft = ChipColumnX(3, boardScale) + ChipWidth * boardScale + 40;
             Canvas.SetLeft(_mapNameLabel, mapNameLeft);
             Canvas.SetTop(_mapNameLabel, 16 * boardScale);
             _root.Children.Add(_mapNameLabel);
+            BuildComboChips(boardScale);
+        }
+
+        /// <summary>Combo markers on the board edges, per spec: [L1] beside the
+        /// left clusters, [R1] beside the right ones, [L1 + R1] below them —
+        /// visible (semi-transparent) only while the maps key is held, turning
+        /// opaque/green when their combo is actually held.</summary>
+        private void BuildComboChips(double boardScale)
+        {
+            // Vertical anchor: middle of the upper cluster rows (default layout).
+            double upperRowY = (BoardHeight / 2.0 + 20.0) - (3 * TilePitchY - TileGap) / 2.0 - 132.0 / 2.0 + (TilePitchY - TileGap) / 2.0;
+            double chipY = upperRowY - ChipHeight * boardScale / 2.0;
+            double bottomY = BoardHeight - 44.0;
+            _comboChips[0] = MakeComboChip("L1", 12, chipY, boardScale);
+            _comboChips[1] = MakeComboChip("R1", BoardWidth - 12 - 46 * boardScale, chipY, boardScale);
+            _comboChips[2] = MakeComboChip("L1 + R1", (BoardWidth - 74 * boardScale) / 2.0, bottomY, boardScale);
+            _lastRenderedComboHeld = false;
+            foreach (Border? chip in _comboChips)
+            {
+                if (chip != null)
+                {
+                    chip.Opacity = 0.0;   // hidden until the maps key is held
+                }
+            }
         }
 
         private static double ChipColumnX(int index, double boardScale)
@@ -418,15 +437,16 @@ namespace GamepadKeyboard.UI
 
         // ── Modifier chips ──────────────────────────────────────────────────────
 
-        /// <summary>Combo chips: [L1] [R1] [L+R] in the modifier row always
-        /// visible (dim by default), brightening to combo-active opacity.</summary>
+        /// <summary>Combo chips: [L1] [R1] [L1+R1] on the board edges — built
+        /// once per rebuild, opacity-driven per tick.</summary>
         private readonly Border?[] _comboChips = new Border?[3];
+        private bool _lastRenderedComboHeld;
 
         private Border MakeComboChip(string label, double x, double y, double boardScale)
         {
             Border chip = new()
             {
-                Width = 46 * boardScale,
+                Width = label.Length > 2 ? 74 * boardScale : 46 * boardScale,
                 Height = ChipHeight * boardScale,
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
@@ -452,6 +472,7 @@ namespace GamepadKeyboard.UI
 
         private void ApplyComboChipStates(Input.KeyMapsMapper keyMaps)
         {
+            bool mapsKeyHeld = keyMaps.MapsKeyHeld;
             bool[] comboActive =
             {
                 keyMaps.Sym3ComboHeld,
@@ -466,7 +487,10 @@ namespace GamepadKeyboard.UI
                     continue;
                 }
                 bool active = comboActive[index];
-                chip.Opacity = active ? 1.0 : 0.55;
+                // Visible (semi-transparent) while the maps key is held —
+                // hidden entirely otherwise; brightens + greens while the
+                // combo itself is held.
+                chip.Opacity = active ? 1.0 : (mapsKeyHeld ? 0.55 : 0.0);
                 chip.Background = active
                     ? new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57))
                     : new SolidColorBrush(Color.FromArgb(0x30, 0x20, 0x20, 0x20));
