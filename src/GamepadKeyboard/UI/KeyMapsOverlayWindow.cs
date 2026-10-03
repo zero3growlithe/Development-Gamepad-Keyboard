@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Runtime.InteropServices;
+using GamepadKeyboard.Native;
 using GamepadKeyboard.Settings;
 
 namespace GamepadKeyboard.UI
@@ -39,13 +40,9 @@ namespace GamepadKeyboard.UI
         private const double ChipGap = 10.0;
         private const double LabelFontSize = 11.5;
         private const double ShadowFontSize = 9.0;
-        private const double ClusterBreadthX = 96.0;   // horizontal air between cluster pairs
-        private const double ClusterBreadthY = 132.0;  // vertical air between upper and lower clusters
         private const double CenterColumnOffset = 14.0;
         private const double IdleShadowOpacity = 0.42;
         private const double ActiveOpacity = 1.0;
-        private const double CenterX = BoardWidth / 2.0;
-        private const double CenterY = BoardHeight / 2.0 + 20.0;
 
         private static readonly string[] ModifierNames = { "Ctrl", "Shift", "Alt", "Win" };
 
@@ -61,6 +58,12 @@ namespace GamepadKeyboard.UI
         private bool _wasMapsKeyHeld;
         private bool _bindingsDirty = true;
         private bool _shown;
+        private bool _followCursor;
+        private double _lastLayoutFingerprint = double.NaN;
+
+        /// <summary>Mirrors the keyboard window's "always show at cursor
+        /// position" behavior (set by AppOrchestrator from AppSettings).</summary>
+        public bool FollowCursor { get; set; }
 
         public KeyMapsOverlayWindow()
         {
@@ -120,13 +123,24 @@ namespace GamepadKeyboard.UI
                 _bindingsDirty = true;
                 _wasMapsKeyHeld = false;
                 _lastRenderedMapIndex = -1;
-                PositionBottomCenter();
+                _lastLayoutFingerprint = double.NaN;
+                if (FollowCursor)
+                {
+                    PositionAtCursor();
+                }
+                else
+                {
+                    PositionBottomCenter();
+                }
                 Visibility = Visibility.Visible;
             }
 
             Input.KeyMapsMapper keyMaps = mapper.KeyMaps!;
-            if (_bindingsDirty || !ReferenceEquals(_maps, AppSettings.Instance.KeyMaps.Maps))
+            double fingerprint = LayoutFingerprint();
+            if (_bindingsDirty || !ReferenceEquals(_maps, AppSettings.Instance.KeyMaps.Maps)
+                || fingerprint != _lastLayoutFingerprint)
             {
+                _lastLayoutFingerprint = fingerprint;
                 _maps = AppSettings.Instance.KeyMaps.Maps;
                 RebuildAll(Math.Clamp(keyMaps.ActiveMapIndex, 0, Math.Max(_maps.Count - 1, 0)));
             }
@@ -148,7 +162,7 @@ namespace GamepadKeyboard.UI
                 _lastRenderedMapIndex = activeIndex;
                 SwapActiveMap(activeIndex);
             }
-            ApplyChipStates(keyMaps);
+            ApplyChipStates(keyMaps, true);
         }
 
         /// <summary>Drops every tile and shadow so the next Update rebuilds the
@@ -156,6 +170,28 @@ namespace GamepadKeyboard.UI
         public void ResetView()
         {
             _bindingsDirty = true;
+            _lastLayoutFingerprint = double.NaN;
+        }
+
+        /// <summary>Moves the board to the current cursor position (clamped to
+        /// the cursor's monitor working area at that monitor's DPI) — same
+        /// behavior as the keyboard window's at-cursor mode.</summary>
+        public void PositionAtCursor()
+        {
+            System.Drawing.Point cursor = System.Windows.Forms.Cursor.Position;
+            System.Drawing.Rectangle screen = System.Windows.Forms.Screen.FromPoint(cursor).WorkingArea;
+            (double dpiX, double dpiY) = NativeMethods.EffectiveMonitorDpi(cursor.X, cursor.Y);
+            double scaleX = 96.0 / dpiX;
+            double scaleY = 96.0 / dpiY;
+            double workLeft = screen.Left * scaleX;
+            double workTop = screen.Top * scaleY;
+            double workRight = screen.Right * scaleX;
+            double workBottom = screen.Bottom * scaleY;
+            double maxLeft = Math.Max(workLeft, workRight - BoardWidth);
+            double maxTop = Math.Max(workTop, workBottom - BoardHeight);
+            Left = Math.Clamp(cursor.X * scaleX, workLeft, maxLeft);
+            Top = Math.Clamp(cursor.Y * scaleY, workTop, maxTop);
+            _followCursor = true;
         }
 
         // ── Build ───────────────────────────────────────────────────────────────
@@ -171,66 +207,107 @@ namespace GamepadKeyboard.UI
             {
                 return;
             }
-            BuildModifierRow();
-            BuildCenterColumn(activeIndex);
-            BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad);
-            BuildCluster(activeIndex, +1, -1, ClusterGeometry.Face);
-            BuildCluster(activeIndex, -1, +1, ClusterGeometry.LeftStick);
-            BuildCluster(activeIndex, +1, +1, ClusterGeometry.RightStick);
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            if (layout.KeySize != _windowKeySize)
+            {
+                _windowKeySize = layout.KeySize;
+                Width = BoardWidth * layout.KeySize;
+                Height = BoardHeight * layout.KeySize;
+            }
+            double boardScale = Width / BoardWidth;
+            BuildModifierRow(boardScale);
+            BuildCenterColumn(activeIndex, boardScale);
+            BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad, layout.DPadOffsetX, layout.DPadOffsetY, layout.DPadSpread, boardScale);
+            BuildCluster(activeIndex, +1, -1, ClusterGeometry.Face, layout.FaceOffsetX, layout.FaceOffsetY, layout.FaceSpread, boardScale);
+            BuildCluster(activeIndex, -1, +1, ClusterGeometry.LeftStick, layout.LeftStickOffsetX, layout.LeftStickOffsetY, layout.LeftStickSpread, boardScale);
+            BuildCluster(activeIndex, +1, +1, ClusterGeometry.RightStick, layout.RightStickOffsetX, layout.RightStickOffsetY, layout.RightStickSpread, boardScale);
             ApplyMapName(activeIndex);
             _lastRenderedMapIndex = activeIndex;
         }
 
-        private void BuildModifierRow()
+        /// <summary>Fingerprint of every layout-relevant setting; a change
+        /// forces a full rebuild so live edits show immediately.</summary>
+        private static double LayoutFingerprint()
+        {
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            return layout.DPadOffsetX + layout.DPadOffsetY * 1.001 +
+                   layout.FaceOffsetX * 1.002 + layout.FaceOffsetY * 1.003 +
+                   layout.LeftStickOffsetX * 1.004 + layout.LeftStickOffsetY * 1.005 +
+                   layout.RightStickOffsetX * 1.006 + layout.RightStickOffsetY * 1.007 +
+                   layout.DPadSpread * 2.0 + layout.FaceSpread * 2.1 +
+                   layout.LeftStickSpread * 2.2 + layout.RightStickSpread * 2.3 +
+                   layout.KeySize * 3.0;
+        }
+
+        private void BuildModifierRow(double boardScale)
         {
             for (int index = 0; index < ModifierNames.Length; index++)
             {
-                Border chipBorder = MakeChip(ModifierNames[index]);
-                Canvas.SetLeft(chipBorder, ChipColumnX(index));
-                Canvas.SetTop(chipBorder, 14);
+                Border chipBorder = MakeChip(ModifierNames[index], boardScale);
+                Canvas.SetLeft(chipBorder, ChipColumnX(index, boardScale));
+                Canvas.SetTop(chipBorder, 14 * boardScale);
                 _root.Children.Add(chipBorder);
                 _chips.Add(new ChipView { Border = chipBorder, ModIndex = index });
             }
-            double mapNameLeft = ChipColumnX(ModifierNames.Length - 1) + ChipWidth + 40;
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double comboRowY = 14 * boardScale;
+            double comboX = ChipColumnX(3, boardScale) + ChipWidth * boardScale + 18 * boardScale;
+            _comboChips[0] = MakeComboChip("L1", comboX, comboRowY, boardScale);
+            _comboChips[1] = MakeComboChip("R1", comboX + 56 * boardScale, comboRowY, boardScale);
+            _comboChips[2] = MakeComboChip("L+R", comboX + 112 * boardScale, comboRowY, boardScale);
+            double mapNameLeft = ChipColumnX(3, boardScale) + ChipWidth * boardScale + 150 * boardScale;
             Canvas.SetLeft(_mapNameLabel, mapNameLeft);
-            Canvas.SetTop(_mapNameLabel, 16);
+            Canvas.SetTop(_mapNameLabel, 16 * boardScale);
             _root.Children.Add(_mapNameLabel);
         }
 
-        private static double ChipColumnX(int index)
+        private static double ChipColumnX(int index, double boardScale)
         {
             double totalWidth = ModifierNames.Length * ChipWidth + (ModifierNames.Length - 1) * ChipGap;
-            return (BoardWidth - totalWidth) / 2.0 - 120.0 + index * (ChipWidth + ChipGap);
+            return (BoardWidth - totalWidth) / 2.0 - 120.0 + index * (ChipWidth + ChipGap) * boardScale;
         }
 
-        private void BuildCenterColumn(int activeIndex)
+        private void BuildCenterColumn(int activeIndex, double boardScale)
         {
+            double centerX = BoardWidth / 2.0;
+            double centerY = BoardHeight / 2.0 + 20.0;
             AddTile("Select", _maps[activeIndex],
-                CenterX - TileWidth / 2.0 - CenterColumnOffset, CenterY - TileHeight - 2.0);
+                centerX - TileWidth / 2.0 - CenterColumnOffset, centerY - TileHeight - 2.0, boardScale);
             AddTile("Start", _maps[activeIndex],
-                CenterX - TileWidth / 2.0 + CenterColumnOffset, CenterY + 2.0);
+                centerX - TileWidth / 2.0 + CenterColumnOffset, centerY + 2.0, boardScale);
         }
 
-        private void BuildCluster(int activeIndex, double clusterX, double clusterY, ClusterGeometry cluster)
+        private void BuildCluster(
+            int activeIndex, double clusterX, double clusterY, ClusterGeometry cluster,
+            double offsetPixels, double offsetY, double spread, double boardScale)
         {
-            double clusterSpanX = cluster.Columns * TilePitchX - TileGap;
-            double clusterSpanY = cluster.Rows * TilePitchY - TileGap;
-            double baseX = CenterX + clusterX * (clusterSpanX / 2.0 + ClusterBreadthX / 2.0) - clusterSpanX / 2.0;
-            double baseY = CenterY + clusterY * (clusterSpanY / 2.0 + ClusterBreadthY / 2.0) - clusterSpanY / 2.0;
+            double pitchX = (TileWidth + TileGap) * spread;
+            double pitchY = (TileHeight + TileGap) * spread;
+            double clusterSpanX = cluster.Columns * pitchX - TileGap;
+            double clusterSpanY = cluster.Rows * pitchY - TileGap;
+            double centerX = BoardWidth / 2.0;
+            double centerY = BoardHeight / 2.0 + 20.0;
+            double breadthX = 96.0;
+            double breadthY = 132.0;
+            double baseX = centerX + clusterX * (clusterSpanX / 2.0 + breadthX / 2.0)
+                + offsetPixels * boardScale - clusterSpanX / 2.0;
+            double baseY = centerY + clusterY * (clusterSpanY / 2.0 + breadthY / 2.0)
+                + offsetY * boardScale - clusterSpanY / 2.0;
             for (int index = 0; index < cluster.Placements.Count; index++)
             {
                 SlotPlacement placement = cluster.Placements[index];
                 AddTile(placement.SlotName, _maps[activeIndex],
-                    baseX + placement.Column * TilePitchX,
-                    baseY + placement.Row * TilePitchY);
+                    baseX + placement.Column * pitchX * boardScale,
+                    baseY + placement.Row * pitchY * boardScale,
+                    boardScale);
             }
         }
 
-        private void AddTile(string slot, KeyMapDefinition map, double left, double top)
+        private void AddTile(string slot, KeyMapDefinition map, double left, double top, double boardScale)
         {
             string label = LabelFor(map, slot);
-            TextBlock labelBlock = MakeLabel(SplitLabel(label), LabelFontSize);
-            Border border = MakeTileBorder(TileWidth, TileHeight);
+            TextBlock labelBlock = MakeLabel(SplitLabel(label), LabelFontSize * boardScale);
+            Border border = MakeTileBorder(TileWidth * boardScale, TileHeight * boardScale);
             border.Child = labelBlock;
             Canvas.SetLeft(border, left);
             Canvas.SetTop(border, top);
@@ -243,6 +320,7 @@ namespace GamepadKeyboard.UI
                 Slot = slot,
                 Left = left,
                 Top = top,
+                Width = TileWidth * boardScale,
             };
         }
 
@@ -272,11 +350,12 @@ namespace GamepadKeyboard.UI
                 return;   // slot unbound on that map — no shadow pill
             }
             (double dx, double dy) = ShadowOffsetOf(origin.Slot, mapIndex);
+            double tileWidth = origin.Width <= 0 ? TileWidth : origin.Width;
             // Negative dx: pill hugs the tile's LEFT edge (grows leftwards);
             // positive dx: pill grows rightwards from the tile's left edge.
             double resolvedLeft = dx < 0
-                ? origin.Left + dx + (TileWidth - ShadowWidth)
-                : origin.Left + dx;
+                ? origin.Left + dx * (tileWidth / TileWidth) + (tileWidth - ShadowWidth)
+                : origin.Left + dx * (tileWidth / TileWidth);
             TextBlock labelBlock = MakeLabel(SplitLabel(label), ShadowFontSize);
             Border border = MakeTileBorder(ShadowWidth, ShadowHeight);
             border.Child = labelBlock;
@@ -339,12 +418,74 @@ namespace GamepadKeyboard.UI
 
         // ── Modifier chips ──────────────────────────────────────────────────────
 
-        private void ApplyChipStates(Input.KeyMapsMapper keyMaps)
+        /// <summary>Combo chips: [L1] [R1] [L+R] in the modifier row always
+        /// visible (dim by default), brightening to combo-active opacity.</summary>
+        private readonly Border?[] _comboChips = new Border?[3];
+
+        private Border MakeComboChip(string label, double x, double y, double boardScale)
+        {
+            Border chip = new()
+            {
+                Width = 46 * boardScale,
+                Height = ChipHeight * boardScale,
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF)),
+                Background = new SolidColorBrush(Color.FromArgb(0x30, 0x20, 0x20, 0x20)),
+                Opacity = 0.55,
+                Child = new TextBlock
+                {
+                    Text = label,
+                    Foreground = Brushes.White,
+                    FontSize = 12 * boardScale,
+                    FontWeight = FontWeights.Medium,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            Canvas.SetLeft(chip, x);
+            Canvas.SetTop(chip, y);
+            _root.Children.Add(chip);
+            return chip;
+        }
+
+        private void ApplyComboChipStates(Input.KeyMapsMapper keyMaps)
+        {
+            bool[] comboActive =
+            {
+                keyMaps.Sym3ComboHeld,
+                keyMaps.Sym2ComboHeld,
+                keyMaps.FunctionComboHeld,
+            };
+            for (int index = 0; index < _comboChips.Length; index++)
+            {
+                Border? chip = _comboChips[index];
+                if (chip == null)
+                {
+                    continue;
+                }
+                bool active = comboActive[index];
+                chip.Opacity = active ? 1.0 : 0.55;
+                chip.Background = active
+                    ? new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57))
+                    : new SolidColorBrush(Color.FromArgb(0x30, 0x20, 0x20, 0x20));
+                chip.BorderBrush = active
+                    ? new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A))
+                    : new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
+            }
+        }
+
+        private void ApplyChipStates(Input.KeyMapsMapper keyMaps, bool includeComboChips)
         {
             ApplyChipVisual(_chips[0].Border, keyMaps.CtrlHeld);
             ApplyChipVisual(_chips[1].Border, keyMaps.ShiftHeld);
             ApplyChipVisual(_chips[2].Border, keyMaps.AltHeld);
             ApplyChipVisual(_chips[3].Border, keyMaps.WindowsHeld);
+            if (includeComboChips)
+            {
+                ApplyComboChipStates(keyMaps);
+            }
         }
 
         private static void ApplyChipVisual(Border border, bool held)
@@ -364,12 +505,12 @@ namespace GamepadKeyboard.UI
 
         // ── Factories ───────────────────────────────────────────────────────────
 
-        private static Border MakeChip(string label)
+        private static Border MakeChip(string label, double boardScale)
         {
             return new Border
             {
-                Width = ChipWidth,
-                Height = ChipHeight,
+                Width = ChipWidth * boardScale,
+                Height = ChipHeight * boardScale,
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
                 Background = new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x20, 0x20)),
@@ -378,7 +519,7 @@ namespace GamepadKeyboard.UI
                 {
                     Text = label,
                     Foreground = Brushes.White,
-                    FontSize = 13,
+                    FontSize = 13 * boardScale,
                     FontWeight = FontWeights.Medium,
                     TextAlignment = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -652,6 +793,7 @@ namespace GamepadKeyboard.UI
             public string Slot = "";
             public double Left;
             public double Top;
+            public double Width;
             public int MapIndex;
         }
 
@@ -677,12 +819,15 @@ namespace GamepadKeyboard.UI
                 extendedStyle | WSExLayered | WSExTransparent | WSExToolWindow | WSExNoActivate);
         }
 
+        private double _windowKeySize = 1.0;
+
         private void PositionBottomCenter()
         {
             double screenWidth = SystemParameters.WorkArea.Width;
             double screenHeight = SystemParameters.WorkArea.Height;
-            Left = (screenWidth - BoardWidth) / 2.0;
-            Top = screenHeight - BoardHeight - 24.0;
+            Left = (screenWidth - Width) / 2.0;
+            Top = screenHeight - Height - 24.0;
+            _followCursor = false;
         }
     }
 }

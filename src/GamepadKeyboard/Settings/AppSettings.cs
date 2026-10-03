@@ -361,6 +361,7 @@ namespace GamepadKeyboard.Settings
     {
         public double StickTapThreshold { get; set; } = 0.55;
         public bool ShowOverlay { get; set; } = true;
+        public KeyMapsLayoutSettings Layout { get; set; } = new();
         public List<KeyMapDefinition> Maps { get; set; } = new()
         {
             new KeyMapDefinition("Utility"),
@@ -373,6 +374,8 @@ namespace GamepadKeyboard.Settings
         /// <summary>Clamp to exactly the spec's five maps (repair drifted files).</summary>
         public void Normalize()
         {
+            Layout ??= new KeyMapsLayoutSettings();
+            Layout.Normalize();
             if (Maps.Count == 5)
             {
                 foreach (KeyMapDefinition map in Maps)
@@ -389,6 +392,51 @@ namespace GamepadKeyboard.Settings
                 new KeyMapDefinition("Symbols 3"),
                 new KeyMapDefinition("Function Keys")
             };
+        }
+    }
+
+    /// <summary>Overlay layout tuning for Key Maps mode: per-key-wheel center
+    /// offsets relative to the board's current position, per-wheel tile spread
+    /// and a global key size multiplier. All values clamped in Normalize().</summary>
+    public sealed class KeyMapsLayoutSettings
+    {
+        /// <summary>Center offset of each key wheel relative to the overlay
+        /// window's default cluster anchor, in px (positive X = right,
+        /// positive Y = down).</summary>
+        public double DPadOffsetX { get; set; } = 0.0;
+        public double DPadOffsetY { get; set; } = 0.0;
+        public double FaceOffsetX { get; set; } = 0.0;
+        public double FaceOffsetY { get; set; } = 0.0;
+        public double LeftStickOffsetX { get; set; } = 0.0;
+        public double LeftStickOffsetY { get; set; } = 0.0;
+        public double RightStickOffsetX { get; set; } = 0.0;
+        public double RightStickOffsetY { get; set; } = 0.0;
+
+        /// <summary>Multiplier on the wheel's tile pitch (spread between a
+        /// wheel's own tiles). 1.0 = default.</summary>
+        public double DPadSpread { get; set; } = 1.0;
+        public double FaceSpread { get; set; } = 1.0;
+        public double LeftStickSpread { get; set; } = 1.0;
+        public double RightStickSpread { get; set; } = 1.0;
+
+        /// <summary>Global tile size multiplier (labels wrap inside tiles).</summary>
+        public double KeySize { get; set; } = 1.0;
+
+        public void Normalize()
+        {
+            DPadOffsetX = Math.Clamp(DPadOffsetX, -400.0, 400.0);
+            DPadOffsetY = Math.Clamp(DPadOffsetY, -300.0, 300.0);
+            FaceOffsetX = Math.Clamp(FaceOffsetX, -400.0, 400.0);
+            FaceOffsetY = Math.Clamp(FaceOffsetY, -300.0, 300.0);
+            LeftStickOffsetX = Math.Clamp(LeftStickOffsetX, -400.0, 400.0);
+            LeftStickOffsetY = Math.Clamp(LeftStickOffsetY, -300.0, 300.0);
+            RightStickOffsetX = Math.Clamp(RightStickOffsetX, -400.0, 400.0);
+            RightStickOffsetY = Math.Clamp(RightStickOffsetY, -300.0, 300.0);
+            DPadSpread = Math.Clamp(DPadSpread, 0.5, 2.0);
+            FaceSpread = Math.Clamp(FaceSpread, 0.5, 2.0);
+            LeftStickSpread = Math.Clamp(LeftStickSpread, 0.5, 2.0);
+            RightStickSpread = Math.Clamp(RightStickSpread, 0.5, 2.0);
+            KeySize = Math.Clamp(KeySize, 0.6, 2.0);
         }
     }
 

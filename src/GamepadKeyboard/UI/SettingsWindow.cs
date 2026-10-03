@@ -60,6 +60,9 @@ namespace GamepadKeyboard.UI
         private readonly TextBlock _hidHideSelection = new() { VerticalAlignment = VerticalAlignment.Center };
         private List<string> _hidHidePaths = new();
         private readonly List<Action> _numericValidators = new();
+        private readonly TextBox _keyMapsKeySize = new() { Text = "" };
+        private readonly Dictionary<string, TextBox> _keyMapsOffsets = new();
+        private readonly Dictionary<string, TextBox> _keyMapsSpreads = new();
 
         public SettingsWindow()
         {
@@ -96,6 +99,7 @@ namespace GamepadKeyboard.UI
             _hidHideLegacy.IsChecked = s.HidHideLegacyFallbackEnabled;
             _hidHidePaths = s.HidHideDeviceInstancePaths.ToList();
             UpdateHidHideSelectionText();
+            InitializeKeyMapsLayoutEditors(s);
 
             ConfigureNumericValidation(_spacing, value => value >= 0, "0.#");
             ConfigureNumericValidation(_keyboardMoveSpeed, value => value > 0, "0.#");
@@ -121,10 +125,11 @@ namespace GamepadKeyboard.UI
             tabs.Items.Add(new TabItem
             {
                 Header = "Keyboard",
-                Content = MakeSettingsForm(
-                    ("Key spacing (px gap between keys):", _spacing),
-                    ("Keyboard move speed:", _keyboardMoveSpeed),
-                    ("Stick deadzone (0.000–0.5):", _deadzone))
+                Content = new ScrollViewer
+                {
+                    Content = MakeSettingsForm(BuildKeyboardTabRows()),
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                }
             });
             tabs.Items.Add(new TabItem
             {
@@ -205,6 +210,14 @@ namespace GamepadKeyboard.UI
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 5, 10, 5)
                 };
+                if (rows[i].editor == null)
+                {
+                    label.FontWeight = FontWeights.SemiBold;
+                    label.Margin = new Thickness(0, 12, 10, 5);
+                    Grid.SetColumnSpan(label, 2);
+                    grid.Children.Add(label);
+                    continue;
+                }
                 rows[i].editor.Margin = new Thickness(0, 5, 0, 5);
                 Grid.SetRow(label, i);
                 Grid.SetColumn(rows[i].editor, 1);
@@ -218,6 +231,93 @@ namespace GamepadKeyboard.UI
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
             };
+        }
+
+        /// <summary>Keyboard tab rows: the classic keyboard settings plus the
+        /// Key Maps layout section (per-wheel X/Y offsets relative to the board
+        /// position, per-wheel spread and the global key size) — created here
+        /// so initial values and validators bind once.</summary>
+        private (string, FrameworkElement)[] BuildKeyboardTabRows()
+        {
+            List<(string, FrameworkElement)> rows = new()
+            {
+                ("Key spacing (px gap between keys):", _spacing),
+                ("Keyboard move speed:", _keyboardMoveSpeed),
+                ("Stick deadzone (0.000–0.5):", _deadzone),
+                ("── Key Maps layout ──", null!),
+            };
+            rows.AddRange(BuildKeyMapsLayoutRows());
+            return rows.ToArray();
+        }
+
+        /// <summary>Key Maps layout editors: per-wheel X/Y offsets relative to
+        /// the board position, per-wheel spread and the global key size —
+        /// created here so initial values and validators bind once.</summary>
+        private (string, FrameworkElement)[] BuildKeyMapsLayoutRows()
+        {
+            (string key, string label)[] wheels =
+            {
+                ("DPad", "D-Pad"),
+                ("Face", "Face buttons"),
+                ("LeftStick", "Left analog stick"),
+                ("RightStick", "Right analog stick"),
+            };
+            List<(string, FrameworkElement)> rows = new()
+            {
+                ("Key size (multiplier, 0.6–2.0):", _keyMapsKeySize),
+            };
+            foreach ((string key, string label) in wheels)
+            {
+                TextBox offsetX = new() { Text = "" };
+                TextBox offsetY = new() { Text = "" };
+                TextBox spread = new() { Text = "" };
+                _keyMapsOffsets[key + "OffsetX"] = offsetX;
+                _keyMapsOffsets[key + "OffsetY"] = offsetY;
+                _keyMapsSpreads[key + "Spread"] = spread;
+                StackPanel pair = new() { Orientation = Orientation.Horizontal };
+                pair.Children.Add(new TextBlock
+                {
+                    Text = "X:",
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 4, 0)
+                });
+                pair.Children.Add(offsetX);
+                pair.Children.Add(new TextBlock
+                {
+                    Text = "  Y:",
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 4, 0)
+                });
+                pair.Children.Add(offsetY);
+                rows.Add((label + " center offset X/Y (px relative to board):", pair));
+                rows.Add((label + " spread (multiplier, 0.5–2.0):", spread));
+            }
+            return rows.ToArray();
+        }
+
+        private void InitializeKeyMapsLayoutEditors(AppSettings s)
+        {
+            KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
+            _keyMapsKeySize.Text = layout.KeySize.ToString("0.##");
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
+            {
+                double value = typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 0.0;
+                pair.Value.Text = value.ToString("0.#");
+            }
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
+            {
+                double value = typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 1.0;
+                pair.Value.Text = value.ToString("0.##");
+            }
+            ConfigureNumericValidation(_keyMapsKeySize, value => value is >= 0.6 and <= 2.0, "0.##");
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
+            {
+                ConfigureNumericValidation(pair.Value, value => value >= -400 && value <= 400, "0.#");
+            }
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
+            {
+                ConfigureNumericValidation(pair.Value, value => value >= 0.5 && value <= 2.0, "0.##");
+            }
         }
 
         private void Save()
@@ -246,6 +346,7 @@ namespace GamepadKeyboard.UI
             s.FreeCursorEnabled = _freeCursor.IsChecked == true;
             s.FreeCursorSpeed = ReadValidatedNumber(_freeCursorSpeed);
             s.HideCenterPointsAndRaysInFreeCursor = _hideCentersAndRays.IsChecked == true;
+            SaveKeyMapsLayout(s);
             s.ShowButtonLegend = _legend.IsChecked == true;
             s.AlwaysShowKeyboardAtCursorPosition = _showAtCursor.IsChecked == true;
             s.ProfileToastPermanent = _toastPermanent.IsChecked == true;
@@ -271,6 +372,24 @@ namespace GamepadKeyboard.UI
             AppOrchestrator.NotifyStickPointsChanged();
             if (hidHideChanged)
                 AppOrchestrator.NotifyHidHideSettingsChanged();
+        }
+
+        /// <summary>Pushes validated Key Maps layout values back into settings.</summary>
+        private void SaveKeyMapsLayout(AppSettings s)
+        {
+            KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
+            layout.KeySize = ReadValidatedNumber(_keyMapsKeySize);
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
+            {
+                typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
+                    layout, ReadValidatedNumber(pair.Value));
+            }
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
+            {
+                typeof(KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
+                    layout, ReadValidatedNumber(pair.Value));
+            }
+            layout.Normalize();
         }
 
         private FrameworkElement BuildHidHideSection()
