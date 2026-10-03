@@ -12,16 +12,20 @@ namespace GamepadKeyboard.Input
     /// with R1 to Symbols 2, with L1 to Symbols 3, with L1+R1 to Function Keys —
     /// and releasing R2 returns to the Utility map. Every other physical slot
     /// (d-pad, face, stick deflections, stick presses, Select/Start) sends one
-    /// edge-triggered tap of its mapped key, so a held stick never repeats:
-    /// typing is discrete by construction, and the physical chord
-    /// (LB/RB/LT/R2) is what makes it usable at 250 Hz.
+    /// edge-triggered tap of its mapped key, so a held stick never repeats.
+    ///
+    /// Modifier locking: pressing the maps key LATCHES every currently held
+    /// modifier (Shift/Ctrl/Alt and the Windows key) down; while the maps key
+    /// stays held their physical controls toggle the latch (press again to
+    /// unlock), and releasing them does nothing — so Ctrl+key combos survive
+    /// LB/RB doing map selection. Releasing the maps key clears all latches
+    /// and the modifiers follow their physical controls again.
     ///
     /// Modifier state is driven by real KeyDown/KeyUp pairs, so a held modifier
-    /// naturally combines with every tapped map key (same semantics as
-    /// keyboard-mode Hold*). Punctuation slots are typed through
-    /// KEYEVENTF_UNICODE so the exact character lands even with Ctrl or Alt
-    /// held: a VK tap of "+" emits "=" on a US layout, and real modifiers would
-    /// further rewrite it.
+    /// naturally combines with every tapped map key. Punctuation slots are
+    /// typed through KEYEVENTF_UNICODE so the exact character lands even with
+    /// Ctrl or Alt held: a VK tap of "+" emits "=" on a US layout, and real
+    /// modifiers would further rewrite it.
     /// </summary>
     public sealed class KeyMapsMapper
     {
@@ -35,9 +39,21 @@ namespace GamepadKeyboard.Input
         /// 3 = Symbols 3, 4 = Function Keys (indexes into KeyMapsSettings.Maps
         /// and the overlay's layout array).</summary>
         public int ActiveMapIndex { get; private set; }
-        public bool CtrlHeld { get; private set; }
-        public bool ShiftHeld { get; private set; }
-        public bool AltHeld { get; private set; }
+
+        /// <summary>Physical chord state while the maps key is held — the
+        /// overlay brightens the RIGHT strip for Symbols 2 (R2+R1), the LEFT
+        /// strip for Symbols 3 (R2+L1) and the BOTTOM strip for Function Keys
+        /// (R2+L1+R1).</summary>
+        public bool Sym2ComboHeld { get; private set; }
+        public bool Sym3ComboHeld { get; private set; }
+        public bool FunctionComboHeld { get; private set; }
+
+        /// <summary>Effective (latched OR physically held) modifier states —
+        /// what the overlay's [Ctrl][Shift][Alt][Windows] chips highlight.</summary>
+        public bool CtrlHeld => _ctrlHeld;
+        public bool ShiftHeld => _shiftHeld;
+        public bool AltHeld => _altHeld;
+        public bool WindowsHeld => _windowsHeld;
 
         /// <summary>App-level action requested by a map slot's tap edge
         /// (e.g. Start = MouseMode on the Utility map). Invoked by
@@ -51,10 +67,22 @@ namespace GamepadKeyboard.Input
         // ── Edge state: previous-tick heldness per physical input ─────────────
         // All in the mapper, no per-tick allocations; the stick deflections use
         // the SAME thresholded booleans the tap logic sees.
+        private bool _seedRun;
         private bool _seeded;
+        private bool _previousMapsKey;
         private bool _previousShift;
         private bool _previousCtrl;
         private bool _previousAlt;
+        private bool _shiftHeld;
+        private bool _ctrlHeld;
+        private bool _altHeld;
+        private bool _windowsHeld;
+        private bool _shiftLocked;
+        private bool _ctrlLocked;
+        private bool _altLocked;
+        private bool _windowsLocked;
+        private ushort _latchedWindowsVk;
+        private bool _latchedWindowsExtended;
         private bool _previousDPadUp;
         private bool _previousDPadDown;
         private bool _previousDPadLeft;
@@ -93,18 +121,11 @@ namespace GamepadKeyboard.Input
         {
             try
             {
-                if (!_seeded)
-                {
-                    // First tick after entering the mode or after ReleaseAll:
-                    // latch current physical heldness so buttons held across the
-                    // transition cannot fire phantom taps; still-held modifiers
-                    // re-assert their KeyDown below (ReleaseAll leaves their
-                    // previous state false, so an edge asserts again).
-                    _seeded = true;
-                    ProcessModifiers(snapshot);
-                    SeedSlotEdges(snapshot);
-                    return;
-                }
+                _seedRun = !_seeded;
+                _seeded = true;
+                // The seed run IS a full tick — modifiers/windows assert here,
+                // but TapSlot suppresses edges (no phantom taps from buttons
+                // held across a mode switch or ReleaseAll).
                 ProcessTick(snapshot);
             }
             catch (Exception exception)
@@ -121,9 +142,9 @@ namespace GamepadKeyboard.Input
 
         /// <summary>
         /// Drops everything this mode can hold: sends X-up for any held side
-        /// mouse button, KeyUp for Shift/Ctrl/Alt, then re-seeds edges. Windows
-        /// key is a TAP (no held state); CapsLock is a toggle key the OS
-        /// remembers by design — the spec's toggle behavior.
+        /// mouse button, KeyUp for Shift/Ctrl/Alt/Windows, then re-seeds edges.
+        /// CapsLock is a toggle key the OS remembers by design — the spec's
+        /// toggle behavior.
         /// </summary>
         public void ReleaseAll()
         {
@@ -138,14 +159,22 @@ namespace GamepadKeyboard.Input
                 _sender.MouseButtonRelease(NativeMethods.MOUSEEVENTF_XUP, 2u);
                 _heldXButton2 = false;
             }
-            if (ShiftHeld) _sender.KeyUp(Vk.LShift);
-            if (CtrlHeld) _sender.KeyUp(Vk.LControl);
-            if (AltHeld) _sender.KeyUp(Vk.LMenu);
-            ShiftHeld = CtrlHeld = AltHeld = false;
-            _previousShift = false;
-            _previousCtrl = false;
-            _previousAlt = false;
+            if (_shiftHeld) _sender.KeyUp(Vk.LShift);
+            if (_ctrlHeld) _sender.KeyUp(Vk.LControl);
+            if (_altHeld) _sender.KeyUp(Vk.LMenu);
+            if (_windowsHeld && _latchedWindowsVk != Vk.None)
+            {
+                _sender.KeyUp(_latchedWindowsVk, _latchedWindowsExtended);
+            }
+            _shiftHeld = _ctrlHeld = _altHeld = _windowsHeld = false;
+            _shiftLocked = _ctrlLocked = _altLocked = _windowsLocked = false;
+            _latchedWindowsVk = Vk.None;
+            _previousShift = _previousCtrl = _previousAlt = false;
+            _previousMapsKey = false;
+            _previousRightStickPress = false;
+            _previousStart = false;
             MapsKeyHeld = false;
+            Sym2ComboHeld = Sym3ComboHeld = FunctionComboHeld = false;
             ActiveMapIndex = 0;
             _lastLoggedMapIndex = 0;
         }
@@ -154,9 +183,11 @@ namespace GamepadKeyboard.Input
 
         private void ProcessTick(in GamepadSnapshot snapshot)
         {
-            ProcessModifiers(snapshot);
-
+            // Map selection (physical chord) FIRST: the modifier latch needs to
+            // know whether the maps key just went down on this very tick.
             bool mapsKey = snapshot.RightTrigger >= 0.5;
+            bool mapsKeyEdge = mapsKey && !_previousMapsKey;
+            _previousMapsKey = mapsKey;
             int mapIndex = mapsKey
                 ? snapshot.LB && snapshot.RB ? 4
                 : snapshot.LB ? 3
@@ -165,14 +196,20 @@ namespace GamepadKeyboard.Input
                 : 0;
             MapsKeyHeld = mapsKey;
             ActiveMapIndex = mapIndex;
+            Sym2ComboHeld = mapsKey && snapshot.RB;
+            Sym3ComboHeld = mapsKey && snapshot.LB;
+            FunctionComboHeld = mapsKey && snapshot.LB && snapshot.RB;
             LogMapChange(mapIndex);
 
             List<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
             KeyMapDefinition map = maps[Math.Clamp(mapIndex, 0, maps.Count - 1)];
-            double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
 
             // Modifier-selection buttons (LB/RB) MUST NOT be consumed as map
             // slots anywhere — they are the chord for Symbols 2/3/FunctionKeys.
+            // While the maps key is held they latch instead of tapping.
+            ProcessModifiers(snapshot, mapsKey, mapsKeyEdge, map);
+
+            double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
             TapSlot(ref _previousDPadUp, snapshot.DUp, map.DPadUp);
             TapSlot(ref _previousDPadDown, snapshot.DDown, map.DPadDown);
             TapSlot(ref _previousDPadLeft, snapshot.DLeft, map.DPadLeft);
@@ -190,44 +227,143 @@ namespace GamepadKeyboard.Input
             TapSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft);
             TapSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight);
             TapSlot(ref _previousLeftStickPress, snapshot.LS, map.LeftStickPress);
-            TapSlot(ref _previousRightStickPress, snapshot.RS, map.RightStickPress);
+            UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map);
             TapSlot(ref _previousSelect, snapshot.View, map.Select);
 
             // Start LAST: on the Utility map it requests the MouseMode switch,
             // which ends this mode for the rest of the tick.
-            DispatchStartSlot(ref _previousStart, snapshot.Menu, map.Start);
+            if (_seedRun)
+            {
+                _previousStart = snapshot.Menu;
+            }
+            else
+            {
+                DispatchStartSlot(ref _previousStart, snapshot.Menu, map.Start);
+            }
         }
 
-        private void ProcessModifiers(in GamepadSnapshot snapshot)
+        // ── Modifiers: physical hold + maps-key latch/lock ─────────────────────
+
+        private void ProcessModifiers(
+            in GamepadSnapshot snapshot, bool mapsKey, bool mapsKeyEdge, KeyMapDefinition map)
         {
-            bool shift = snapshot.LeftTrigger >= 0.5;
-            if (shift != _previousShift)
-            {
-                if (shift) _sender.KeyDown(Vk.LShift); else _sender.KeyUp(Vk.LShift);
-                ShiftHeld = shift;
-                _previousShift = shift;
-            }
+            UpdateLatchedModifier(snapshot.LeftTrigger >= 0.5, mapsKey, mapsKeyEdge,
+                ref _previousShift, ref _shiftLocked, ref _shiftHeld, Vk.LShift, false);
+            UpdateLatchedModifier(snapshot.LB, mapsKey, mapsKeyEdge,
+                ref _previousCtrl, ref _ctrlLocked, ref _ctrlHeld, Vk.LControl, false);
+            UpdateLatchedModifier(snapshot.RB, mapsKey, mapsKeyEdge,
+                ref _previousAlt, ref _altLocked, ref _altHeld, Vk.LMenu, false);
+        }
 
-            bool ctrl = snapshot.LB;
-            if (ctrl != _previousCtrl)
+        /// <summary>
+        /// One modifier's full state machine. Outside the maps key: the key
+        /// simply follows the physical control (KeyDown/KeyUp on edges). On the
+        /// maps-key press edge: whatever is physically held LATCHES down (real
+        /// KeyDown already sent, or sent now) and stays down regardless of the
+        /// physical control. While the maps key is held: a fresh press of the
+        /// physical control toggles the latch (lock, or unlock+release) so the
+        /// user is never stuck with a stuck modifier.
+        /// </summary>
+        private void UpdateLatchedModifier(
+            bool physical, bool mapsKey, bool mapsKeyEdge,
+            ref bool previousPhysical, ref bool locked, ref bool held,
+            ushort virtualKey, bool extended)
+        {
+            if (mapsKeyEdge)
             {
-                if (ctrl) _sender.KeyDown(Vk.LControl); else _sender.KeyUp(Vk.LControl);
-                CtrlHeld = ctrl;
-                _previousCtrl = ctrl;
+                // Entering maps: latch whatever is currently held so Ctrl/Alt
+                // keep flowing into map keys while LB/RB do map selection.
+                if (physical && !held)
+                {
+                    _sender.KeyDown(virtualKey, extended);
+                    held = true;
+                }
+                locked = physical;
+                previousPhysical = physical;
+                return;
             }
+            if (mapsKey)
+            {
+                // While maps is held the physical control only TOGGLES its
+                // latch: press again to unlock, release freely without
+                // dropping the key.
+                if (physical && !previousPhysical)
+                {
+                    if (locked)
+                    {
+                        locked = false;
+                        if (held)
+                        {
+                            _sender.KeyUp(virtualKey, extended);
+                            held = false;
+                        }
+                    }
+                    else
+                    {
+                        locked = true;
+                        if (!held)
+                        {
+                            _sender.KeyDown(virtualKey, extended);
+                            held = true;
+                        }
+                    }
+                }
+                previousPhysical = physical;
+                return;
+            }
+            locked = false;
+            if (held != physical)
+            {
+                if (physical)
+                {
+                    _sender.KeyDown(virtualKey, extended);
+                }
+                else
+                {
+                    _sender.KeyUp(virtualKey, extended);
+                }
+                held = physical;
+            }
+            previousPhysical = physical;
+        }
 
-            bool alt = snapshot.RB;
-            if (alt != _previousAlt)
+        /// <summary>
+        /// The right-stick PRESS is a HOLD slot (default: Windows key) — key
+        /// goes down with the stick press and up with its release. The mapped
+        /// key participates in the maps-key latch like the modifiers do.
+        /// </summary>
+        private void UpdateWindowsHold(
+            bool physical, bool mapsKey, bool mapsKeyEdge, KeyMapDefinition map)
+        {
+            string slot = map.RightStickPress;
+            if (ControllerMapper.IsAppLevelAction(slot))
             {
-                if (alt) _sender.KeyDown(Vk.LMenu); else _sender.KeyUp(Vk.LMenu);
-                AltHeld = alt;
-                _previousAlt = alt;
+                if (physical && !_previousRightStickPress && !_seedRun)
+                {
+                    ActionRequested?.Invoke(slot);
+                }
+                _previousRightStickPress = physical;
+                _latchedWindowsVk = Vk.None;
+                return;
             }
+            ushort virtualKey = ControllerMapper.NamedVk(slot);
+            if (virtualKey == Vk.None)
+            {
+                _previousRightStickPress = physical;
+                _latchedWindowsVk = Vk.None;
+                return;
+            }
+            bool extended = ControllerMapper.IsExtendedKey(virtualKey);
+            UpdateLatchedModifier(physical, mapsKey, mapsKeyEdge,
+                ref _previousRightStickPress, ref _windowsLocked, ref _windowsHeld,
+                virtualKey, extended);
+            _latchedWindowsVk = _windowsHeld ? virtualKey : Vk.None;
+            _latchedWindowsExtended = extended;
         }
 
         private void TapSlot(ref bool previous, bool held, string slot)
         {
-            if (held && !previous)
+            if (held && !previous && !_seedRun)
             {
                 SendSlotTap(slot);
             }
@@ -236,7 +372,7 @@ namespace GamepadKeyboard.Input
 
         private void DispatchStartSlot(ref bool previous, bool held, string slot)
         {
-            if (held && !previous && ControllerMapper.IsAppLevelAction(slot))
+            if (held && !previous && !_seedRun && ControllerMapper.IsAppLevelAction(slot))
             {
                 ActionRequested?.Invoke(slot);
             }
@@ -290,31 +426,6 @@ namespace GamepadKeyboard.Input
             List<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
             string mapName = mapIndex >= 0 && mapIndex < maps.Count ? maps[mapIndex].Name : mapIndex.ToString();
             App.Log("key maps mode: map -> " + mapName);
-        }
-
-        private void SeedSlotEdges(in GamepadSnapshot snapshot)
-        {
-            double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
-            _previousDPadUp = snapshot.DUp;
-            _previousDPadDown = snapshot.DDown;
-            _previousDPadLeft = snapshot.DLeft;
-            _previousDPadRight = snapshot.DRight;
-            _previousFaceY = snapshot.Y;
-            _previousFaceA = snapshot.A;
-            _previousFaceX = snapshot.X;
-            _previousFaceB = snapshot.B;
-            _previousLeftStickUp = snapshot.LY >= threshold;
-            _previousLeftStickDown = snapshot.LY <= -threshold;
-            _previousLeftStickLeft = snapshot.LX <= -threshold;
-            _previousLeftStickRight = snapshot.LX >= threshold;
-            _previousRightStickUp = snapshot.RY >= threshold;
-            _previousRightStickDown = snapshot.RY <= -threshold;
-            _previousRightStickLeft = snapshot.RX <= -threshold;
-            _previousRightStickRight = snapshot.RX >= threshold;
-            _previousLeftStickPress = snapshot.LS;
-            _previousRightStickPress = snapshot.RS;
-            _previousSelect = snapshot.View;
-            _previousStart = snapshot.Menu;
         }
     }
 }

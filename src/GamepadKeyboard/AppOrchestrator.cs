@@ -94,6 +94,7 @@ namespace GamepadKeyboard
             // a profile-defined EnableInput binding starts the tool normally
             _keyboard.Hide();
             _legend.Hide();
+            _keyMapsOverlay.ResetView();
             _keyMapsOverlay.Update(_mapper);
             _mapper.Mode = Settings.AppSettings.Instance.StartInMouseMode
                 ? ControllerMapper.MapperMode.Mouse

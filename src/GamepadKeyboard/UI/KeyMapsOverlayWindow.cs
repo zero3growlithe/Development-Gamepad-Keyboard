@@ -2,540 +2,459 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Media;
-using GamepadKeyboard.Input;
-using GamepadKeyboard.Native;
-using GamepadKeyboard.Settings;
+using System.Runtime.InteropServices;
 
 namespace GamepadKeyboard.UI
 {
     /// <summary>
-    /// Key Maps overlay: a passive always-on-top HUD shown only while input is
-    /// enabled and the mapper is in DirectInput (Key Maps) mode. The modifier
-    /// row sits at the top ([Ctrl][Shift][Alt][Windows] + current map name).
-    /// Below it, the center pad shows the ACTIVE map opaque; while R2 is held
-    /// the combo maps appear as half-transparent shadow strips at fixed side
-    /// positions — Symbols 3 (R2+L1) LEFT, Symbols 2 (R2+R1) RIGHT, Function
-    /// Keys (R2+L1+R1) BELOW — brightening to full opacity while their combo
-    /// is actually held. When a combo map becomes active the center swaps
-    /// opacities (the old keys become shadows at the same positions), so every
-    /// physical slot always reads at the same spot: positions are FIXED for
-    /// stable muscle memory.
+    /// Key Maps mode overlay: a gamepad-shaped board of key tiles. Four clusters
+    /// in a 2×2 arrangement (left stick under d-pad, right stick under face
+    /// buttons) with Select/Start between them. While the maps key (R2) is held
+    /// every slot shows compact shadow pills for the other maps at FIXED
+    /// per-slot offsets — Symbols 3 up/left lane, Symbols 2 right/below lane,
+    /// Function Keys below lane — placed into the free corners of each
+    /// cluster's plus-shape so nothing ever overlaps. When a combo map becomes
+    /// active its pills turn opaque in place while the previous map's tiles
+    /// fade to shadows — positions never move. Labels wrap and split on camel
+    /// case ("PageDown" → "Page Down"); modifier chips highlight while their
+    /// key is held (including latches locked by the maps key).
     /// </summary>
     public sealed class KeyMapsOverlayWindow : Window
     {
-        // ── Layout: center pad grid (1 unit = Pitch px) ────────────────────────
-        //
-        //        [Ctrl] [Shift] [Alt] [Win]  CurrentMapName     ← separate row
-        //  row 0:    DPad↑      LS↑        RS↑        FaceY
-        //  row 1:  DPad←  DPad→ LS←  LS→   RS←  RS→   FaceX  FaceB
-        //  row 2:    DPad↓      LS↓        RS↓        FaceA
-        //  row 3:           [LStickPress]  [RStickPress]
-        //  row 5:              [Select]    [Start]
-        //
-        //  left strip = R2+L1 map, right strip = R2+R1 map, bottom strip =
-        //  R2+L1+R1 map — all three rendered only while R2 is held.
+        // ── Window / board constants ────────────────────────────────────────────
 
-        private const double Pitch = 50;
-        private const double PadOffsetX = 165;   // center pad drawn inside the shared canvas
-        private const int MapUtility = 0;
-        private const int MapSymbols1 = 1;
-        private const int MapSymbols2 = 2;
-        private const int MapSymbols3 = 3;
-        private const int MapFunctionKeys = 4;
-        private const double ShadowOpacity = 0.42;
-        private const double UnboundOpacity = 0.15;
-        private const double FallbackOpacity = 0.6;
+        private const double BoardWidth = 1000.0;
+        private const double BoardHeight = 640.0;
+        private const double TileWidth = 70.0;
+        private const double TileHeight = 42.0;
+        private const double TileGap = 16.0;
+        private const double TilePitchX = TileWidth + TileGap;    // 86
+        private const double TilePitchY = TileHeight + TileGap;   // 58
+        private const double ShadowWidth = 48.0;
+        private const double ShadowHeight = 28.0;
+        private const double ChipWidth = 64.0;
+        private const double ChipHeight = 26.0;
+        private const double ChipGap = 10.0;
+        private const double LabelFontSize = 11.5;
+        private const double ShadowFontSize = 9.0;
+        private const double ClusterBreadthX = 96.0;   // horizontal air between cluster pairs
+        private const double ClusterBreadthY = 132.0;  // vertical air between upper and lower clusters
+        private const double CenterColumnOffset = 14.0;
+        private const double IdleShadowOpacity = 0.42;
+        private const double ActiveOpacity = 1.0;
+        private const double CenterX = BoardWidth / 2.0;
+        private const double CenterY = BoardHeight / 2.0 + 20.0;
 
-        private readonly Canvas _rootCanvas;
-        private readonly Canvas _padCanvas;
-        private readonly Dictionary<string, Border> _slotBorders = new(StringComparer.Ordinal);
-        private readonly List<Border> _orderedSlotBorders = new();
-        private readonly List<MapStrip> _strips = new();
-        private readonly Border _ctrlChip;
-        private readonly Border _shiftChip;
-        private readonly Border _altChip;
-        private readonly Border _windowsChip;
+        private static readonly string[] ModifierNames = { "Ctrl", "Shift", "Alt", "Win" };
+
+        // ── Durable UI state ────────────────────────────────────────────────────
+
+        private readonly Canvas _root;
         private readonly TextBlock _mapNameLabel;
-        private readonly Brush _modifierTintBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0x28, 0xBE, 0x5A));
-        private readonly Brush _activeBorderBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xB0, 0x3A));
-        private readonly Brush _keyBrush;
-        private readonly Brush _keyBorderBrush;
-        private readonly Brush _textBrush;
-        private readonly Brush _dimTextBrush;
+        private readonly List<ChipView> _chips = new();
+        private readonly Dictionary<string, TileView> _tiles = new();
+        private readonly Dictionary<string, List<TileView>> _shadows = new();
+        private List<KeyMapDefinition> _maps = new();
+        private int _lastRenderedMapIndex;
+        private bool _wasMapsKeyHeld;
+        private bool _bindingsDirty = true;
         private bool _shown;
-        private bool _lastReady;
-
-        /// <summary>One combo side strip: a bordered panel listing its map's keys.</summary>
-        private sealed class MapStrip
-        {
-            public int MapIndex;
-            public string Header = "";
-            public StackPanel Panel = new() { Orientation = Orientation.Vertical };
-            public Border Frame = new();
-            public string Body = "";
-        }
 
         public KeyMapsOverlayWindow()
         {
-            // App-level resources (App.xaml) are available at construction time.
-            _keyBrush = (Brush)FindResource("KeyBrush");
-            _keyBorderBrush = (Brush)FindResource("KeyBorderBrush");
-            _textBrush = (Brush)FindResource("TextBrush");
-            _dimTextBrush = (Brush)FindResource("DimTextBrush");
-
+            Title = "Key Maps";
+            Width = BoardWidth;
+            Height = BoardHeight;
             WindowStyle = WindowStyle.None;
-            AllowsTransparency = true;
-            Background = Brushes.Transparent;
             ResizeMode = ResizeMode.NoResize;
             ShowInTaskbar = false;
-            Topmost = true;
             ShowActivated = false;
-            Width = 770;
-            Height = 590;
-            Left = 60;
-            Top = 60;
+            AllowsTransparency = true;
+            Background = Brushes.Transparent;
+            Topmost = true;
+            Visibility = Visibility.Hidden;
+            SourceInitialized += (_, _) => ApplyClickThroughExStyles();
 
-            _ctrlChip = BuildModifierChip("Ctrl");
-            _shiftChip = BuildModifierChip("Shift");
-            _altChip = BuildModifierChip("Alt");
-            _windowsChip = BuildModifierChip("Win");
             _mapNameLabel = new TextBlock
             {
-                Text = "",
-                Foreground = _textBrush,
-                FontSize = 14,
+                Foreground = Brushes.White,
+                FontSize = 17,
                 FontWeight = FontWeights.SemiBold,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(10, 0, 0, 0)
             };
-            StackPanel modifierRow = new() { Orientation = Orientation.Horizontal };
-            modifierRow.HorizontalAlignment = HorizontalAlignment.Center;
-            modifierRow.Margin = new Thickness(0, 6, 0, 6);
-            modifierRow.Children.Add(_ctrlChip);
-            modifierRow.Children.Add(BuildChipSpacer());
-            modifierRow.Children.Add(_shiftChip);
-            modifierRow.Children.Add(BuildChipSpacer());
-            modifierRow.Children.Add(_altChip);
-            modifierRow.Children.Add(BuildChipSpacer());
-            modifierRow.Children.Add(_windowsChip);
-            modifierRow.Children.Add(_mapNameLabel);
-
-            _rootCanvas = new Canvas
-            {
-                Width = 738,
-                Height = 490,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-            _padCanvas = BuildPadCanvas();
-            Canvas.SetLeft(_padCanvas, PadOffsetX);
-            Canvas.SetTop(_padCanvas, 0);
-            _rootCanvas.Children.Add(_padCanvas);
-
-            // Fixed side positions per spec: L1-combo LEFT, R1-combo RIGHT,
-            // L1+R1-combo BELOW. Each strip lists its own map's keys.
-            _strips.Add(BuildStrip(MapSymbols3, "R2 + L1", 0, 8));
-            _strips.Add(BuildStrip(MapSymbols2, "R2 + R1", 588, 8));
-            _strips.Add(BuildStrip(MapFunctionKeys, "R2 + L1 + R1", PadOffsetX, 400));
-
-            StackPanel centeringPanel = new() { Orientation = Orientation.Vertical };
-            centeringPanel.Children.Add(modifierRow);
-            centeringPanel.Children.Add(_rootCanvas);
-            Border rootBorder = new()
-            {
-                Background = (Brush)FindResource("PanelBrush"),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(10),
-                Child = centeringPanel
-            };
-            Content = rootBorder;
+            _root = new Canvas();
+            Content = _root;
         }
 
-        protected override void OnSourceInitialized(EventArgs e)
-        {
-            base.OnSourceInitialized(e);
-            // Passive overlay: never activates, never steals focus, clicks pass
-            // through (same treatment as the legend / keyboard overlays).
-            IntPtr hwnd = new WindowInteropHelper(this).Handle;
-            int extendedStyle = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
-            NativeMethods.SetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE,
-                extendedStyle | NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TRANSPARENT |
-                NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_TOOLWINDOW);
-        }
+        // ── Public API (called by AppOrchestrator, poll-thread safe) ────────────
 
-        // ── Build: center pad grid, positions FIXED across all five maps ──────
-
-        private Canvas BuildPadCanvas()
+        /// <summary>Refreshes the board from the mapper's live state. Marshals
+        /// to the UI thread when called from the poll thread.</summary>
+        public void Update(ControllerMapper mapper)
         {
-            Canvas canvas = new()
+            if (!Dispatcher.CheckAccess())
             {
-                Width = 7.4 * Pitch + 8,
-                Height = 6.2 * Pitch + 8
-            };
+                _ = Dispatcher.BeginInvoke(() => Update(mapper));
+                return;
+            }
 
-            canvas.Children.Add(BuildSlot("DPadUp", 0.85, 0));
-            canvas.Children.Add(BuildSlot("DPadLeft", 0, 1));
-            canvas.Children.Add(BuildSlot("DPadRight", 1.7, 1));
-            canvas.Children.Add(BuildSlot("DPadDown", 0.85, 2));
-
-            canvas.Children.Add(BuildSlot("LeftStickUp", 2.8, 0));
-            canvas.Children.Add(BuildSlot("LeftStickLeft", 2.4, 1));
-            canvas.Children.Add(BuildSlot("LeftStickRight", 3.2, 1));
-            canvas.Children.Add(BuildSlot("LeftStickDown", 2.8, 2));
-            canvas.Children.Add(BuildSlot("LeftStickPress", 2.5, 3, 1.6, 0.7));
-
-            canvas.Children.Add(BuildSlot("RightStickUp", 4.3, 0));
-            canvas.Children.Add(BuildSlot("RightStickLeft", 3.9, 1));
-            canvas.Children.Add(BuildSlot("RightStickRight", 4.7, 1));
-            canvas.Children.Add(BuildSlot("RightStickDown", 4.3, 2));
-            canvas.Children.Add(BuildSlot("RightStickPress", 4.0, 3, 1.6, 0.7));
-
-            canvas.Children.Add(BuildSlot("FaceY", 5.65, 0));
-            canvas.Children.Add(BuildSlot("FaceX", 5.15, 1));
-            canvas.Children.Add(BuildSlot("FaceB", 6.15, 1));
-            canvas.Children.Add(BuildSlot("FaceA", 5.65, 2));
-
-            // Select/Start: bound on the Utility and Function Keys maps only.
-            canvas.Children.Add(BuildSlot("Select", 2.3, 5.2, 1.3, 0.8));
-            canvas.Children.Add(BuildSlot("Start", 3.6, 5.2, 1.5, 0.8));
-            return canvas;
-        }
-
-        private Border BuildSlot(string slot, double column, double row, double widthUnits = 1, double heightUnits = 1)
-        {
-            Border border = new()
+            bool wantVisible = mapper != null
+                && mapper.InputEnabled
+                && mapper.Mode == ControllerMapper.MapperMode.DirectInput
+                && AppSettings.Instance.KeyMaps.ShowOverlay;
+            if (!wantVisible)
             {
-                Width = widthUnits * Pitch - 8,
-                Height = heightUnits * Pitch - 8,
-                BorderBrush = _keyBorderBrush,
-                BorderThickness = new Thickness(1),
-                Background = _keyBrush,
-                CornerRadius = new CornerRadius(4),
-                Opacity = UnboundOpacity,
-                Child = new TextBlock
+                if (_shown)
                 {
-                    Text = "",
-                    Foreground = _textBrush,
-                    FontSize = 13,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
+                    _shown = false;
+                    ClearShadows();
+                    Visibility = Visibility.Hidden;
                 }
-            };
-            Canvas.SetLeft(border, column * Pitch + 4);
-            Canvas.SetTop(border, row * Pitch + 4);
-            _slotBorders[slot] = border;
-            _orderedSlotBorders.Add(border);
-            return border;
+                return;
+            }
+
+            if (!_shown)
+            {
+                _shown = true;
+                _bindingsDirty = true;
+                _wasMapsKeyHeld = false;
+                _lastRenderedMapIndex = -1;
+                PositionBottomCenter();
+                Visibility = Visibility.Visible;
+            }
+
+            Input.KeyMapsMapper keyMaps = mapper.KeyMaps!;
+            if (_bindingsDirty || !ReferenceEquals(_maps, AppSettings.Instance.KeyMaps.Maps))
+            {
+                _maps = AppSettings.Instance.KeyMaps.Maps;
+                RebuildAll(Math.Clamp(keyMaps.ActiveMapIndex, 0, Math.Max(_maps.Count - 1, 0)));
+            }
+
+            bool mapsKeyHeld = keyMaps.MapsKeyHeld;
+            if (mapsKeyHeld && !_wasMapsKeyHeld)
+            {
+                BuildShadows();
+            }
+            else if (!mapsKeyHeld && _wasMapsKeyHeld)
+            {
+                ClearShadows();
+            }
+            _wasMapsKeyHeld = mapsKeyHeld;
+
+            if (keyMaps.ActiveMapIndex != _lastRenderedMapIndex)
+            {
+                int activeIndex = Math.Clamp(keyMaps.ActiveMapIndex, 0, _maps.Count - 1);
+                _lastRenderedMapIndex = activeIndex;
+                SwapActiveMap(activeIndex);
+            }
+            ApplyChipStates(keyMaps);
         }
 
-        private Border BuildModifierChip(string label)
+        /// <summary>Drops every tile and shadow so the next Update rebuilds the
+        /// board from current settings (called after settings edits).</summary>
+        public void ResetView()
+        {
+            _bindingsDirty = true;
+        }
+
+        // ── Build ───────────────────────────────────────────────────────────────
+
+        private void RebuildAll(int activeIndex)
+        {
+            _bindingsDirty = false;
+            _root.Children.Clear();
+            _chips.Clear();
+            _tiles.Clear();
+            ClearShadows();
+            if (_maps.Count < 5)
+            {
+                return;
+            }
+            BuildModifierRow();
+            BuildCenterColumn(activeIndex);
+            BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad);
+            BuildCluster(activeIndex, +1, -1, ClusterGeometry.Face);
+            BuildCluster(activeIndex, -1, +1, ClusterGeometry.LeftStick);
+            BuildCluster(activeIndex, +1, +1, ClusterGeometry.RightStick);
+            ApplyMapName(activeIndex);
+            _lastRenderedMapIndex = activeIndex;
+        }
+
+        private void BuildModifierRow()
+        {
+            for (int index = 0; index < ModifierNames.Length; index++)
+            {
+                Border chipBorder = MakeChip(ModifierNames[index]);
+                Canvas.SetLeft(chipBorder, ChipColumnX(index));
+                Canvas.SetTop(chipBorder, 14);
+                _root.Children.Add(chipBorder);
+                _chips.Add(new ChipView { Border = chipBorder, ModIndex = index });
+            }
+            double mapNameLeft = ChipColumnX(ModifierNames.Length - 1) + ChipWidth + 40;
+            Canvas.SetLeft(_mapNameLabel, mapNameLeft);
+            Canvas.SetTop(_mapNameLabel, 16);
+            _root.Children.Add(_mapNameLabel);
+        }
+
+        private static double ChipColumnX(int index)
+        {
+            double totalWidth = ModifierNames.Length * ChipWidth + (ModifierNames.Length - 1) * ChipGap;
+            return (BoardWidth - totalWidth) / 2.0 - 120.0 + index * (ChipWidth + ChipGap);
+        }
+
+        private void BuildCenterColumn(int activeIndex)
+        {
+            AddTile("Select", _maps[activeIndex],
+                CenterX - TileWidth / 2.0 - CenterColumnOffset, CenterY - TileHeight - 2.0);
+            AddTile("Start", _maps[activeIndex],
+                CenterX - TileWidth / 2.0 + CenterColumnOffset, CenterY + 2.0);
+        }
+
+        private void BuildCluster(int activeIndex, double clusterX, double clusterY, ClusterGeometry cluster)
+        {
+            double clusterSpanX = cluster.Columns * TilePitchX - TileGap;
+            double clusterSpanY = cluster.Rows * TilePitchY - TileGap;
+            double baseX = CenterX + clusterX * (clusterSpanX / 2.0 + ClusterBreadthX / 2.0) - clusterSpanX / 2.0;
+            double baseY = CenterY + clusterY * (clusterSpanY / 2.0 + ClusterBreadthY / 2.0) - clusterSpanY / 2.0;
+            for (int index = 0; index < cluster.Placements.Count; index++)
+            {
+                SlotPlacement placement = cluster.Placements[index];
+                AddTile(placement.SlotName, _maps[activeIndex],
+                    baseX + placement.Column * TilePitchX,
+                    baseY + placement.Row * TilePitchY);
+            }
+        }
+
+        private void AddTile(string slot, KeyMapDefinition map, double left, double top)
+        {
+            string label = LabelFor(map, slot);
+            TextBlock labelBlock = MakeLabel(SplitLabel(label), LabelFontSize);
+            Border border = MakeTileBorder(TileWidth, TileHeight);
+            border.Child = labelBlock;
+            Canvas.SetLeft(border, left);
+            Canvas.SetTop(border, top);
+            Canvas.SetZIndex(border, 10);
+            _root.Children.Add(border);
+            _tiles[slot] = new TileView
+            {
+                Border = border,
+                Label = labelBlock,
+                Slot = slot,
+                Left = left,
+                Top = top,
+            };
+        }
+
+        // ── Shadow pills (maps key held) ────────────────────────────────────────
+
+        private void BuildShadows()
+        {
+            ClearShadows();
+            foreach (KeyValuePair<string, TileView> pair in _tiles)
+            {
+                TileView origin = pair.Value;
+                AddShadowPill(origin, 3);   // Symbols 3 (L1 combo) — up/left lane
+                AddShadowPill(origin, 2);   // Symbols 2 (R1 combo) — right/below lane
+                AddShadowPill(origin, 4);   // Function Keys (L1+R1) — below lane
+            }
+        }
+
+        private void AddShadowPill(TileView origin, int mapIndex)
+        {
+            if (mapIndex >= _maps.Count)
+            {
+                return;
+            }
+            string label = LabelFor(_maps[mapIndex], origin.Slot);
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                return;   // slot unbound on that map — no shadow pill
+            }
+            (double dx, double dy) = ShadowOffsetOf(origin.Slot, mapIndex);
+            // Negative dx: pill hugs the tile's LEFT edge (grows leftwards);
+            // positive dx: pill grows rightwards from the tile's left edge.
+            double resolvedLeft = dx < 0
+                ? origin.Left + dx + (TileWidth - ShadowWidth)
+                : origin.Left + dx;
+            TextBlock labelBlock = MakeLabel(SplitLabel(label), ShadowFontSize);
+            Border border = MakeTileBorder(ShadowWidth, ShadowHeight);
+            border.Child = labelBlock;
+            border.Opacity = IdleShadowOpacity;
+            Canvas.SetLeft(border, resolvedLeft);
+            Canvas.SetTop(border, origin.Top + dy);
+            Canvas.SetZIndex(border, 9);
+            _root.Children.Add(border);
+            if (!_shadows.TryGetValue(origin.Slot, out List<TileView>? list))
+            {
+                list = new List<TileView>();
+                _shadows[origin.Slot] = list;
+            }
+            list.Add(new TileView
+            {
+                Border = border,
+                Label = labelBlock,
+                Slot = origin.Slot,
+                Left = resolvedLeft,
+                Top = origin.Top + dy,
+                MapIndex = mapIndex,
+            });
+        }
+
+        private void ClearShadows()
+        {
+            foreach (List<TileView> list in _shadows.Values)
+            {
+                for (int index = 0; index < list.Count; index++)
+                {
+                    _root.Children.Remove(list[index].Border);
+                }
+            }
+            _shadows.Clear();
+        }
+
+        private void SwapActiveMap(int activeIndex)
+        {
+            ApplyMapName(activeIndex);
+            foreach (KeyValuePair<string, TileView> pair in _tiles)
+            {
+                TileView tile = pair.Value;
+                string label = LabelFor(_maps[activeIndex], tile.Slot);
+                tile.Label.Text = SplitLabel(label);
+                bool boundHere = !string.IsNullOrWhiteSpace(label);
+                tile.Border.Opacity = boundHere ? ActiveOpacity : IdleShadowOpacity;
+                Canvas.SetZIndex(tile.Border, boundHere ? 10 : 5);
+            }
+            foreach (List<TileView> list in _shadows.Values)
+            {
+                for (int index = 0; index < list.Count; index++)
+                {
+                    TileView pill = list[index];
+                    pill.Border.Opacity = pill.MapIndex == activeIndex && _wasMapsKeyHeld
+                        ? ActiveOpacity
+                        : IdleShadowOpacity;
+                }
+            }
+        }
+
+        // ── Modifier chips ──────────────────────────────────────────────────────
+
+        private void ApplyChipStates(Input.KeyMapsMapper keyMaps)
+        {
+            ApplyChipVisual(_chips[0].Border, keyMaps.CtrlHeld);
+            ApplyChipVisual(_chips[1].Border, keyMaps.ShiftHeld);
+            ApplyChipVisual(_chips[2].Border, keyMaps.AltHeld);
+            ApplyChipVisual(_chips[3].Border, keyMaps.WindowsHeld);
+        }
+
+        private static void ApplyChipVisual(Border border, bool held)
+        {
+            border.Background = held
+                ? new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57))
+                : new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x20, 0x20));
+            border.BorderBrush = held
+                ? new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A))
+                : new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
+        }
+
+        private void ApplyMapName(int mapIndex)
+        {
+            _mapNameLabel.Text = _maps[mapIndex].Name;
+        }
+
+        // ── Factories ───────────────────────────────────────────────────────────
+
+        private static Border MakeChip(string label)
         {
             return new Border
             {
-                Background = _keyBrush,
-                BorderBrush = _keyBorderBrush,
+                Width = ChipWidth,
+                Height = ChipHeight,
+                CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(9, 3, 9, 3),
-                Opacity = 0.35,
+                Background = new SolidColorBrush(Color.FromArgb(0x66, 0x20, 0x20, 0x20)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF)),
                 Child = new TextBlock
                 {
                     Text = label,
-                    Foreground = _textBrush,
-                    FontSize = 12,
-                    FontWeight = FontWeights.SemiBold
-                }
+                    Foreground = Brushes.White,
+                    FontSize = 13,
+                    FontWeight = FontWeights.Medium,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
             };
         }
 
-        private static FrameworkElement BuildChipSpacer()
+        private static Border MakeTileBorder(double width, double height)
         {
-            return new Border { Width = 7, Background = Brushes.Transparent };
-        }
-
-        private MapStrip BuildStrip(int mapIndex, string header, double x, double y)
-        {
-            MapStrip strip = new()
+            return new Border
             {
-                MapIndex = mapIndex,
-                Header = header,
-                Panel = { Opacity = 0 }
-            };
-            Border frame = new()
-            {
-                BorderBrush = _keyBorderBrush,
+                Width = width,
+                Height = height,
+                CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(6, 4, 6, 4),
-                Child = strip.Panel
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
+                Background = new SolidColorBrush(Color.FromArgb(0xC8, 0x18, 0x18, 0x18)),
             };
-            strip.Frame = frame;
-            Canvas.SetLeft(frame, x);
-            Canvas.SetTop(frame, y);
-            _rootCanvas.Children.Add(frame);
-            return strip;
         }
 
-        // ── Per-refresh update (brush/label swaps only, no tree changes) ───────
-
-        /// <summary>
-        /// Shows/hides the overlay and applies the mapper state. Call on the UI
-        /// thread (AppOrchestrator already guarantees that).
-        /// </summary>
-        public void Update(ControllerMapper mapper)
+        private static TextBlock MakeLabel(string labelText, double fontSize)
         {
-            bool ready = mapper.InputEnabled
-                         && mapper.Mode == ControllerMapper.MapperMode.DirectInput
-                         && AppSettings.Instance.KeyMaps.ShowOverlay;
-            if (ready != _lastReady)
+            return new TextBlock
             {
-                _lastReady = ready;
-                if (ready)
+                Text = labelText,
+                Foreground = Brushes.White,
+                FontSize = fontSize,
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+        }
+
+        // ── Label shaping ───────────────────────────────────────────────────────
+
+        /// <summary>"PageDown" → "Page Down": space at every lower→upper
+        /// boundary so word wrapping can break lines naturally. Known
+        /// abbreviations humanized first.</summary>
+        private static string SplitLabel(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return "";
+            }
+            string display = name switch
+            {
+                "PrntScrn" => "Print Screen",
+                "ScrlLock" => "Scroll Lock",
+                "PauseBreak" => "Pause Break",
+                "Xmouse1" => "Mouse 1",
+                "Xmouse2" => "Mouse 2",
+                _ => name,
+            };
+            System.Text.StringBuilder spaced = new();
+            for (int index = 0; index < display.Length; index++)
+            {
+                char current = display[index];
+                bool previousIsLower = index > 0 && char.IsLower(display[index - 1]);
+                if (index > 0 && char.IsUpper(current) && previousIsLower)
                 {
-                    RefreshState(mapper.KeyMaps);
-                    if (!_shown)
-                    {
-                        Show();
-                        _shown = true;
-                    }
+                    spaced.Append(' ');
                 }
-                else
-                {
-                    if (_shown)
-                    {
-                        Hide();
-                        _shown = false;
-                    }
-                }
-                return;
+                spaced.Append(current);
             }
-
-            if (!ready)
-            {
-                return;
-            }
-            RefreshState(mapper.KeyMaps);
+            return spaced.ToString();
         }
 
-        private void RefreshState(KeyMapsMapper? state)
-        {
-            if (state == null)
-            {
-                return;
-            }
-            List<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
-            if (maps.Count < 5)
-            {
-                return;
-            }
-            bool mapsKeyHeld = state.MapsKeyHeld;
-            int active = Math.Clamp(state.ActiveMapIndex, MapUtility, MapFunctionKeys);
-            KeyMapDefinition utility = maps[MapUtility];
-            KeyMapDefinition current = maps[active];
+        // ── Slot metadata ───────────────────────────────────────────────────────
 
-            string wantedLabel = current.Name;
-            if (_mapNameLabel.Text != wantedLabel)
-            {
-                _mapNameLabel.Text = wantedLabel;
-            }
-
-            // Select/Start: bound on the Utility and Function Keys maps only —
-            // on the three symbols maps the slots are unbound (dim dash).
-            bool activeBindsSelectStart = active == MapUtility || active == MapFunctionKeys;
-            KeyMapDefinition selectStartMap = active == MapFunctionKeys ? maps[MapFunctionKeys] : utility;
-            ApplySlot("Select",
-                activeBindsSelectStart ? selectStartMap.Select : "",
-                activeBindsSelectStart && !IsUnbound(selectStartMap.Select) ? 1 : UnboundOpacity,
-                active == MapFunctionKeys);
-            ApplySlot("Start",
-                activeBindsSelectStart ? UtilityStartLabel(selectStartMap.Start) : "",
-                activeBindsSelectStart && !IsUnbound(selectStartMap.Start) ? 1 : UnboundOpacity,
-                active == MapFunctionKeys);
-
-            // Face/d-pad/stick slots: the ACTIVE map's keys render full; while
-            // R2 is held the Utility keys stay visible as shadows at the SAME
-            // positions (they are where release lands, so their targets must
-            // not move). Unbound slots show a dim dash.
-            bool comboMapActive = mapsKeyHeld && active != MapUtility;
-            foreach (string slot in SlotKeyNames)
-            {
-                string activeBinding = SlotValue(current, slot);
-                string utilityBinding = SlotValue(utility, slot);
-                if (comboMapActive)
-                {
-                    if (!IsUnbound(activeBinding))
-                    {
-                        ApplySlot(slot, activeBinding, 1, true);
-                    }
-                    else if (!IsUnbound(utilityBinding))
-                    {
-                        ApplySlot(slot, utilityBinding, FallbackOpacity, false);
-                    }
-                    else
-                    {
-                        ApplySlot(slot, "", UnboundOpacity, false);
-                    }
-                }
-                else
-                {
-                    ApplySlot(slot, utilityBinding,
-                        IsUnbound(utilityBinding) ? UnboundOpacity : 1, false);
-                }
-            }
-
-            // Side strips: visible only while R2 is held; a strip brightens to
-            // full opacity while ITS combo is exactly held.
-            foreach (MapStrip strip in _strips)
-            {
-                UpdateStrip(strip, maps, mapsKeyHeld, active);
-            }
-
-            ApplyChip(_ctrlChip, state.CtrlHeld);
-            ApplyChip(_shiftChip, state.ShiftHeld);
-            ApplyChip(_altChip, state.AltHeld);
-            // Windows is a mappable key, not a modifier — reminder chip only.
-            if (_windowsChip.Opacity != 1)
-            {
-                _windowsChip.Opacity = 1;
-            }
-        }
-
-        private void UpdateStrip(MapStrip strip, List<KeyMapDefinition> maps, bool mapsKeyHeld, int active)
-        {
-            KeyMapDefinition map = maps[Math.Clamp(strip.MapIndex, 0, maps.Count - 1)];
-            string body = StripBody(map);
-            if (!string.Equals(strip.Body, body, StringComparison.Ordinal))
-            {
-                strip.Body = body;
-                RebuildStripLines(strip, body);
-            }
-            bool bright = mapsKeyHeld && active == strip.MapIndex;
-            // Spec: shadows at ~0.4 while R2 is held; the strip of the combo
-            // actually held brightens to full. When that combo map is active
-            // the center pad shows the same map — the duplicated readout is
-            // per spec ("all keys visible", positions fixed).
-            double opacity = mapsKeyHeld ? (bright ? 1.0 : ShadowOpacity) : 0;
-            if (strip.Frame.Opacity != opacity)
-            {
-                strip.Frame.Opacity = opacity;
-            }
-        }
-
-        private void RebuildStripLines(MapStrip strip, string body)
-        {
-            strip.Panel.Children.Clear();
-            strip.Panel.Children.Add(new TextBlock
-            {
-                Text = strip.Header,
-                Foreground = _dimTextBrush,
-                FontSize = 11,
-                FontWeight = FontKeys(),
-                Margin = new Thickness(2, 0, 0, 2)
-            });
-            string[] lines = body.Split('\n');
-            foreach (string line in lines)
-            {
-                strip.Panel.Children.Add(new TextBlock
-                {
-                    Text = line,
-                    Foreground = _textBrush,
-                    FontSize = 11
-                });
-            }
-        }
-
-        private static System.Windows.FontWeight FontKeys()
-        {
-            return FontWeights.SemiBold;
-        }
-
-        private static string UtilityStartLabel(string startSlot)
-        {
-            // The overlay shows what Start DOES, not the raw action name.
-            return string.Equals(startSlot, "MouseMode", StringComparison.OrdinalIgnoreCase)
-                ? "Mouse"
-                : startSlot;
-        }
-
-        /// <summary>Multi-line body listing the map's own slot keys.</summary>
-        private static string StripBody(KeyMapDefinition map)
-        {
-            return "D-pad  " + Short(map.DPadUp) + " " + Short(map.DPadDown) + " "
-                   + Short(map.DPadLeft) + " " + Short(map.DPadRight) + "\n"
-                   + "Face   " + Short(map.FaceY) + " " + Short(map.FaceA) + " "
-                   + Short(map.FaceX) + " " + Short(map.FaceB) + "\n"
-                   + "L-st   " + Short(map.LeftStickUp) + " " + Short(map.LeftStickDown) + " "
-                   + Short(map.LeftStickLeft) + " " + Short(map.LeftStickRight)
-                   + (IsUnbound(map.LeftStickPress) ? "" : "  L3:" + Short(map.LeftStickPress)) + "\n"
-                   + "R-st   " + Short(map.RightStickUp) + " " + Short(map.RightStickDown) + " "
-                   + Short(map.RightStickLeft) + " " + Short(map.RightStickRight)
-                   + (IsUnbound(map.RightStickPress) ? "" : "  R3:" + Short(map.RightStickPress)) + "\n"
-                   + (IsUnbound(map.Select) && IsUnbound(map.Start)
-                       ? ""
-                       : "Sel    " + Short(map.Select) + "   Start " + Short(map.Start) + "\n");
-        }
-
-        private static string Short(string? slot)
-        {
-            return IsUnbound(slot) ? "—" : slot;
-        }
-
-        private void ApplySlot(string slot, string label, double opacity, bool active)
-        {
-            if (!_slotBorders.TryGetValue(slot, out Border? border) || border == null)
-            {
-                return;
-            }
-            if (border.Opacity != opacity)
-            {
-                border.Opacity = opacity;
-            }
-            Brush wantedBorder = active ? _activeBorderBrush : _keyBorderBrush;
-            if (!ReferenceEquals(border.BorderBrush, wantedBorder))
-            {
-                border.BorderBrush = wantedBorder;
-            }
-            if (border.Child is TextBlock textBlock && textBlock.Text != label)
-            {
-                textBlock.Text = label;
-            }
-        }
-
-        private void ApplyChip(Border chip, bool held)
-        {
-            double wantedOpacity = held ? 1 : 0.35;
-            if (chip.Opacity != wantedOpacity)
-            {
-                chip.Opacity = wantedOpacity;
-            }
-            Brush wantedBrush = held ? _modifierTintBrush : _keyBrush;
-            if (!ReferenceEquals(chip.Background, wantedBrush))
-            {
-                chip.Background = wantedBrush;
-            }
-        }
-
-        // ── Static slot tables ─────────────────────────────────────────────────
-
-        private static readonly string[] SlotKeyNames =
-        {
-            "DPadUp", "DPadDown", "DPadLeft", "DPadRight",
-            "FaceY", "FaceA", "FaceX", "FaceB",
-            "LeftStickUp", "LeftStickDown", "LeftStickLeft", "LeftStickRight", "LeftStickPress",
-            "RightStickUp", "RightStickDown", "RightStickLeft", "RightStickRight", "RightStickPress"
-        };
-
-        private static bool IsUnbound(string? slot)
-        {
-            return string.IsNullOrWhiteSpace(slot)
-                   || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string SlotValue(KeyMapDefinition map, string slot)
+        private static string? SlotValue(KeyMapDefinition map, string slot)
         {
             return slot switch
             {
+                "Select" => map.Select,
+                "Start" => map.Start,
                 "DPadUp" => map.DPadUp,
                 "DPadDown" => map.DPadDown,
                 "DPadLeft" => map.DPadLeft,
@@ -554,8 +473,215 @@ namespace GamepadKeyboard.UI
                 "RightStickLeft" => map.RightStickLeft,
                 "RightStickRight" => map.RightStickRight,
                 "RightStickPress" => map.RightStickPress,
-                _ => ""
+                _ => null,
             };
+        }
+
+        private static string LabelFor(KeyMapDefinition map, string slot)
+        {
+            string? value = SlotValue(map, slot);
+            return string.IsNullOrWhiteSpace(value) || value == "None" ? "" : value;
+        }
+
+        /// <summary>Fixed shadow pill offset per slot + combo map. dx negative
+        /// hugs the tile's left edge (pill sits to its left), dx positive
+        /// offsets rightwards from the tile's left edge; lanes are tuned per
+        /// slot so pills land in the free corners and below-lane of the plus
+        /// shapes and the three combo lanes never collide. Positions NEVER
+        /// depend on the currently active map — muscle memory stays stable.</summary>
+        private static (double Dx, double Dy) ShadowOffsetOf(string slot, int mapIndex)
+        {
+            return (slot, mapIndex) switch
+            {
+                // Up slots: diagonal corners above the cluster are free.
+                ("DPadUp", 3) => (-52, -32),
+                ("DPadUp", 2) => (+52, -32),
+                ("DPadUp", 4) => (0, +58),
+                ("FaceY", 3) => (+52, -32),
+                ("FaceY", 2) => (-52, -32),
+                ("FaceY", 4) => (0, +58),
+                ("LeftStickUp", 3) => (-52, -32),
+                ("LeftStickUp", 2) => (+52, -32),
+                ("LeftStickUp", 4) => (0, +58),
+                ("RightStickUp", 3) => (+52, -32),
+                ("RightStickUp", 2) => (-52, -32),
+                ("RightStickUp", 4) => (0, +58),
+
+                // Left-column slots: outside-left is free.
+                ("DPadLeft", 3) => (-56, -36),
+                ("DPadLeft", 2) => (-56, +8),
+                ("DPadLeft", 4) => (-56, +52),
+                ("FaceX", 3) => (+52, -36),
+                ("FaceX", 2) => (+52, +8),
+                ("FaceX", 4) => (+52, +52),
+                ("LeftStickLeft", 3) => (-56, -36),
+                ("LeftStickLeft", 2) => (-56, +8),
+                ("LeftStickLeft", 4) => (-56, +52),
+                ("RightStickLeft", 3) => (+52, -36),
+                ("RightStickLeft", 2) => (+52, +8),
+                ("RightStickLeft", 4) => (+52, +52),
+
+                // Right-column slots: outside-right is free.
+                ("DPadRight", 3) => (+56, -36),
+                ("DPadRight", 2) => (+56, +8),
+                ("DPadRight", 4) => (+56, +52),
+                ("FaceB", 3) => (-56, -36),
+                ("FaceB", 2) => (-56, +8),
+                ("FaceB", 4) => (-56, +52),
+                ("LeftStickRight", 3) => (+56, -36),
+                ("LeftStickRight", 2) => (+56, +8),
+                ("LeftStickRight", 4) => (+56, +52),
+                ("RightStickRight", 3) => (-56, -36),
+                ("RightStickRight", 2) => (-56, +8),
+                ("RightStickRight", 4) => (-56, +52),
+
+                // Down slots: below is free.
+                ("DPadDown", 3) => (-52, +30),
+                ("DPadDown", 2) => (+52, +30),
+                ("DPadDown", 4) => (0, +58),
+                ("FaceA", 3) => (+52, +30),
+                ("FaceA", 2) => (-52, +30),
+                ("FaceA", 4) => (0, +58),
+                ("LeftStickDown", 3) => (-52, +26),
+                ("LeftStickDown", 2) => (+52, +26),
+                ("LeftStickDown", 4) => (0, +58),
+                ("RightStickDown", 3) => (+52, +26),
+                ("RightStickDown", 2) => (-52, +26),
+                ("RightStickDown", 4) => (0, +58),
+
+                // Stick presses: side lanes at press-row height.
+                ("LeftStickPress", 3) => (-56, +8),
+                ("LeftStickPress", 2) => (+56, +8),
+                ("LeftStickPress", 4) => (0, +58),
+                ("RightStickPress", 3) => (+56, +8),
+                ("RightStickPress", 2) => (-56, +8),
+                ("RightStickPress", 4) => (0, +58),
+
+                // Center column: Select shadows above, Start shadows below.
+                ("Select", 3) => (-56, -34),
+                ("Select", 2) => (+56, -34),
+                ("Select", 4) => (-20, +50),
+                ("Start", 3) => (-56, -34),
+                ("Start", 2) => (+56, -34),
+                ("Start", 4) => (+20, +50),
+
+                _ => (0, +58),
+            };
+        }
+
+        // ── Geometry tables ─────────────────────────────────────────────────────
+
+        private sealed class SlotPlacement
+        {
+            public SlotPlacement(string slotName, double column, double row)
+            {
+                SlotName = slotName;
+                Column = column;
+                Row = row;
+            }
+
+            public string SlotName;
+            public double Column;
+            public double Row;
+        }
+
+        private sealed class ClusterGeometry
+        {
+            /// <summary>D-pad: plus shape (corners free for shadow lanes).</summary>
+            public static readonly ClusterGeometry DPad = new(new List<SlotPlacement>
+            {
+                new("DPadUp", 1, 0),
+                new("DPadLeft", 0, 1),
+                new("DPadRight", 2, 1),
+                new("DPadDown", 1, 2),
+            }, 3, 3);
+
+            /// <summary>Face buttons: same plus shape.</summary>
+            public static readonly ClusterGeometry Face = new(new List<SlotPlacement>
+            {
+                new("FaceY", 1, 0),
+                new("FaceX", 0, 1),
+                new("FaceB", 2, 1),
+                new("FaceA", 1, 2),
+            }, 3, 3);
+
+            /// <summary>Left stick: cross with the PRESS tile centered between
+            /// the left and right keys (user request), down below it.</summary>
+            public static readonly ClusterGeometry LeftStick = new(new List<SlotPlacement>
+            {
+                new("LeftStickUp", 1, 0),
+                new("LeftStickLeft", 0, 1),
+                new("LeftStickRight", 2, 1),
+                new("LeftStickPress", 1, 1.7),
+                new("LeftStickDown", 1, 2.5),
+            }, 3, 4);
+
+            /// <summary>Right stick: mirrored geometry.</summary>
+            public static readonly ClusterGeometry RightStick = new(new List<SlotPlacement>
+            {
+                new("RightStickUp", 1, 0),
+                new("RightStickLeft", 0, 1),
+                new("RightStickRight", 2, 1),
+                new("RightStickPress", 1, 1.7),
+                new("RightStickDown", 1, 2.5),
+            }, 3, 4);
+
+            public ClusterGeometry(List<SlotPlacement> placements, int columns, int rows)
+            {
+                Placements = placements;
+                Columns = columns;
+                Rows = rows;
+            }
+
+            public List<SlotPlacement> Placements;
+            public int Columns;
+            public int Rows;
+        }
+
+        private sealed class ChipView
+        {
+            public Border Border = null!;
+            public int ModIndex;
+        }
+
+        private sealed class TileView
+        {
+            public Border Border = null!;
+            public TextBlock Label = null!;
+            public string Slot = "";
+            public double Left;
+            public double Top;
+            public int MapIndex;
+        }
+
+        // ── Click-through / non-activating window ───────────────────────────────
+
+        private const int GWLExStyle = -20;
+        private const int WSExLayered = 0x00080000;
+        private const int WSExTransparent = 0x00000020;
+        private const int WSExToolWindow = 0x00000080;
+        private const int WSExNoActivate = 0x08000000;
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        private void ApplyClickThroughExStyles()
+        {
+            IntPtr handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            int extendedStyle = GetWindowLong(handle, GWLExStyle);
+            _ = SetWindowLong(handle, GWLExStyle,
+                extendedStyle | WSExLayered | WSExTransparent | WSExToolWindow | WSExNoActivate);
+        }
+
+        private void PositionBottomCenter()
+        {
+            double screenWidth = SystemParameters.WorkArea.Width;
+            double screenHeight = SystemParameters.WorkArea.Height;
+            Left = (screenWidth - BoardWidth) / 2.0;
+            Top = screenHeight - BoardHeight - 24.0;
         }
     }
 }
