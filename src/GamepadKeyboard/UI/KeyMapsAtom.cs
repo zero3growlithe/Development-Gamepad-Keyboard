@@ -214,7 +214,7 @@ namespace GamepadKeyboard.UI
             // Combo membership raises opacity (never swaps content): the left
             // / right quark only when the Function combo is NOT held, the
             // bottom quark whenever it is — so L1+R1 lights the bottom alone.
-            double idleQuarkOpacity = mapsKeyHeld ? 0.45 : 0.0;
+            double idleQuarkOpacity = mapsKeyHeld ? IdleQuarkAlphaSetting.Value : 0.0;
             bool leftRaised = sym3ComboHeld && !functionComboHeld;
             bool rightRaised = sym2ComboHeld && !functionComboHeld;
             bool bottomRaised = functionComboHeld;
@@ -461,4 +461,11 @@ namespace GamepadKeyboard.UI
             return spaced.ToString();
         }
     }
+}
+
+/// <summary>Process-wide holder for the idle-quark alpha slider (the atom
+/// view reads it per tick without a wiring pass).</summary>
+internal static class IdleQuarkAlphaSetting
+{
+    public static double Value { get; set; } = 0.45;
 }

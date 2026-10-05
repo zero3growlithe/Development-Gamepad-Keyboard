@@ -432,12 +432,21 @@ namespace GamepadKeyboard.Settings
         public double IconOffsetX { get; set; } = 0.0;
         public double IconOffsetY { get; set; } = -55.0;
 
-        /// <summary>Spread of the circle's atoms around the circle center
-        /// (0 = collapsed, 1 = default spacing, up to 3 = wide).</summary>
-        public double DPadSpread { get; set; } = 1.0;
-        public double FaceSpread { get; set; } = 1.0;
-        public double LeftStickSpread { get; set; } = 1.0;
-        public double RightStickSpread { get; set; } = 1.0;
+        /// <summary>Spread of the circle's atoms around the circle center,
+        /// separate per axis (0 = collapsed, 1 = default spacing, up to 3 =
+        /// wide).</summary>
+        public double DPadSpreadX { get; set; } = 1.0;
+        public double DPadSpreadY { get; set; } = 1.0;
+        public double FaceSpreadX { get; set; } = 1.0;
+        public double FaceSpreadY { get; set; } = 1.0;
+        public double LeftStickSpreadX { get; set; } = 1.0;
+        public double LeftStickSpreadY { get; set; } = 1.0;
+        public double RightStickSpreadX { get; set; } = 1.0;
+        public double RightStickSpreadY { get; set; } = 1.0;
+
+        /// <summary>Opacity of inactive (not-combo-highlighted) quarks while
+        /// the maps key is held (0–1).</summary>
+        public double IdleQuarkAlpha { get; set; } = 0.45;
 
 
 
@@ -454,14 +463,19 @@ namespace GamepadKeyboard.Settings
             LeftStickOffsetY = Math.Clamp(LeftStickOffsetY, -300.0, 300.0);
             RightStickOffsetX = Math.Clamp(RightStickOffsetX, -400.0, 400.0);
             RightStickOffsetY = Math.Clamp(RightStickOffsetY, -300.0, 300.0);
-            DPadSpread = Math.Clamp(DPadSpread, 0.0, 3.0);
-            FaceSpread = Math.Clamp(FaceSpread, 0.0, 3.0);
-            LeftStickSpread = Math.Clamp(LeftStickSpread, 0.0, 3.0);
-            RightStickSpread = Math.Clamp(RightStickSpread, 0.0, 3.0);
+            DPadSpreadX = Math.Clamp(DPadSpreadX, 0.0, 3.0);
+            DPadSpreadY = Math.Clamp(DPadSpreadY, 0.0, 3.0);
+            FaceSpreadX = Math.Clamp(FaceSpreadX, 0.0, 3.0);
+            FaceSpreadY = Math.Clamp(FaceSpreadY, 0.0, 3.0);
+            LeftStickSpreadX = Math.Clamp(LeftStickSpreadX, 0.0, 3.0);
+            LeftStickSpreadY = Math.Clamp(LeftStickSpreadY, 0.0, 3.0);
+            RightStickSpreadX = Math.Clamp(RightStickSpreadX, 0.0, 3.0);
+            RightStickSpreadY = Math.Clamp(RightStickSpreadY, 0.0, 3.0);
             KeySize = Math.Clamp(KeySize, 0.6, 2.0);
             AtomSize = Math.Clamp(AtomSize, 0.5, 2.0);
             QuarkSize = Math.Clamp(QuarkSize, 0.5, 2.0);
             QuarkDistance = Math.Clamp(QuarkDistance, -2.0, 2.0);
+            IdleQuarkAlpha = Math.Clamp(IdleQuarkAlpha, 0.0, 1.0);
             IconOffsetX = Math.Clamp(IconOffsetX, -200.0, 200.0);
             IconOffsetY = Math.Clamp(IconOffsetY, -200.0, 200.0);
         }

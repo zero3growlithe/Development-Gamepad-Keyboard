@@ -145,6 +145,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             bool sym3ComboHeld = keyMaps.Sym3ComboHeld;
             bool functionComboHeld = keyMaps.FunctionComboHeld;
             IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
+            IdleQuarkAlphaSetting.Value = AppSettings.Instance.KeyMaps.Layout.IdleQuarkAlpha;
             foreach (KeyValuePair<string, KeyMapsAtom> pair in _atoms)
             {
                 pair.Value.Update(maps, keyMaps.ActiveMapIndex, keyMaps.MapsKeyHeld,
@@ -231,7 +232,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
 
             // Direction offsets in local circle space: this atom's position from
             // the circle's center at Spread = 1 (X factors are ±1; Y factors set
-            // the exact default row layout per circle).
+            // the exact default row layout per circle — the stick press atom
+            // shares the middle row with left/right, per the 5-atom cross).
             (string slot, double circleAnchorX, double circleAnchorY, double dirX, double dirY, string circleKey)[] atoms =
             {
                 ("DPadUp",           -1, -1,  0.0, -1.0, "DPad"),
@@ -245,12 +247,12 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 ("LeftStickUp",      -1, +1,  0.0, -1.25, "LeftStick"),
                 ("LeftStickLeft",    -1, +1, -1.0, -0.25, "LeftStick"),
                 ("LeftStickRight",   -1, +1, +1.0, -0.25, "LeftStick"),
-                ("LeftStickPress",   -1, +1,  0.0, +0.42, "LeftStick"),
+                ("LeftStickPress",   -1, +1,  0.0, -0.25, "LeftStick"),
                 ("LeftStickDown",    -1, +1,  0.0, +1.25, "LeftStick"),
                 ("RightStickUp",     +1, +1,  0.0, -1.25, "RightStick"),
                 ("RightStickLeft",   +1, +1, -1.0, -0.25, "RightStick"),
                 ("RightStickRight",  +1, +1, +1.0, -0.25, "RightStick"),
-                ("RightStickPress",  +1, +1,  0.0, +0.42, "RightStick"),
+                ("RightStickPress",  +1, +1,  0.0, -0.25, "RightStick"),
                 ("RightStickDown",   +1, +1,  0.0, +1.25, "RightStick"),
             };
 
@@ -262,9 +264,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     layout.IconOffsetX, layout.IconOffsetY);
                 double circleCenterX = centerX + circleAnchorX * 190.0 + CircleOffsetX(layout, circleKey) * boardScale;
                 double circleCenterY = centerY + circleAnchorY * 110.0 + CircleOffsetY(layout, circleKey) * boardScale;
-                double spread = CircleSpread(layout, circleKey);
-                double atomX = dirX * AtomSpreadPitchX * spread;
-                double atomY = dirY * AtomSpreadPitchY * spread;
+                double atomX = dirX * AtomSpreadPitchX * CircleSpreadX(layout, circleKey);
+                double atomY = dirY * AtomSpreadPitchY * CircleSpreadY(layout, circleKey);
                 Canvas atomHost = (Canvas)atom.Root;
                 Canvas.SetLeft(atomHost, circleCenterX + atomX * boardScale);
                 Canvas.SetTop(atomHost, circleCenterY + atomY * boardScale);
@@ -296,14 +297,25 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             };
         }
 
-        private static double CircleSpread(KeyMapsLayoutSettings layout, string circleKey)
+        private static double CircleSpreadX(KeyMapsLayoutSettings layout, string circleKey)
         {
             return circleKey switch
             {
-                "DPad" => layout.DPadSpread,
-                "Face" => layout.FaceSpread,
-                "LeftStick" => layout.LeftStickSpread,
-                _ => layout.RightStickSpread,
+                "DPad" => layout.DPadSpreadX,
+                "Face" => layout.FaceSpreadX,
+                "LeftStick" => layout.LeftStickSpreadX,
+                _ => layout.RightStickSpreadX,
+            };
+        }
+
+        private static double CircleSpreadY(KeyMapsLayoutSettings layout, string circleKey)
+        {
+            return circleKey switch
+            {
+                "DPad" => layout.DPadSpreadY,
+                "Face" => layout.FaceSpreadY,
+                "LeftStick" => layout.LeftStickSpreadY,
+                _ => layout.RightStickSpreadY,
             };
         }
 
@@ -316,8 +328,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                    layout.FaceOffsetX * 1.002 + layout.FaceOffsetY * 1.003 +
                    layout.LeftStickOffsetX * 1.004 + layout.LeftStickOffsetY * 1.005 +
                    layout.RightStickOffsetX * 1.006 + layout.RightStickOffsetY * 1.007 +
-                   layout.DPadSpread * 2.0 + layout.FaceSpread * 2.1 +
-                   layout.LeftStickSpread * 2.2 + layout.RightStickSpread * 2.3 +
+                   layout.DPadSpreadX * 2.0 + layout.DPadSpreadY * 2.01 +
+                   layout.FaceSpreadX * 2.02 + layout.FaceSpreadY * 2.03 +
+                   layout.LeftStickSpreadX * 2.04 + layout.LeftStickSpreadY * 2.05 +
+                   layout.RightStickSpreadX * 2.06 + layout.RightStickSpreadY * 2.07 +
                    layout.KeySize * 3.0 +
                    layout.AtomSize * 4.0 + layout.QuarkSize * 4.1 +
                    layout.QuarkDistance * 4.2 + layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4;

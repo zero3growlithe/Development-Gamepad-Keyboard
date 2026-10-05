@@ -279,7 +279,8 @@ namespace GamepadKeyboard.UI
             {
                 rows.Add(MakeKeyMapsSliderRow(label + " position X", key + "OffsetX", -400, 400, 5));
                 rows.Add(MakeKeyMapsSliderRow(label + " position Y", key + "OffsetY", -300, 300, 5));
-                rows.Add(MakeKeyMapsSliderRow(label + " atom spread", key + "Spread", 0.0, 3.0, 0.05));
+                rows.Add(MakeKeyMapsSliderRow(label + " atom spread X", key + "SpreadX", 0.0, 3.0, 0.05));
+                rows.Add(MakeKeyMapsSliderRow(label + " atom spread Y", key + "SpreadY", 0.0, 3.0, 0.05));
             }
 
             rows.Add(("── Atom look (all atoms) ──", null!));
@@ -288,6 +289,7 @@ namespace GamepadKeyboard.UI
             rows.Add(MakeKeyMapsSliderRow("Quark distance from atom (-2–2)", "QuarkDistance", -2.0, 2.0, 0.1));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset X", "IconOffsetX", -200, 200, 5));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset Y", "IconOffsetY", -200, 200, 5));
+            rows.Add(MakeKeyMapsSliderRow("Inactive quarks alpha", "IdleQuarkAlpha", 0.0, 1.0, 0.01));
             return rows.ToArray();
         }
 
