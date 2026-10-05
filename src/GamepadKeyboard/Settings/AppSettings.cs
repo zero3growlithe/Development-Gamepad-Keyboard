@@ -397,65 +397,24 @@ namespace GamepadKeyboard.Settings
         }
     }
 
-    /// <summary>Overlay layout tuning for Key Maps mode: per-key-wheel center
-    /// offsets relative to the board's current position, per-wheel tile spread,
-    /// per-atom positions (one atom per key slot, moved independently), the
-    /// global atom/quark size and quark-distance multipliers, the button-icon
-    /// offset and a global key size multiplier. All values clamped in
-    /// Normalize().</summary>
+    /// <summary>Overlay layout tuning for Key Maps mode: per-key-circle center
+    /// offsets relative to the board's current position, the per-circle atom
+    /// spread, the global atom/quark size and quark-distance multipliers, the
+    /// button-icon offset and a global key size multiplier. All values clamped
+    /// in Normalize().</summary>
     public sealed class KeyMapsLayoutSettings
     {
         /// <summary>Center offset of each key wheel relative to the overlay
         /// window's default cluster anchor, in px (positive X = right,
         /// positive Y = down).</summary>
-        public double DPadOffsetX { get; set; } = 0.0;
+        public double DPadOffsetX { get; set; } = -276.0;
         public double DPadOffsetY { get; set; } = 0.0;
-        public double FaceOffsetX { get; set; } = 0.0;
+        public double FaceOffsetX { get; set; } = 104.0;
         public double FaceOffsetY { get; set; } = 0.0;
-        public double LeftStickOffsetX { get; set; } = 0.0;
-        public double LeftStickOffsetY { get; set; } = 0.0;
-        public double RightStickOffsetX { get; set; } = 0.0;
-        public double RightStickOffsetY { get; set; } = 0.0;
-
-        /// <summary>Per-atom position in px relative to that wheel's screen
-        /// anchor (atom = one key prompt + quarks + button icon; the anchor is
-        /// the default wheel position on the board).</summary>
-        public double DPadUpAtomX { get; set; } = -86.0;
-        public double DPadUpAtomY { get; set; } = -120.0;
-        public double DPadLeftAtomX { get; set; } = -190.0;
-        public double DPadLeftAtomY { get; set; } = 0.0;
-        public double DPadRightAtomX { get; set; } = 18.0;
-        public double DPadRightAtomY { get; set; } = 0.0;
-        public double DPadDownAtomX { get; set; } = -86.0;
-        public double DPadDownAtomY { get; set; } = 120.0;
-        public double FaceUpAtomX { get; set; } = -86.0;
-        public double FaceUpAtomY { get; set; } = -120.0;
-        public double FaceLeftAtomX { get; set; } = -190.0;
-        public double FaceLeftAtomY { get; set; } = 0.0;
-        public double FaceRightAtomX { get; set; } = 18.0;
-        public double FaceRightAtomY { get; set; } = 0.0;
-        public double FaceDownAtomX { get; set; } = -86.0;
-        public double FaceDownAtomY { get; set; } = 120.0;
-        public double LeftStickUpAtomX { get; set; } = -86.0;
-        public double LeftStickUpAtomY { get; set; } = -140.0;
-        public double LeftStickLeftAtomX { get; set; } = -190.0;
-        public double LeftStickLeftAtomY { get; set; } = -20.0;
-        public double LeftStickRightAtomX { get; set; } = 18.0;
-        public double LeftStickRightAtomY { get; set; } = -20.0;
-        public double LeftStickPressAtomX { get; set; } = -86.0;
-        public double LeftStickPressAtomY { get; set; } = 60.0;
-        public double LeftStickDownAtomX { get; set; } = -86.0;
-        public double LeftStickDownAtomY { get; set; } = 160.0;
-        public double RightStickUpAtomX { get; set; } = -86.0;
-        public double RightStickUpAtomY { get; set; } = -140.0;
-        public double RightStickLeftAtomX { get; set; } = -190.0;
-        public double RightStickLeftAtomY { get; set; } = -20.0;
-        public double RightStickRightAtomX { get; set; } = 18.0;
-        public double RightStickRightAtomY { get; set; } = -20.0;
-        public double RightStickPressAtomX { get; set; } = -86.0;
-        public double RightStickPressAtomY { get; set; } = 60.0;
-        public double RightStickDownAtomX { get; set; } = -86.0;
-        public double RightStickDownAtomY { get; set; } = 160.0;
+        public double LeftStickOffsetX { get; set; } = -276.0;
+        public double LeftStickOffsetY { get; set; } = 10.0;
+        public double RightStickOffsetX { get; set; } = 104.0;
+        public double RightStickOffsetY { get; set; } = 10.0;
 
         /// <summary>Global atom (big center prompt) size multiplier.</summary>
         public double AtomSize { get; set; } = 1.0;
@@ -463,17 +422,18 @@ namespace GamepadKeyboard.Settings
         /// <summary>Global quark (small prompt) size multiplier.</summary>
         public double QuarkSize { get; set; } = 1.0;
 
-        /// <summary>Global quark distance multiplier (quarks' distance from
-        /// their atom center; 1 = default).</summary>
+        /// <summary>Quark distance from their atom center; 0 = quarks hug the
+        /// center edge, 1 = default gap, −2..2 = full pull-in/push-out range
+        /// (negative pulls quarks into the atom).</summary>
         public double QuarkDistance { get; set; } = 1.0;
 
         /// <summary>Button-image offset relative to the atom center, in px
-        /// (applied to every atom's icon; -1 = auto: above the atom).</summary>
+        /// (applied to every atom's icon; manual, negative values allowed).</summary>
         public double IconOffsetX { get; set; } = 0.0;
-        public double IconOffsetY { get; set; } = -1.0;
+        public double IconOffsetY { get; set; } = -55.0;
 
-        /// <summary>Multiplier on the wheel's tile pitch (spread between a
-        /// wheel's own tiles). 1.0 = default.</summary>
+        /// <summary>Spread of the circle's atoms around the circle center
+        /// (0 = collapsed, 1 = default spacing, up to 3 = wide).</summary>
         public double DPadSpread { get; set; } = 1.0;
         public double FaceSpread { get; set; } = 1.0;
         public double LeftStickSpread { get; set; } = 1.0;
@@ -494,50 +454,14 @@ namespace GamepadKeyboard.Settings
             LeftStickOffsetY = Math.Clamp(LeftStickOffsetY, -300.0, 300.0);
             RightStickOffsetX = Math.Clamp(RightStickOffsetX, -400.0, 400.0);
             RightStickOffsetY = Math.Clamp(RightStickOffsetY, -300.0, 300.0);
-            DPadSpread = Math.Clamp(DPadSpread, 0.5, 2.0);
-            FaceSpread = Math.Clamp(FaceSpread, 0.5, 2.0);
-            LeftStickSpread = Math.Clamp(LeftStickSpread, 0.5, 2.0);
-            RightStickSpread = Math.Clamp(RightStickSpread, 0.5, 2.0);
+            DPadSpread = Math.Clamp(DPadSpread, 0.0, 3.0);
+            FaceSpread = Math.Clamp(FaceSpread, 0.0, 3.0);
+            LeftStickSpread = Math.Clamp(LeftStickSpread, 0.0, 3.0);
+            RightStickSpread = Math.Clamp(RightStickSpread, 0.0, 3.0);
             KeySize = Math.Clamp(KeySize, 0.6, 2.0);
-            DPadUpAtomX = Math.Clamp(DPadUpAtomX, -500.0, 500.0);
-            DPadUpAtomY = Math.Clamp(DPadUpAtomY, -400.0, 400.0);
-            DPadLeftAtomX = Math.Clamp(DPadLeftAtomX, -500.0, 500.0);
-            DPadLeftAtomY = Math.Clamp(DPadLeftAtomY, -400.0, 400.0);
-            DPadRightAtomX = Math.Clamp(DPadRightAtomX, -500.0, 500.0);
-            DPadRightAtomY = Math.Clamp(DPadRightAtomY, -400.0, 400.0);
-            DPadDownAtomX = Math.Clamp(DPadDownAtomX, -500.0, 500.0);
-            DPadDownAtomY = Math.Clamp(DPadDownAtomY, -400.0, 400.0);
-            FaceUpAtomX = Math.Clamp(FaceUpAtomX, -500.0, 500.0);
-            FaceUpAtomY = Math.Clamp(FaceUpAtomY, -400.0, 400.0);
-            FaceLeftAtomX = Math.Clamp(FaceLeftAtomX, -500.0, 500.0);
-            FaceLeftAtomY = Math.Clamp(FaceLeftAtomY, -400.0, 400.0);
-            FaceRightAtomX = Math.Clamp(FaceRightAtomX, -500.0, 500.0);
-            FaceRightAtomY = Math.Clamp(FaceRightAtomY, -400.0, 400.0);
-            FaceDownAtomX = Math.Clamp(FaceDownAtomX, -500.0, 500.0);
-            FaceDownAtomY = Math.Clamp(FaceDownAtomY, -400.0, 400.0);
-            LeftStickUpAtomX = Math.Clamp(LeftStickUpAtomX, -500.0, 500.0);
-            LeftStickUpAtomY = Math.Clamp(LeftStickUpAtomY, -400.0, 400.0);
-            LeftStickLeftAtomX = Math.Clamp(LeftStickLeftAtomX, -500.0, 500.0);
-            LeftStickLeftAtomY = Math.Clamp(LeftStickLeftAtomY, -400.0, 400.0);
-            LeftStickRightAtomX = Math.Clamp(LeftStickRightAtomX, -500.0, 500.0);
-            LeftStickRightAtomY = Math.Clamp(LeftStickRightAtomY, -400.0, 400.0);
-            LeftStickPressAtomX = Math.Clamp(LeftStickPressAtomX, -500.0, 500.0);
-            LeftStickPressAtomY = Math.Clamp(LeftStickPressAtomY, -400.0, 400.0);
-            LeftStickDownAtomX = Math.Clamp(LeftStickDownAtomX, -500.0, 500.0);
-            LeftStickDownAtomY = Math.Clamp(LeftStickDownAtomY, -400.0, 400.0);
-            RightStickUpAtomX = Math.Clamp(RightStickUpAtomX, -500.0, 500.0);
-            RightStickUpAtomY = Math.Clamp(RightStickUpAtomY, -400.0, 400.0);
-            RightStickLeftAtomX = Math.Clamp(RightStickLeftAtomX, -500.0, 500.0);
-            RightStickLeftAtomY = Math.Clamp(RightStickLeftAtomY, -400.0, 400.0);
-            RightStickRightAtomX = Math.Clamp(RightStickRightAtomX, -500.0, 500.0);
-            RightStickRightAtomY = Math.Clamp(RightStickRightAtomY, -400.0, 400.0);
-            RightStickPressAtomX = Math.Clamp(RightStickPressAtomX, -500.0, 500.0);
-            RightStickPressAtomY = Math.Clamp(RightStickPressAtomY, -400.0, 400.0);
-            RightStickDownAtomX = Math.Clamp(RightStickDownAtomX, -500.0, 500.0);
-            RightStickDownAtomY = Math.Clamp(RightStickDownAtomY, -400.0, 400.0);
             AtomSize = Math.Clamp(AtomSize, 0.5, 2.0);
             QuarkSize = Math.Clamp(QuarkSize, 0.5, 2.0);
-            QuarkDistance = Math.Clamp(QuarkDistance, 0.5, 2.5);
+            QuarkDistance = Math.Clamp(QuarkDistance, -2.0, 2.0);
             IconOffsetX = Math.Clamp(IconOffsetX, -200.0, 200.0);
             IconOffsetY = Math.Clamp(IconOffsetY, -200.0, 200.0);
         }

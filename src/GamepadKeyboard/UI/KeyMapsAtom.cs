@@ -272,14 +272,14 @@ namespace GamepadKeyboard.UI
                 case "LeftStickLeft":
                 case "LeftStickRight":
                 case "LeftStickPress":
-                    AddStick(canvas, mid, 0x3C, 0x9C, 0xF4);
+                    AddStick(canvas, mid, 0x3C, 0x9C, 0xF4, StickArrowDegrees(slot), "L");
                     break;
                 case "RightStickUp":
                 case "RightStickDown":
                 case "RightStickLeft":
                 case "RightStickRight":
                 case "RightStickPress":
-                    AddStick(canvas, mid, 0xE0, 0x64, 0xA8);
+                    AddStick(canvas, mid, 0xE0, 0x64, 0xA8, StickArrowDegrees(slot), "R");
                     break;
                 default:
                     AddShape(canvas, new System.Windows.Shapes.Rectangle
@@ -353,7 +353,19 @@ namespace GamepadKeyboard.UI
             AddShape(canvas, stem, mid - 4, 12);
         }
 
-        private static void AddStick(Canvas canvas, double mid, byte r, byte g, byte b)
+        private static double? StickArrowDegrees(string slot)
+        {
+            return slot switch
+            {
+                "LeftStickUp" or "RightStickUp" => 0.0,
+                "LeftStickRight" or "RightStickRight" => 90.0,
+                "LeftStickDown" or "RightStickDown" => 180.0,
+                "LeftStickLeft" or "RightStickLeft" => 270.0,
+                _ => null,   // press: no arrow
+            };
+        }
+
+        private static void AddStick(Canvas canvas, double mid, byte r, byte g, byte b, double? arrowDegrees, string letter)
         {
             System.Windows.Shapes.Ellipse ring = new()
             {
@@ -365,6 +377,45 @@ namespace GamepadKeyboard.UI
             Canvas.SetLeft(ring, 3);
             Canvas.SetTop(ring, 3);
             canvas.Children.Add(ring);
+            if (arrowDegrees.HasValue)
+            {
+                // Small arrow hugging the ring on the direction side.
+                System.Windows.Shapes.Polygon arrow = new()
+                {
+                    Points = new PointCollection
+                    {
+                        new Point(mid - 4.5, 12.5),
+                        new Point(mid + 4.5, 12.5),
+                        new Point(mid, 7.0),
+                    },
+                    Fill = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                    RenderTransform = new RotateTransform(arrowDegrees.Value, mid, mid),
+                };
+                canvas.Children.Add(arrow);
+            }
+            TextBlock label = new()
+            {
+                Text = letter,
+                Foreground = System.Windows.Media.Brushes.White,
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+            };
+            // Shift the letter slightly away from the arrow so they don't collide.
+            double letterY = mid - 6 + (arrowDegrees switch
+            {
+                0.0 => 3.0,
+                180.0 => -2.5,
+                _ => 0.0,
+            });
+            double letterX = mid - 5 + (arrowDegrees switch
+            {
+                90.0 => -2.5,
+                270.0 => 2.5,
+                _ => 0.0,
+            });
+            Canvas.SetLeft(label, letterX);
+            Canvas.SetTop(label, letterY);
+            canvas.Children.Add(label);
         }
 
         private static void AddShape(Canvas canvas, UIElement element, double x, double y)

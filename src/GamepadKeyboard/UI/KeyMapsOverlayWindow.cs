@@ -39,6 +39,8 @@ namespace GamepadKeyboard.UI
         private const double LabelFontSize = 11.5;
         private const double CenterColumnOffset = 14.0;
         private const double IdleOpacity = 0.42;
+private const double AtomSpreadPitchX = 104.0;   // px between atom columns at Spread = 1
+private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spread = 1
         private const double ActiveOpacity = 1.0;
 
         private static readonly string[] ModifierNames = { "Ctrl", "Shift", "Alt", "Win" };
@@ -227,46 +229,82 @@ namespace GamepadKeyboard.UI
             double centerX = BoardWidth / 2.0;
             double centerY = BoardHeight / 2.0 + 20.0;
 
-            (string slot, double anchorX, double anchorY, double atomX, double atomY, string settingsKey)[] atoms =
+            // Direction offsets in local circle space: this atom's position from
+            // the circle's center at Spread = 1 (X factors are ±1; Y factors set
+            // the exact default row layout per circle).
+            (string slot, double circleAnchorX, double circleAnchorY, double dirX, double dirY, string circleKey)[] atoms =
             {
-                ("DPadUp",       -1, -1, layout.DPadUpAtomX,      layout.DPadUpAtomY,      "DPadUp"),
-                ("DPadLeft",     -1, -1, layout.DPadLeftAtomX,    layout.DPadLeftAtomY,    "DPadLeft"),
-                ("DPadRight",    -1, -1, layout.DPadRightAtomX,   layout.DPadRightAtomY,   "DPadRight"),
-                ("DPadDown",     -1, -1, layout.DPadDownAtomX,    layout.DPadDownAtomY,    "DPadDown"),
-                ("FaceY",        +1, -1, layout.FaceUpAtomX,      layout.FaceUpAtomY,      "FaceUp"),
-                ("FaceX",        +1, -1, layout.FaceLeftAtomX,    layout.FaceLeftAtomY,    "FaceLeft"),
-                ("FaceB",        +1, -1, layout.FaceRightAtomX,   layout.FaceRightAtomY,   "FaceRight"),
-                ("FaceA",        +1, -1, layout.FaceDownAtomX,    layout.FaceDownAtomY,    "FaceDown"),
-                ("LeftStickUp",    -1, +1, layout.LeftStickUpAtomX,    layout.LeftStickUpAtomY,    "LeftStickUp"),
-                ("LeftStickLeft",  -1, +1, layout.LeftStickLeftAtomX,  layout.LeftStickLeftAtomY,  "LeftStickLeft"),
-                ("LeftStickRight", -1, +1, layout.LeftStickRightAtomX, layout.LeftStickRightAtomY, "LeftStickRight"),
-                ("LeftStickPress", -1, +1, layout.LeftStickPressAtomX, layout.LeftStickPressAtomY, "LeftStickPress"),
-                ("LeftStickDown",  -1, +1, layout.LeftStickDownAtomX,  layout.LeftStickDownAtomY,  "LeftStickDown"),
-                ("RightStickUp",    +1, +1, layout.RightStickUpAtomX,    layout.RightStickUpAtomY,    "RightStickUp"),
-                ("RightStickLeft",  +1, +1, layout.RightStickLeftAtomX,  layout.RightStickLeftAtomY,  "RightStickLeft"),
-                ("RightStickRight", +1, +1, layout.RightStickRightAtomX, layout.RightStickRightAtomY, "RightStickRight"),
-                ("RightStickPress", +1, +1, layout.RightStickPressAtomX, layout.RightStickPressAtomY, "RightStickPress"),
-                ("RightStickDown",  +1, +1, layout.RightStickDownAtomX,  layout.RightStickDownAtomY,  "RightStickDown"),
+                ("DPadUp",           -1, -1,  0.0, -1.0, "DPad"),
+                ("DPadLeft",         -1, -1, -1.0,  0.0, "DPad"),
+                ("DPadRight",        -1, -1, +1.0,  0.0, "DPad"),
+                ("DPadDown",         -1, -1,  0.0, +1.0, "DPad"),
+                ("FaceY",            +1, -1,  0.0, -1.0, "Face"),
+                ("FaceX",            +1, -1, -1.0,  0.0, "Face"),
+                ("FaceB",            +1, -1, +1.0,  0.0, "Face"),
+                ("FaceA",            +1, -1,  0.0, +1.0, "Face"),
+                ("LeftStickUp",      -1, +1,  0.0, -1.25, "LeftStick"),
+                ("LeftStickLeft",    -1, +1, -1.0, -0.25, "LeftStick"),
+                ("LeftStickRight",   -1, +1, +1.0, -0.25, "LeftStick"),
+                ("LeftStickPress",   -1, +1,  0.0, +0.42, "LeftStick"),
+                ("LeftStickDown",    -1, +1,  0.0, +1.25, "LeftStick"),
+                ("RightStickUp",     +1, +1,  0.0, -1.25, "RightStick"),
+                ("RightStickLeft",   +1, +1, -1.0, -0.25, "RightStick"),
+                ("RightStickRight",  +1, +1, +1.0, -0.25, "RightStick"),
+                ("RightStickPress",  +1, +1,  0.0, +0.42, "RightStick"),
+                ("RightStickDown",   +1, +1,  0.0, +1.25, "RightStick"),
             };
 
-            foreach ((string slot, double anchorX, double anchorY, double atomX, double atomY, string settingsKey) in atoms)
+            foreach ((string slot, double circleAnchorX, double circleAnchorY, double dirX, double dirY, string circleKey) in atoms)
             {
                 KeyMapsAtom atom = new(slot, LabelFor);
-                double iconOffsetY = layout.IconOffsetY < 0
-                    ? -(KeyMapsAtom.CenterHeight * layout.AtomSize / 2.0) - KeyMapsAtom.IconSpan - 6.0
-                    : layout.IconOffsetY;
                 atom.LayoutChildren(
                     layout.AtomSize, layout.QuarkSize, layout.QuarkDistance,
-                    layout.IconOffsetX, iconOffsetY);
-                double anchorScreenX = centerX + anchorX * 190.0;
-                double anchorScreenY = centerY + anchorY * 110.0;
+                    layout.IconOffsetX, layout.IconOffsetY);
+                double circleCenterX = centerX + circleAnchorX * 190.0 + CircleOffsetX(layout, circleKey) * boardScale;
+                double circleCenterY = centerY + circleAnchorY * 110.0 + CircleOffsetY(layout, circleKey) * boardScale;
+                double spread = CircleSpread(layout, circleKey);
+                double atomX = dirX * AtomSpreadPitchX * spread;
+                double atomY = dirY * AtomSpreadPitchY * spread;
                 Canvas atomHost = (Canvas)atom.Root;
-                Canvas.SetLeft(atomHost, anchorScreenX + atomX * boardScale);
-                Canvas.SetTop(atomHost, anchorScreenY + atomY * boardScale);
+                Canvas.SetLeft(atomHost, circleCenterX + atomX * boardScale);
+                Canvas.SetTop(atomHost, circleCenterY + atomY * boardScale);
                 Canvas.SetZIndex(atomHost, 12);
                 _root.Children.Add(atomHost);
                 _atoms[slot] = atom;
             }
+        }
+
+        private static double CircleOffsetX(KeyMapsLayoutSettings layout, string circleKey)
+        {
+            return circleKey switch
+            {
+                "DPad" => layout.DPadOffsetX,
+                "Face" => layout.FaceOffsetX,
+                "LeftStick" => layout.LeftStickOffsetX,
+                _ => layout.RightStickOffsetX,
+            };
+        }
+
+        private static double CircleOffsetY(KeyMapsLayoutSettings layout, string circleKey)
+        {
+            return circleKey switch
+            {
+                "DPad" => layout.DPadOffsetY,
+                "Face" => layout.FaceOffsetY,
+                "LeftStick" => layout.LeftStickOffsetY,
+                _ => layout.RightStickOffsetY,
+            };
+        }
+
+        private static double CircleSpread(KeyMapsLayoutSettings layout, string circleKey)
+        {
+            return circleKey switch
+            {
+                "DPad" => layout.DPadSpread,
+                "Face" => layout.FaceSpread,
+                "LeftStick" => layout.LeftStickSpread,
+                _ => layout.RightStickSpread,
+            };
         }
 
         /// <summary>Fingerprint of every layout-relevant setting; a change
@@ -283,16 +321,6 @@ namespace GamepadKeyboard.UI
                    layout.KeySize * 3.0 +
                    layout.AtomSize * 4.0 + layout.QuarkSize * 4.1 +
                    layout.QuarkDistance * 4.2 + layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4;
-            // Per-atom positions (36 properties): folded in with unique weights.
-            double weight = 5.0;
-            foreach (System.Reflection.PropertyInfo property in typeof(KeyMapsLayoutSettings).GetProperties())
-            {
-                if (property.Name.EndsWith("AtomX") || property.Name.EndsWith("AtomY"))
-                {
-                    fingerprint += (property.GetValue(layout) as double? ?? 0.0) * weight;
-                    weight += 0.01;
-                }
-            }
             return fingerprint;
         }
 

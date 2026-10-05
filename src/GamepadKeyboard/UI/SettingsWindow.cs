@@ -136,6 +136,15 @@ namespace GamepadKeyboard.UI
             InitializeKeyMapsLayoutEditors(s);
             tabs.Items.Add(new TabItem
             {
+                Header = "Keyboard Maps",
+                Content = new ScrollViewer
+                {
+                    Content = MakeSettingsForm(BuildKeyMapsLayoutRows()),
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                }
+            });
+            tabs.Items.Add(new TabItem
+            {
                 Header = "Mouse",
                 Content = MakeSettingsForm(
                     ("Mouse speed (px per stick unit):", _mouseSpeed),
@@ -238,105 +247,47 @@ namespace GamepadKeyboard.UI
             };
         }
 
-        /// <summary>Keyboard tab rows: the classic keyboard settings plus the
-        /// slider-only Key Maps layout section.</summary>
+        /// <summary>Keyboard tab rows: the classic keyboard settings.</summary>
         private (string, FrameworkElement)[] BuildKeyboardTabRows()
         {
-            List<(string, FrameworkElement)> rows = new()
+            return new[]
             {
                 ("Key spacing (px gap between keys):", _spacing),
                 ("Keyboard move speed:", _keyboardMoveSpeed),
                 ("Stick deadzone (0.000–0.5):", _deadzone),
-                ("── Key Maps layout ──", null!),
             };
-            rows.AddRange(BuildKeyMapsLayoutRows());
-            return rows.ToArray();
         }
 
-        /// <summary>Key Maps layout editors — every option a slider (offsets
-        /// relative to the board position, spreads, hub positions, hub sizes
-        /// and the global key size), all live-applied while dragging.</summary>
+        /// <summary>Key Maps layout editors — every option a slider (circle
+        /// positions/atom spreads, atom/quark sizes, quark distance and the
+        /// icon offset), all live-applied while dragging.</summary>
         private (string, FrameworkElement)[] BuildKeyMapsLayoutRows()
         {
-            (string key, string label)[] wheels =
+            List<(string, FrameworkElement)> rows = new()
+            {
+                MakeKeyMapsSliderRow("Key size", "KeySize", 0.6, 2.0, 0.05),
+                ("── Key Maps circles ──", null!),
+            };
+            (string key, string label)[] circles =
             {
                 ("DPad", "D-Pad"),
                 ("Face", "Face buttons"),
                 ("LeftStick", "Left analog stick"),
                 ("RightStick", "Right analog stick"),
             };
-            List<(string, FrameworkElement)> rows = new()
+            foreach ((string key, string label) in circles)
             {
-                MakeKeyMapsSliderRow("Key size", "KeySize", 0.6, 2.0, 0.05),
-            };
-            foreach ((string key, string label) in wheels)
-            {
-                rows.Add(MakeKeyMapsSliderRow(label + " center offset X", key + "OffsetX", -400, 400, 5));
-                rows.Add(MakeKeyMapsSliderRow(label + " center offset Y", key + "OffsetY", -300, 300, 5));
-                rows.Add(MakeKeyMapsSliderRow(label + " spread", key + "Spread", 0.5, 2.0, 0.05));
+                rows.Add(MakeKeyMapsSliderRow(label + " position X", key + "OffsetX", -400, 400, 5));
+                rows.Add(MakeKeyMapsSliderRow(label + " position Y", key + "OffsetY", -300, 300, 5));
+                rows.Add(MakeKeyMapsSliderRow(label + " atom spread", key + "Spread", 0.0, 3.0, 0.05));
             }
 
-            // ── Atoms: one per key slot (center prompt + quarks + button icon) ──
-            (string header, (string prop, string label)[] items)[] atomGroups =
-            {
-                ("── D-Pad atoms ──", new[]
-                {
-                    ("DPadUpAtomX", "D-Pad Up atom X"), ("DPadUpAtomY", "D-Pad Up atom Y"),
-                    ("DPadLeftAtomX", "D-Pad Left atom X"), ("DPadLeftAtomY", "D-Pad Left atom Y"),
-                    ("DPadRightAtomX", "D-Pad Right atom X"), ("DPadRightAtomY", "D-Pad Right atom Y"),
-                    ("DPadDownAtomX", "D-Pad Down atom X"), ("DPadDownAtomY", "D-Pad Down atom Y"),
-                }),
-                ("── Face-button atoms ──", new[]
-                {
-                    ("FaceUpAtomX", "Face Y atom X"), ("FaceUpAtomY", "Face Y atom Y"),
-                    ("FaceLeftAtomX", "Face X atom X"), ("FaceLeftAtomY", "Face X atom Y"),
-                    ("FaceRightAtomX", "Face B atom X"), ("FaceRightAtomY", "Face B atom Y"),
-                    ("FaceDownAtomX", "Face A atom X"), ("FaceDownAtomY", "Face A atom Y"),
-                }),
-                ("── Left-stick atoms ──", new[]
-                {
-                    ("LeftStickUpAtomX", "L-Stick Up atom X"), ("LeftStickUpAtomY", "L-Stick Up atom Y"),
-                    ("LeftStickLeftAtomX", "L-Stick Left atom X"), ("LeftStickLeftAtomY", "L-Stick Left atom Y"),
-                    ("LeftStickRightAtomX", "L-Stick Right atom X"), ("LeftStickRightAtomY", "L-Stick Right atom Y"),
-                    ("LeftStickPressAtomX", "L-Stick Press atom X"), ("LeftStickPressAtomY", "L-Stick Press atom Y"),
-                    ("LeftStickDownAtomX", "L-Stick Down atom X"), ("LeftStickDownAtomY", "L-Stick Down atom Y"),
-                }),
-                ("── Right-stick atoms ──", new[]
-                {
-                    ("RightStickUpAtomX", "R-Stick Up atom X"), ("RightStickUpAtomY", "R-Stick Up atom Y"),
-                    ("RightStickLeftAtomX", "R-Stick Left atom X"), ("RightStickLeftAtomY", "R-Stick Left atom Y"),
-                    ("RightStickRightAtomX", "R-Stick Right atom X"), ("RightStickRightAtomY", "R-Stick Right atom Y"),
-                    ("RightStickPressAtomX", "R-Stick Press atom X"), ("RightStickPressAtomY", "R-Stick Press atom Y"),
-                    ("RightStickDownAtomX", "R-Stick Down atom X"), ("RightStickDownAtomY", "R-Stick Down atom Y"),
-                }),
-                ("── Atom look (all atoms) ──", new[]
-                {
-                    ("AtomSize", "Atom (big prompt) size"),
-                    ("QuarkSize", "Quark (small prompt) size"),
-                    ("QuarkDistance", "Quark distance from atom"),
-                    ("IconOffsetX", "Button-icon offset X"),
-                    ("IconOffsetY", "Button-icon offset Y (-1 = auto)"),
-                }),
-            };
-            foreach ((string header, (string prop, string label)[] items) in atomGroups)
-            {
-                rows.Add((header, null!));
-                foreach ((string prop, string label) in items)
-                {
-                    if (prop == "AtomSize" || prop == "QuarkSize" || prop == "QuarkDistance")
-                    {
-                        rows.Add(MakeKeyMapsSliderRow(label, prop, 0.5, 2.0, 0.05));
-                    }
-                    else if (prop == "IconOffsetX" || prop == "IconOffsetY")
-                    {
-                        rows.Add(MakeKeyMapsSliderRow(label, prop, -200, 200, 5));
-                    }
-                    else
-                    {
-                        rows.Add(MakeKeyMapsSliderRow(label, prop, -500, 500, 5));
-                    }
-                }
-            }
+            rows.Add(("── Atom look (all atoms) ──", null!));
+            rows.Add(MakeKeyMapsSliderRow("Atom (big prompt) size", "AtomSize", 0.5, 2.0, 0.05));
+            rows.Add(MakeKeyMapsSliderRow("Quark (small prompt) size", "QuarkSize", 0.5, 2.0, 0.05));
+            rows.Add(MakeKeyMapsSliderRow("Quark distance from atom (-2–2)", "QuarkDistance", -2.0, 2.0, 0.1));
+            rows.Add(MakeKeyMapsSliderRow("Button-icon offset X", "IconOffsetX", -200, 200, 5));
+            rows.Add(MakeKeyMapsSliderRow("Button-icon offset Y", "IconOffsetY", -200, 200, 5));
             return rows.ToArray();
         }
 
