@@ -304,7 +304,7 @@ namespace GamepadKeyboard.UI
             return canvas;
         }
 
-        private static System.Windows.Shapes.Grid MakeGlyph(string letter, byte r, byte g, byte b)
+        private static System.Windows.Controls.Grid MakeGlyph(string letter, byte r, byte g, byte b)
         {
             System.Windows.Shapes.Ellipse ring = new()
             {
@@ -322,7 +322,7 @@ namespace GamepadKeyboard.UI
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            System.Windows.Shapes.Grid grid = new();
+            System.Windows.Controls.Grid grid = new();
             grid.Children.Add(ring);
             grid.Children.Add(text);
             return grid;
