@@ -12,11 +12,13 @@ namespace GamepadKeyboard.UI
     /// <summary>
     /// One modular per-wheel "variant hub": a gamepad-element vector icon above a
     /// big center button, with three small combo-variant buttons pinned around it
-    /// (R1 variant upper-left, L1 variant upper-right, L1+R1 variant below).
-    /// Hub center shows the Utility key while the maps key is up and Character
-    /// set 1 (Symbols 1) while it is held; satellites list this group's keys from
-    /// Symbols 2 / Symbols 3 / Function Keys and only render while the maps key
-    /// is held (combos without R2 mean nothing).
+    /// (Symbols 3 = R2+L1 upper-LEFT, Symbols 2 = R2+R1 upper-RIGHT, Function
+    /// Keys = R2+L1+R1 below). Hub center shows the Utility key while the maps
+    /// key is up and Character set 1 (Symbols 1) while it is held; satellites
+    /// list this group's keys from Symbols 2 / Symbols 3 / Function Keys and
+    /// only render while the maps key is held (combos without R2 mean nothing).
+    /// Highlighting (never swapping content): only R2 → center; R2+L1 → left;
+    /// R2+R1 → right; R2+L1+R1 → bottom.
     /// Position: wheel-anchor + per-wheel X/Y offset (settings sliders); sizes:
     /// one global center-size and one global variant-size multiplier.
     /// </summary>
@@ -33,6 +35,19 @@ namespace GamepadKeyboard.UI
         private const double VariantTopY = -66.0;
         private const double VariantBottomY = 66.0;
         private const double IconLift = 24.0;
+
+        private static readonly Brush ActiveFill = Frozen(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57));
+        private static readonly Brush ActiveBorder = Frozen(Color.FromRgb(0x7C, 0xFC, 0x9A));
+        private static readonly Brush IdleVariantFill = Frozen(Color.FromArgb(0xB0, 0x18, 0x18, 0x22));
+        private static readonly Brush IdleVariantBorder = Frozen(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
+        private static readonly Brush IdleCenterFill = Frozen(Color.FromArgb(0xD8, 0x1B, 0x1B, 0x24));
+        private static readonly Brush IdleCenterBorder = Frozen(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF));
+
+        private static Brush Frozen(Brush brush)
+        {
+            brush.Freeze();
+            return brush;
+        }
 
         /// <summary>Slot whose Utility label feeds the center button.</summary>
         public readonly string CenterSlot;
@@ -69,8 +84,8 @@ namespace GamepadKeyboard.UI
                 Height = CenterHeight,
                 CornerRadius = new CornerRadius(10),
                 BorderThickness = new Thickness(1.5),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
-                Background = new SolidColorBrush(Color.FromArgb(0xD8, 0x1B, 0x1B, 0x24)),
+                BorderBrush = IdleCenterBorder,
+                Background = IdleCenterFill,
                 Child = _centerLabel,
             };
 
@@ -115,11 +130,11 @@ namespace GamepadKeyboard.UI
             Canvas.SetLeft(_icon, -iconSize / 2.0);
             Canvas.SetTop(_icon, centerY - iconSize - 6.0);
 
-            // satellites: R1 up-left, L1 up-right, L1+R1 below (per user's layout)
-            Canvas.SetLeft(_variantR1, centerX - variantW - pitchX * 0.35);
-            Canvas.SetTop(_variantR1, VariantTopY * variantScale);
-            Canvas.SetLeft(_variantL1, centerX + centerW + pitchX * 0.35);
+            // satellites: L1 (Sym 3) upper-LEFT, R1 (Sym 2) upper-RIGHT, L1+R1 below
+            Canvas.SetLeft(_variantL1, centerX - variantW - pitchX * 0.35);
             Canvas.SetTop(_variantL1, VariantTopY * variantScale);
+            Canvas.SetLeft(_variantR1, centerX + centerW + pitchX * 0.35);
+            Canvas.SetTop(_variantR1, VariantTopY * variantScale);
             Canvas.SetLeft(_variantFn, centerX + centerW / 2.0 - variantW / 2.0);
             Canvas.SetTop(_variantFn, centerY + centerH + pitchDown * 0.28);
 
@@ -130,24 +145,31 @@ namespace GamepadKeyboard.UI
             _variantR1.Height = _variantL1.Height = _variantFn.Height = variantH;
         }
 
-        /// <summary>Per-tick label/visibility update from live mapper state.</summary>
+        /// <summary>Per-tick label/visibility/highlight update from live mapper
+        /// state. Content never moves: center = Symbols 1, left = Symbols 3,
+        /// right = Symbols 2, bottom = Function Keys — highlighting marks which
+        /// combo is currently held.</summary>
         public void Update(
             IReadOnlyList<KeyMapDefinition> maps,
             bool mapsKeyHeld,
+            bool sym2ComboHeld,
+            bool sym3ComboHeld,
+            bool functionComboHeld,
             Func<KeyMapDefinition, string, string> labelFor)
         {
             int utilityIndex = 0;
             int centerMapIndex = mapsKeyHeld ? Math.Min(1, maps.Count - 1) : utilityIndex;
             string centerLabel = labelFor(maps[centerMapIndex], CenterSlot);
             _centerLabel.Text = SplitLabel(centerLabel);
+
+            bool centerHighlighted = mapsKeyHeld && !sym2ComboHeld && !sym3ComboHeld && !functionComboHeld;
             _centerBorder.Opacity = mapsKeyHeld ? 1.0 : 0.88;
-            _centerBorder.BorderBrush = mapsKeyHeld
-                ? new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A))
-                : new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF));
+            _centerBorder.BorderBrush = centerHighlighted ? ActiveBorder : IdleCenterBorder;
+            _centerBorder.Background = centerHighlighted ? ActiveFill : IdleCenterFill;
 
             // Satellites exist only while the maps key is held (combos without
-            // R2 mean nothing). Symbols 2 = R2+R1, Symbols 3 = R2+L1, Function
-            // Keys = R2+L1+R1 — maps indices 2 / 3 / 4.
+            // R2 mean nothing). Symbols 3 = R2+L1 (left), Symbols 2 = R2+R1
+            // (right), Function Keys = R2+L1+R1 (bottom) — maps indices 3 / 2 / 4.
             if (!mapsKeyHeld || maps.Count < 5)
             {
                 _variantR1.Visibility = Visibility.Collapsed;
@@ -159,9 +181,18 @@ namespace GamepadKeyboard.UI
             SetVariant(_variantR1, labelFor(maps[2], CenterSlot));
             SetVariant(_variantL1, labelFor(maps[3], CenterSlot));
             SetVariant(_variantFn, labelFor(maps[4], CenterSlot));
+            HighlightVariant(_variantR1, sym2ComboHeld);
+            HighlightVariant(_variantL1, sym3ComboHeld);
+            HighlightVariant(_variantFn, functionComboHeld);
             _variantR1.Visibility = Visibility.Visible;
             _variantL1.Visibility = Visibility.Visible;
             _variantFn.Visibility = Visibility.Visible;
+        }
+
+        private static void HighlightVariant(Border border, bool active)
+        {
+            border.Background = active ? ActiveFill : IdleVariantFill;
+            border.BorderBrush = active ? ActiveBorder : IdleVariantBorder;
         }
 
         private void SetVariant(Border border, string label)
@@ -180,8 +211,8 @@ namespace GamepadKeyboard.UI
                 Height = VariantHeight,
                 CornerRadius = new CornerRadius(7),
                 BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
-                Background = new SolidColorBrush(Color.FromArgb(0xB0, 0x18, 0x18, 0x22)),
+                BorderBrush = IdleVariantBorder,
+                Background = IdleVariantFill,
                 Child = new TextBlock
                 {
                     Foreground = Brushes.White,

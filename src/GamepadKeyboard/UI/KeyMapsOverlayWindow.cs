@@ -139,9 +139,13 @@ namespace GamepadKeyboard.UI
                 RebuildAll(Math.Clamp(keyMaps.ActiveMapIndex, 0, Math.Max(_maps.Count - 1, 0)));
             }
 
+            bool sym2ComboHeld = keyMaps.Sym2ComboHeld;
+            bool sym3ComboHeld = keyMaps.Sym3ComboHeld;
+            bool functionComboHeld = keyMaps.FunctionComboHeld;
+            IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
             foreach (KeyMapsVariantHub hub in _hubs)
             {
-                hub.Update(AppSettings.Instance.KeyMaps.Maps, keyMaps.MapsKeyHeld, LabelFor);
+                hub.Update(maps, keyMaps.MapsKeyHeld, sym2ComboHeld, sym3ComboHeld, functionComboHeld, LabelFor);
             }
 
             if (keyMaps.ActiveMapIndex != _lastRenderedMapIndex)
@@ -422,7 +426,9 @@ namespace GamepadKeyboard.UI
         private void ApplyComboChipStates(Input.KeyMapsMapper keyMaps)
         {
             bool mapsKeyHeld = keyMaps.MapsKeyHeld;
-            bool[] comboActive =
+            // Chip order matches: [0] L1 chip (left) → Symbols 3 combo,
+            // [1] R1 chip (right) → Symbols 2 combo, [2] L1+R1 → Function Keys.
+            bool[] comboActive = 
             {
                 keyMaps.Sym3ComboHeld,
                 keyMaps.Sym2ComboHeld,
