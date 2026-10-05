@@ -65,7 +65,7 @@ namespace GamepadKeyboard.UI
         public readonly string Slot;
 
         private readonly Canvas _container = new();
-        private readonly UIElement _icon;
+        private readonly Canvas _icon;
         private readonly Border _center;
         private readonly TextBlock _centerLabel;
         private readonly Border _quarkLeft;
@@ -141,7 +141,9 @@ namespace GamepadKeyboard.UI
         // ── Layout (position + sizes + quark distance) ───────────────────────
 
         /// <summary>Applies sizes and the quark distance; called per rebuild.</summary>
-        public void LayoutChildren(double atomScale, double quarkScale, double quarkDistanceScale, double iconOffsetX, double iconOffsetY)
+        public void LayoutChildren(
+            double atomScale, double quarkScale, double quarkDistanceScale,
+            double iconOffsetX, double iconOffsetY, double iconScale, double fontScale)
         {
             double centerW = CenterWidth * atomScale;
             double centerH = CenterHeight * atomScale;
@@ -242,7 +244,7 @@ namespace GamepadKeyboard.UI
 
         /// <summary>Vector gamepad-button icon keyed by the atom's slot:
         /// face letter, d-pad arrow, stick ring (LS/RS), pill (Select/Start).</summary>
-        private static UIElement MakeIcon(string slot)
+        private static Canvas MakeIcon(string slot)
         {
             Canvas canvas = new()
             {
