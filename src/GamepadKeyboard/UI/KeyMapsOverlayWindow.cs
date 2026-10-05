@@ -146,11 +146,23 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             bool functionComboHeld = keyMaps.FunctionComboHeld;
             IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
             IdleQuarkAlphaSetting.Value = AppSettings.Instance.KeyMaps.Layout.IdleQuarkAlpha;
+            bool shiftHeld = keyMaps.ShiftHeld;
             foreach (KeyValuePair<string, KeyMapsAtom> pair in _atoms)
             {
                 pair.Value.Update(maps, keyMaps.ActiveMapIndex, keyMaps.MapsKeyHeld,
                     sym2ComboHeld, sym3ComboHeld, functionComboHeld,
-                    IsSlotPressed(mapper, pair.Key));
+                    IsSlotPressed(mapper, pair.Key), shiftHeld);
+            }
+
+            // Shift toggling rewrites the Select/Start tile labels too.
+            if (shiftHeld != _lastRenderedShiftHeld)
+            {
+                _lastRenderedShiftHeld = shiftHeld;
+                foreach (KeyValuePair<string, TileView> tilePair in _tiles)
+                {
+                    string label = LabelFor(_maps[Math.Clamp(keyMaps.ActiveMapIndex, 0, _maps.Count - 1)], tilePair.Value.Slot);
+                    tilePair.Value.Label.Text = SplitLabel(KeyMapsShift.Label(label));
+                }
             }
 
             if (keyMaps.ActiveMapIndex != _lastRenderedMapIndex)
@@ -261,7 +273,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 KeyMapsAtom atom = new(slot, LabelFor);
                 atom.LayoutChildren(
                     layout.AtomSize, layout.QuarkSize, layout.QuarkDistance,
-                    layout.IconOffsetX, layout.IconOffsetY);
+                    layout.IconOffsetX, layout.IconOffsetY, layout.IconScale, layout.FontScale);
                 double circleCenterX = centerX + circleAnchorX * 190.0 + CircleOffsetX(layout, circleKey) * boardScale;
                 double circleCenterY = centerY + circleAnchorY * 110.0 + CircleOffsetY(layout, circleKey) * boardScale;
                 double atomX = dirX * AtomSpreadPitchX * CircleSpreadX(layout, circleKey);
@@ -334,7 +346,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                    layout.RightStickSpreadX * 2.06 + layout.RightStickSpreadY * 2.07 +
                    layout.KeySize * 3.0 +
                    layout.AtomSize * 4.0 + layout.QuarkSize * 4.1 +
-                   layout.QuarkDistance * 4.2 + layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4;
+                   layout.QuarkDistance * 4.2 + layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4 +
+                   layout.IconScale * 4.5 + layout.FontScale * 4.6 +
+                   layout.SelectStartOffsetX * 4.7 + layout.SelectStartOffsetY * 4.8 +
+                   layout.SelectStartScale * 4.9 + layout.SelectStartSpreadX * 5.0;
             return fingerprint;
         }
 
@@ -349,9 +364,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 _chips.Add(new ChipView { Border = chipBorder, ModIndex = index });
             }
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
-            double mapNameLeft = ChipColumnX(3, boardScale) + ChipWidth * boardScale + 40;
-            Canvas.SetLeft(_mapNameLabel, mapNameLeft);
-            Canvas.SetTop(_mapNameLabel, 16 * boardScale);
+            _mapNameLabel.Width = BoardWidth;
+            _mapNameLabel.TextAlignment = TextAlignment.Center;
+            _mapNameLabel.FontSize = 17 * boardScale * layout.FontScale;
+            Canvas.SetLeft(_mapNameLabel, 0);
+            Canvas.SetTop(_mapNameLabel, (14 + ChipHeight + 6) * boardScale);
             _root.Children.Add(_mapNameLabel);
             BuildComboChips(boardScale);
         }
@@ -381,18 +398,47 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
 
         private static double ChipColumnX(int index, double boardScale)
         {
-            double totalWidth = ModifierNames.Length * ChipWidth + (ModifierNames.Length - 1) * ChipGap;
-            return (BoardWidth - totalWidth) / 2.0 - 120.0 + index * (ChipWidth + ChipGap) * boardScale;
+            double totalWidth = ModifierNames.Length * ChipWidth * boardScale + (ModifierNames.Length - 1) * ChipGap * boardScale;
+            return (BoardWidth - totalWidth) / 2.0 + index * (ChipWidth + ChipGap) * boardScale;
         }
 
         private void BuildCenterColumn(int activeIndex, double boardScale)
         {
-            double centerX = BoardWidth / 2.0;
-            double centerY = BoardHeight / 2.0 + 20.0;
-            AddTile("Select", _maps[activeIndex],
-                centerX - TileWidth / 2.0 - CenterColumnOffset, centerY - TileHeight - 2.0, boardScale);
-            AddTile("Start", _maps[activeIndex],
-                centerX - TileWidth / 2.0 + CenterColumnOffset, centerY + 2.0, boardScale);
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double centerX = BoardWidth / 2.0 + layout.SelectStartOffsetX * boardScale;
+            double centerY = BoardHeight / 2.0 + 20.0 + layout.SelectStartOffsetY * boardScale;
+            double tileScale = layout.SelectStartScale * boardScale;
+            double width = TileWidth * tileScale;
+            double height = TileHeight * tileScale;
+            double spread = (CenterColumnOffset * 2.0 + TileWidth) * layout.SelectStartSpreadX * boardScale;
+            AddTileSized("Select", _maps[activeIndex], centerX - width / 2.0 - spread / 2.0,
+                centerY - height - 2.0 * tileScale, width, height, boardScale);
+            AddTileSized("Start", _maps[activeIndex], centerX - width / 2.0 + spread / 2.0,
+                centerY + 2.0 * tileScale, width, height, boardScale);
+        }
+
+        /// <summary>AddTile with an explicit tile size (Select/Start sliders).</summary>
+        private void AddTileSized(
+            string slot, KeyMapDefinition map, double left, double top, double width, double height, double boardScale)
+        {
+            string label = LabelFor(map, slot);
+            TextBlock labelBlock = MakeLabel(
+                SplitLabel(label), LabelFontSize * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale);
+            Border border = MakeTileBorder(width, height);
+            border.Child = labelBlock;
+            Canvas.SetLeft(border, left - width / 2.0);
+            Canvas.SetTop(border, top);
+            Canvas.SetZIndex(border, 10);
+            _root.Children.Add(border);
+            _tiles[slot] = new TileView
+            {
+                Border = border,
+                Label = labelBlock,
+                Slot = slot,
+                Left = left - width / 2.0,
+                Top = top,
+                Width = width,
+            };
         }
 
         private void BuildCluster(
@@ -424,7 +470,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         private void AddTile(string slot, KeyMapDefinition map, double left, double top, double boardScale)
         {
             string label = LabelFor(map, slot);
-            TextBlock labelBlock = MakeLabel(SplitLabel(label), LabelFontSize * boardScale);
+            TextBlock labelBlock = MakeLabel(
+                SplitLabel(label), LabelFontSize * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale);
             Border border = MakeTileBorder(TileWidth * boardScale, TileHeight * boardScale);
             border.Child = labelBlock;
             Canvas.SetLeft(border, left);
@@ -462,6 +509,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         /// once per rebuild, opacity-driven per tick.</summary>
         private readonly Border?[] _comboChips = new Border?[3];
         private bool _lastRenderedComboHeld;
+        private bool _lastRenderedShiftHeld;
 
         private Border MakeComboChip(string label, double x, double y, double boardScale)
         {
@@ -478,7 +526,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 {
                     Text = label,
                     Foreground = Brushes.White,
-                    FontSize = 12 * boardScale,
+                    FontSize = 12 * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale,
                     FontWeight = FontWeights.Medium,
                     TextAlignment = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -596,7 +644,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 {
                     Text = label,
                     Foreground = Brushes.White,
-                    FontSize = 13 * boardScale,
+                    FontSize = 13 * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale,
                     FontWeight = FontWeights.Medium,
                     TextAlignment = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,

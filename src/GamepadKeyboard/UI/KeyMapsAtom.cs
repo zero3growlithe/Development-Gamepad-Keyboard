@@ -148,7 +148,9 @@ namespace GamepadKeyboard.UI
             double quarkW = QuarkWidth * quarkScale;
             double quarkH = QuarkHeight * quarkScale;
 
-            double iconSize = IconSpan * Math.Max(atomScale, quarkScale);
+            _icon.LayoutTransform = new System.Windows.Media.ScaleTransform(
+                iconScale * Math.Max(atomScale, quarkScale), iconScale * Math.Max(atomScale, quarkScale));
+            double iconSize = IconSpan * iconScale * Math.Max(atomScale, quarkScale);
             Canvas.SetLeft(_icon, iconOffsetX - iconSize / 2.0);
             Canvas.SetTop(_icon, iconOffsetY - iconSize / 2.0);
 
@@ -156,7 +158,7 @@ namespace GamepadKeyboard.UI
             Canvas.SetTop(_center, -centerH / 2.0);
             _center.Width = centerW;
             _center.Height = centerH;
-            _centerLabel.FontSize = Math.Max(9.0, 13.0 * atomScale);
+            _centerLabel.FontSize = Math.Max(9.0, 13.0 * atomScale * fontScale);
 
             double sideGap = QuarkPitch * quarkDistanceScale;   // gap between center edge and quark edge
             double bottomY = centerH / 2.0 + quarkH / 2.0 + QuarkBottomGap * quarkDistanceScale;
@@ -170,7 +172,7 @@ namespace GamepadKeyboard.UI
             _quarkLeft.Height = _quarkRight.Height = _quarkBottom.Height = quarkH;
             foreach (TextBlock label in _quarkLabels.Values)
             {
-                label.FontSize = Math.Max(7.5, 9.5 * quarkScale);
+                label.FontSize = Math.Max(7.5, 9.5 * quarkScale * fontScale);
             }
         }
 
@@ -184,17 +186,19 @@ namespace GamepadKeyboard.UI
             bool sym2ComboHeld,
             bool sym3ComboHeld,
             bool functionComboHeld,
-            bool physicalPressed)
+            bool physicalPressed,
+            bool shiftHeld)
         {
-            // Center prompt: the active map's key for this slot.
-            _centerLabel.Text = SplitLabel(_labelFor(maps[Math.Clamp(activeMapIndex, 0, maps.Count - 1)], Slot));
+            // Center prompt: the active map's key for this slot. Letters read
+            // lowercase and switch to their shifted glyph while Shift is held.
+            _centerLabel.Text = ShiftLabel(_labelFor(maps[Math.Clamp(activeMapIndex, 0, maps.Count - 1)], Slot), shiftHeld);
 
             // Quark prompts: the same slot from the combo maps (never move).
             if (maps.Count >= 5)
             {
-                _quarkLabels["QuarkLeft"].Text = SplitLabel(_labelFor(maps[3], Slot));
-                _quarkLabels["QuarkRight"].Text = SplitLabel(_labelFor(maps[2], Slot));
-                _quarkLabels["QuarkBottom"].Text = SplitLabel(_labelFor(maps[4], Slot));
+                _quarkLabels["QuarkLeft"].Text = ShiftLabel(_labelFor(maps[3], Slot), shiftHeld);
+                _quarkLabels["QuarkRight"].Text = ShiftLabel(_labelFor(maps[2], Slot), shiftHeld);
+                _quarkLabels["QuarkBottom"].Text = ShiftLabel(_labelFor(maps[4], Slot), shiftHeld);
             }
 
             // Visibility: quarks only while the maps key is held.
@@ -371,7 +375,7 @@ namespace GamepadKeyboard.UI
             };
         }
 
-        private static void AddStick(Canvas canvas, double mid, byte r, byte g, byte b, double? arrowDegrees, string letter)
+                private static void AddStick(Canvas canvas, double mid, byte r, byte g, byte b, double? arrowDegrees, string letter)
         {
             System.Windows.Shapes.Ellipse ring = new()
             {
@@ -383,22 +387,7 @@ namespace GamepadKeyboard.UI
             Canvas.SetLeft(ring, 3);
             Canvas.SetTop(ring, 3);
             canvas.Children.Add(ring);
-            if (arrowDegrees.HasValue)
-            {
-                // Small arrow hugging the ring on the direction side.
-                System.Windows.Shapes.Polygon arrow = new()
-                {
-                    Points = new PointCollection
-                    {
-                        new Point(mid - 4.5, 12.5),
-                        new Point(mid + 4.5, 12.5),
-                        new Point(mid, 7.0),
-                    },
-                    Fill = new SolidColorBrush(Color.FromRgb(r, g, b)),
-                    RenderTransform = new RotateTransform(arrowDegrees.Value, mid, mid),
-                };
-                canvas.Children.Add(arrow);
-            }
+            // Letter centered inside the ring.
             TextBlock label = new()
             {
                 Text = letter,
@@ -406,29 +395,51 @@ namespace GamepadKeyboard.UI
                 FontSize = 10,
                 FontWeight = FontWeights.Bold,
             };
-            // Shift the letter slightly away from the arrow so they don't collide.
-            double letterY = mid - 6 + (arrowDegrees switch
-            {
-                0.0 => 3.0,
-                180.0 => -2.5,
-                _ => 0.0,
-            });
-            double letterX = mid - 5 + (arrowDegrees switch
-            {
-                90.0 => -2.5,
-                270.0 => 2.5,
-                _ => 0.0,
-            });
-            Canvas.SetLeft(label, letterX);
-            Canvas.SetTop(label, letterY);
+            label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Canvas.SetLeft(label, mid - label.DesiredSize.Width / 2.0);
+            Canvas.SetTop(label, mid - label.DesiredSize.Height / 2.0);
             canvas.Children.Add(label);
+            if (arrowDegrees.HasValue)
+            {
+                // Small arrow OUTSIDE the ring, in the direction it points:
+                // base on the ring edge, tip toward the canvas border.
+                System.Windows.Shapes.Polygon arrow = new()
+                {
+                    Points = new PointCollection
+                    {
+                        new Point(mid, (IconSpan / 2.0 - 2.0)),
+                        new Point(mid + 4.0, (IconSpan / 2.0 - 2.0) + 6.0),
+                        new Point(mid - 4.0, (IconSpan / 2.0 - 2.0) + 6.0),
+                    },
+                    Fill = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                    RenderTransform = new RotateTransform(arrowDegrees.Value, mid, mid),
+                };
+                canvas.Children.Add(arrow);
+            }
         }
 
-        private static void AddShape(Canvas canvas, UIElement element, double x, double y)
+private static void AddShape(Canvas canvas, UIElement element, double x, double y)
         {
             Canvas.SetLeft(element, x);
             Canvas.SetTop(element, y);
             canvas.Children.Add(element);
+        }
+
+        /// <summary>Shift-aware label + camel-case spacing.</summary>
+        private static string ShiftLabel(string slotValue, bool shiftHeld)
+        {
+            return SplitLabel(shiftHeld ? KeyMapsShift.Label(slotValue) : ShiftIdleLabel(slotValue));
+        }
+
+        /// <summary>Idle label: lowercase letters, plain punctuation.</summary>
+        private static string ShiftIdleLabel(string slotValue)
+        {
+            if (string.IsNullOrEmpty(slotValue) || slotValue.Length > 1)
+            {
+                return SplitLabel(slotValue);
+            }
+            char c = slotValue[0];
+            return (c >= 'A' && c <= 'Z') ? c.ToString().ToLowerInvariant() : SplitLabel(slotValue);
         }
 
         /// <summary>Same humanization as the board's tile labels.</summary>
@@ -460,6 +471,61 @@ namespace GamepadKeyboard.UI
             }
             return spaced.ToString();
         }
+    }
+}
+
+/// <summary>Letter/punctuation shift behavior for Key Maps labels and the
+/// characters sent under a held Shift (US layout pairs).</summary>
+public static class KeyMapsShift
+{
+    /// <summary>Label for a slot value under the current Shift state: single
+    /// letters render lowercase (uppercase while Shift), punctuation swaps to
+    /// its shifted glyph ("?" for "/", ...). Multi-word names pass through.</summary>
+    public static string Label(string slotValue)
+    {
+        if (string.IsNullOrEmpty(slotValue) || slotValue.Length > 1)
+        {
+            return slotValue;
+        }
+        char c = slotValue[0];
+        if (c >= 'A' && c <= 'Z')
+        {
+            return c.ToString();
+        }
+        if (c >= 'a' && c <= 'z')
+        {
+            return char.ToUpperInvariant(c).ToString();
+        }
+        return ShiftPair(c) is char shifted ? shifted.ToString() : slotValue;
+    }
+
+    /// <summary>The character actually sent when Shift is held (lowercase
+    /// letters keep their VK — the physical Shift does the casing).</summary>
+    public static string SentValue(string slotValue)
+    {
+        if (string.IsNullOrEmpty(slotValue) || slotValue.Length > 1)
+        {
+            return slotValue;
+        }
+        char c = slotValue[0];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+        {
+            return slotValue;
+        }
+        return ShiftPair(c) is char shifted ? shifted.ToString() : slotValue;
+    }
+
+    private static char? ShiftPair(char c)
+    {
+        return c switch
+        {
+            '`' => '~', '1' => '!', '2' => '@', '3' => '#', '4' => '$',
+            '5' => '%', '6' => '^', '7' => '&', '8' => '*', '9' => '(',
+            '0' => ')', '-' => '_', '=' => '+', '[' => '{', ']' => '}',
+            '\\' => '|', ';' => ':', '\'' => '"', ',' => '<', '.' => '>',
+            '/' => '?',
+            _ => null,
+        };
     }
 }
 

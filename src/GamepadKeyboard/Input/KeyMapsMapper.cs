@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using GamepadKeyboard.Native;
 using GamepadKeyboard.Settings;
+using GamepadKeyboard.UI;
 
 namespace GamepadKeyboard.Input
 {
@@ -154,16 +155,7 @@ namespace GamepadKeyboard.Input
         public void ReleaseAll()
         {
             _seeded = false;
-            if (_heldXButton1)
-            {
-                _sender.MouseButtonRelease(NativeMethods.MOUSEEVENTF_XUP, 1u);
-                _heldXButton1 = false;
-            }
-            if (_heldXButton2)
-            {
-                _sender.MouseButtonRelease(NativeMethods.MOUSEEVENTF_XUP, 2u);
-                _heldXButton2 = false;
-            }
+            ReleaseHeldSlots();
             if (_shiftHeld) _sender.KeyUp(Vk.LShift);
             if (_ctrlHeld) _sender.KeyUp(Vk.LControl);
             if (_altHeld) _sender.KeyUp(Vk.LMenu);
@@ -222,25 +214,25 @@ namespace GamepadKeyboard.Input
             ProcessModifiers(snapshot, mapsKey, mapsKeyEdge, map);
 
             double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
-            TapSlot(ref _previousDPadUp, snapshot.DUp, map.DPadUp);
-            TapSlot(ref _previousDPadDown, snapshot.DDown, map.DPadDown);
-            TapSlot(ref _previousDPadLeft, snapshot.DLeft, map.DPadLeft);
-            TapSlot(ref _previousDPadRight, snapshot.DRight, map.DPadRight);
-            TapSlot(ref _previousFaceY, snapshot.Y, map.FaceY);
-            TapSlot(ref _previousFaceA, snapshot.A, map.FaceA);
-            TapSlot(ref _previousFaceX, snapshot.X, map.FaceX);
-            TapSlot(ref _previousFaceB, snapshot.B, map.FaceB);
-            TapSlot(ref _previousLeftStickUp, snapshot.LY >= threshold, map.LeftStickUp);
-            TapSlot(ref _previousLeftStickDown, snapshot.LY <= -threshold, map.LeftStickDown);
-            TapSlot(ref _previousLeftStickLeft, snapshot.LX <= -threshold, map.LeftStickLeft);
-            TapSlot(ref _previousLeftStickRight, snapshot.LX >= threshold, map.LeftStickRight);
-            TapSlot(ref _previousRightStickUp, snapshot.RY >= threshold, map.RightStickUp);
-            TapSlot(ref _previousRightStickDown, snapshot.RY <= -threshold, map.RightStickDown);
-            TapSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft);
-            TapSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight);
-            TapSlot(ref _previousLeftStickPress, snapshot.LS, map.LeftStickPress);
+            HoldSlot(ref _previousDPadUp, snapshot.DUp, map.DPadUp);
+            HoldSlot(ref _previousDPadDown, snapshot.DDown, map.DPadDown);
+            HoldSlot(ref _previousDPadLeft, snapshot.DLeft, map.DPadLeft);
+            HoldSlot(ref _previousDPadRight, snapshot.DRight, map.DPadRight);
+            HoldSlot(ref _previousFaceY, snapshot.Y, map.FaceY);
+            HoldSlot(ref _previousFaceA, snapshot.A, map.FaceA);
+            HoldSlot(ref _previousFaceX, snapshot.X, map.FaceX);
+            HoldSlot(ref _previousFaceB, snapshot.B, map.FaceB);
+            HoldSlot(ref _previousLeftStickUp, snapshot.LY >= threshold, map.LeftStickUp);
+            HoldSlot(ref _previousLeftStickDown, snapshot.LY <= -threshold, map.LeftStickDown);
+            HoldSlot(ref _previousLeftStickLeft, snapshot.LX <= -threshold, map.LeftStickLeft);
+            HoldSlot(ref _previousLeftStickRight, snapshot.LX >= threshold, map.LeftStickRight);
+            HoldSlot(ref _previousRightStickUp, snapshot.RY >= threshold, map.RightStickUp);
+            HoldSlot(ref _previousRightStickDown, snapshot.RY <= -threshold, map.RightStickDown);
+            HoldSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft);
+            HoldSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight);
+            HoldSlot(ref _previousLeftStickPress, snapshot.LS, map.LeftStickPress);
             UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map);
-            TapSlot(ref _previousSelect, snapshot.View, map.Select);
+            HoldSlot(ref _previousSelect, snapshot.View, map.Select);
 
             // Start LAST: on the Utility map it requests the MouseMode switch,
             // which ends this mode for the rest of the tick.
@@ -352,6 +344,22 @@ namespace GamepadKeyboard.Input
                 _latchedWindowsVk = Vk.None;
                 return;
             }
+            if (string.Equals(slot, "XButton1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(slot, "XButton2", StringComparison.OrdinalIgnoreCase))
+            {
+                // Mouse side buttons: true hold (down on press, up on release).
+                if (physical && !_previousRightStickPress && !_seedRun)
+                {
+                    _ = HandleMouseSlotDown(slot);
+                }
+                else if (!physical && _previousRightStickPress && !_seedRun)
+                {
+                    _ = HandleMouseSlotUp(slot);
+                }
+                _previousRightStickPress = physical;
+                _latchedWindowsVk = Vk.None;
+                return;
+            }
             ushort virtualKey = ControllerMapper.NamedVk(slot);
             if (virtualKey == Vk.None)
             {
@@ -365,6 +373,178 @@ namespace GamepadKeyboard.Input
                 virtualKey, extended);
             _latchedWindowsVk = _windowsHeld ? virtualKey : Vk.None;
             _latchedWindowsExtended = extended;
+        }
+
+        /// <summary>
+        /// HOLD slot (non-modifier buttons): the mapped key goes down on the
+        /// button-down edge and up on the release, so held buttons stay held.
+        /// Modifier chord buttons (shoulders/triggers) never reach this — the
+        /// modifier and map-selection paths consume them first. Slots that
+        /// cannot hold (app actions, mouse-button slots, Unicode-typed
+        /// punctuation) keep tap/edge behavior.
+        /// </summary>
+        private void HoldSlot(ref bool previous, bool held, string slot)
+        {
+            if (!_seedRun)
+            {
+                if (held && !previous)
+                {
+                    SendSlotDown(slot);
+                }
+                else if (!held && previous)
+                {
+                    SendSlotUp(slot);
+                }
+            }
+            previous = held;
+        }
+
+        /// <summary>Registry of keys currently held by hold slots, so a mode
+        /// switch / ReleaseAll never leaves a key stuck down. Fixed-size — no
+        /// per-tick allocations (18 holdable slots max).</summary>
+        private readonly ushort[] _heldSlotKeys = new ushort[24];
+        private readonly bool[] _heldSlotExtended = new bool[24];
+        private int _heldSlotCount;
+
+        private void SendSlotDown(string slot)
+        {
+            if (string.IsNullOrWhiteSpace(slot)
+                || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            if (ControllerMapper.IsAppLevelAction(slot))
+            {
+                ActionRequested?.Invoke(slot);
+                return;
+            }
+            if (HandleMouseSlotDown(slot))
+            {
+                return;
+            }
+            ushort virtualKey = ControllerMapper.NamedVk(slot);
+            if (virtualKey != Vk.None)
+            {
+                bool extended = ControllerMapper.IsExtendedKey(virtualKey);
+                _sender.KeyDown(virtualKey, extended);
+                if (_heldSlotCount < _heldSlotKeys.Length)
+                {
+                    _heldSlotKeys[_heldSlotCount] = virtualKey;
+                    _heldSlotExtended[_heldSlotCount] = extended;
+                    _heldSlotCount++;
+                }
+                return;
+            }
+            if (slot.Length == 1)
+            {
+                // Punctuation has no held form — tap the exact glyph (the
+                // shift-aware path rewrites it when Shift is held).
+                SendShiftAwareText(slot);
+            }
+        }
+
+        private void SendSlotUp(string slot)
+        {
+            if (string.IsNullOrWhiteSpace(slot)
+                || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            if (ControllerMapper.IsAppLevelAction(slot))
+            {
+                return;
+            }
+            if (HandleMouseSlotUp(slot))
+            {
+                return;
+            }
+            ushort virtualKey = ControllerMapper.NamedVk(slot);
+            if (virtualKey != Vk.None)
+            {
+                ReleaseHeldKey(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));
+            }
+        }
+
+        private bool HandleMouseSlotDown(string slot)
+        {
+            if (string.Equals(slot, "XButton1", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_heldXButton1)
+                {
+                    _sender.MouseButtonPress(NativeMethods.MOUSEEVENTF_XDOWN, 1u);
+                    _heldXButton1 = true;
+                }
+                return true;
+            }
+            if (string.Equals(slot, "XButton2", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_heldXButton2)
+                {
+                    _sender.MouseButtonPress(NativeMethods.MOUSEEVENTF_XDOWN, 2u);
+                    _heldXButton2 = true;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private bool HandleMouseSlotUp(string slot)
+        {
+            if (string.Equals(slot, "XButton1", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_heldXButton1)
+                {
+                    _sender.MouseButtonRelease(NativeMethods.MOUSEEVENTF_XUP, 1u);
+                    _heldXButton1 = false;
+                }
+                return true;
+            }
+            if (string.Equals(slot, "XButton2", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_heldXButton2)
+                {
+                    _sender.MouseButtonRelease(NativeMethods.MOUSEEVENTF_XUP, 2u);
+                    _heldXButton2 = false;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private void ReleaseHeldKey(ushort virtualKey, bool extended)
+        {
+            for (int index = 0; index < _heldSlotCount; index++)
+            {
+                if (_heldSlotKeys[index] == virtualKey)
+                {
+                    _sender.KeyUp(virtualKey, extended);
+                    _heldSlotKeys[index] = _heldSlotKeys[_heldSlotCount - 1];
+                    _heldSlotExtended[index] = _heldSlotExtended[_heldSlotCount - 1];
+                    _heldSlotCount--;
+                    return;
+                }
+            }
+            _sender.KeyUp(virtualKey, extended);
+        }
+
+        /// <summary>Single-character punctuation under a held Shift sends its
+        /// shifted glyph (Unicode typing ignores the physical modifier).</summary>
+        private void SendShiftAwareText(string slot)
+        {
+            string sent = KeyMapsShift.SentValue(slot);
+            _sender.TypeText(sent);
+        }
+
+        /// <summary>Releases every key a hold slot left down (mode switch).</summary>
+        private void ReleaseHeldSlots()
+        {
+            for (int index = 0; index < _heldSlotCount; index++)
+            {
+                _sender.KeyUp(_heldSlotKeys[index], _heldSlotExtended[index]);
+                _heldSlotKeys[index] = 0;
+            }
+            _heldSlotCount = 0;
+            ReleaseHeldSlots();
         }
 
         /// <summary>Old latch semantics (edge-latch + fresh-press toggle) kept
@@ -467,9 +647,11 @@ namespace GamepadKeyboard.Input
             {
                 // Punctuation slot (e.g. "+") on a US layout: a VK tap sends
                 // "=" instead, and a held Ctrl/Alt further rewrites the glyph.
-                // Typed through Unicode events for the exact character. Taps
-                // are edge-triggered, so this path never runs per tick.
-                _sender.TypeText(slot);
+                // Typed through Unicode events for the exact character. Under
+                // a held Shift the shifted glyph goes out instead ("?" for
+                // "/"). Taps are edge-triggered, so this path never runs per
+                // tick.
+                SendShiftAwareText(slot);
             }
             // Names that resolve to no key are ignored silently.
         }

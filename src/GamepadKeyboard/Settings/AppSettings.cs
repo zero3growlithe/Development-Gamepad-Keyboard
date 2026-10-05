@@ -448,6 +448,21 @@ namespace GamepadKeyboard.Settings
         /// the maps key is held (0–1).</summary>
         public double IdleQuarkAlpha { get; set; } = 0.45;
 
+        /// <summary>Button-image scale multiplier for every atom's icon
+        /// (0–2; 1 = natural size).</summary>
+        public double IconScale { get; set; } = 1.0;
+
+        /// <summary>Font-size multiplier for every prompt label on the Key
+        /// Maps board (0.2–3; 1 = default).</summary>
+        public double FontScale { get; set; } = 1.0;
+
+        /// <summary>Select/Start pair placement: base position, tile scale and
+        /// the X spread between the two tiles.</summary>
+        public double SelectStartOffsetX { get; set; } = 0.0;
+        public double SelectStartOffsetY { get; set; } = 0.0;
+        public double SelectStartScale { get; set; } = 1.0;
+        public double SelectStartSpreadX { get; set; } = 1.0;
+
 
 
         /// <summary>Global tile size multiplier (labels wrap inside tiles).</summary>
@@ -476,6 +491,12 @@ namespace GamepadKeyboard.Settings
             QuarkSize = Math.Clamp(QuarkSize, 0.5, 2.0);
             QuarkDistance = Math.Clamp(QuarkDistance, -2.0, 2.0);
             IdleQuarkAlpha = Math.Clamp(IdleQuarkAlpha, 0.0, 1.0);
+            IconScale = Math.Clamp(IconScale, 0.0, 2.0);
+            FontScale = Math.Clamp(FontScale, 0.2, 3.0);
+            SelectStartOffsetX = Math.Clamp(SelectStartOffsetX, -400.0, 400.0);
+            SelectStartOffsetY = Math.Clamp(SelectStartOffsetY, -300.0, 300.0);
+            SelectStartScale = Math.Clamp(SelectStartScale, 0.5, 2.0);
+            SelectStartSpreadX = Math.Clamp(SelectStartSpreadX, 0.5, 3.0);
             IconOffsetX = Math.Clamp(IconOffsetX, -200.0, 200.0);
             IconOffsetY = Math.Clamp(IconOffsetY, -200.0, 200.0);
         }
