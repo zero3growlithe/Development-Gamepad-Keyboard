@@ -36,12 +36,12 @@ namespace GamepadKeyboard.UI
         private const double VariantBottomY = 66.0;
         private const double IconLift = 24.0;
 
-        private static readonly Brush ActiveFill = Frozen(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57));
-        private static readonly Brush ActiveBorder = Frozen(Color.FromRgb(0x7C, 0xFC, 0x9A));
-        private static readonly Brush IdleVariantFill = Frozen(Color.FromArgb(0xB0, 0x18, 0x18, 0x22));
-        private static readonly Brush IdleVariantBorder = Frozen(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
-        private static readonly Brush IdleCenterFill = Frozen(Color.FromArgb(0xD8, 0x1B, 0x1B, 0x24));
-        private static readonly Brush IdleCenterBorder = Frozen(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF));
+        private static readonly Brush ActiveFill = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57)));
+        private static readonly Brush ActiveBorder = Frozen(new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A)));
+        private static readonly Brush IdleVariantFill = Frozen(new SolidColorBrush(Color.FromArgb(0xB0, 0x18, 0x18, 0x22)));
+        private static readonly Brush IdleVariantBorder = Frozen(new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)));
+        private static readonly Brush IdleCenterFill = Frozen(new SolidColorBrush(Color.FromArgb(0xD8, 0x1B, 0x1B, 0x24)));
+        private static readonly Brush IdleCenterBorder = Frozen(new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)));
 
         private static Brush Frozen(Brush brush)
         {
