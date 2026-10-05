@@ -466,6 +466,22 @@ namespace GamepadKeyboard
                 }
             }
 
+            // Key Maps board repositioning (gamepad-driven move mode + persisted window pos)
+            if (_mapper.Mode == ControllerMapper.MapperMode.DirectInput && _mapper.AdjustKeyMapsPosition
+                && (Math.Abs(_mapper.KeyMapsMoveDX) > 0.01 || Math.Abs(_mapper.KeyMapsMoveDY) > 0.01))
+            {
+                double keyMapsMoveSpeed = Settings.AppSettings.Instance.OverlayMoveSpeed;
+                _keyMapsOverlay.Left = Math.Clamp(
+                    _keyMapsOverlay.Left + _mapper.KeyMapsMoveDX * keyMapsMoveSpeed,
+                    -_keyMapsOverlay.Width + 80, System.Windows.SystemParameters.WorkArea.Width - 40);
+                _keyMapsOverlay.Top = Math.Clamp(
+                    _keyMapsOverlay.Top - _mapper.KeyMapsMoveDY * keyMapsMoveSpeed,
+                    0, System.Windows.SystemParameters.WorkArea.Height - 40);
+                Settings.AppSettings.Instance.KeyMapsOverlayLeft = _keyMapsOverlay.Left;
+                Settings.AppSettings.Instance.KeyMapsOverlayTop = _keyMapsOverlay.Top;
+                _settingsDirty = true;
+            }
+
             // overlay visibility follows the setting (ToggleOverlay action / tray);
             // hidden while input disabled (gamepad free for games) AND in mouse mode
             if (refreshStatic)

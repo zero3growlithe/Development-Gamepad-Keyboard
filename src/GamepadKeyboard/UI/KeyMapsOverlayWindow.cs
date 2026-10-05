@@ -33,15 +33,12 @@ namespace GamepadKeyboard.UI
         private const double TileGap = 16.0;
         private const double TilePitchX = TileWidth + TileGap;    // 86
         private const double TilePitchY = TileHeight + TileGap;   // 58
-        private const double ShadowWidth = 48.0;
-        private const double ShadowHeight = 28.0;
         private const double ChipWidth = 64.0;
         private const double ChipHeight = 26.0;
         private const double ChipGap = 10.0;
         private const double LabelFontSize = 11.5;
-        private const double ShadowFontSize = 9.0;
         private const double CenterColumnOffset = 14.0;
-        private const double IdleShadowOpacity = 0.42;
+        private const double IdleOpacity = 0.42;
         private const double ActiveOpacity = 1.0;
 
         private static readonly string[] ModifierNames = { "Ctrl", "Shift", "Alt", "Win" };
@@ -52,10 +49,9 @@ namespace GamepadKeyboard.UI
         private readonly TextBlock _mapNameLabel;
         private readonly List<ChipView> _chips = new();
         private readonly Dictionary<string, TileView> _tiles = new();
-        private readonly Dictionary<string, List<TileView>> _shadows = new();
+        private readonly List<KeyMapsVariantHub> _hubs = new();
         private List<KeyMapDefinition> _maps = new();
         private int _lastRenderedMapIndex;
-        private bool _wasMapsKeyHeld;
         private bool _bindingsDirty = true;
         private bool _shown;
         private bool _followCursor;
@@ -111,7 +107,6 @@ namespace GamepadKeyboard.UI
                 if (_shown)
                 {
                     _shown = false;
-                    ClearShadows();
                     Visibility = Visibility.Hidden;
                 }
                 return;
@@ -121,7 +116,6 @@ namespace GamepadKeyboard.UI
             {
                 _shown = true;
                 _bindingsDirty = true;
-                _wasMapsKeyHeld = false;
                 _lastRenderedMapIndex = -1;
                 _lastLayoutFingerprint = double.NaN;
                 if (FollowCursor)
@@ -130,7 +124,7 @@ namespace GamepadKeyboard.UI
                 }
                 else
                 {
-                    PositionBottomCenter();
+                    RestorePersistedPosition();
                 }
                 Visibility = Visibility.Visible;
             }
@@ -145,16 +139,10 @@ namespace GamepadKeyboard.UI
                 RebuildAll(Math.Clamp(keyMaps.ActiveMapIndex, 0, Math.Max(_maps.Count - 1, 0)));
             }
 
-            bool mapsKeyHeld = keyMaps.MapsKeyHeld;
-            if (mapsKeyHeld && !_wasMapsKeyHeld)
+            foreach (KeyMapsVariantHub hub in _hubs)
             {
-                BuildShadows();
+                hub.Update(AppSettings.Instance.KeyMaps.Maps, keyMaps.MapsKeyHeld, LabelFor);
             }
-            else if (!mapsKeyHeld && _wasMapsKeyHeld)
-            {
-                ClearShadows();
-            }
-            _wasMapsKeyHeld = mapsKeyHeld;
 
             if (keyMaps.ActiveMapIndex != _lastRenderedMapIndex)
             {
@@ -202,7 +190,7 @@ namespace GamepadKeyboard.UI
             _root.Children.Clear();
             _chips.Clear();
             _tiles.Clear();
-            ClearShadows();
+            _hubs.Clear();
             if (_maps.Count < 5)
             {
                 return;
@@ -218,9 +206,11 @@ namespace GamepadKeyboard.UI
             BuildModifierRow(boardScale);
             BuildCenterColumn(activeIndex, boardScale);
             BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad, layout.DPadOffsetX, layout.DPadOffsetY, layout.DPadSpread, boardScale);
+            BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad, layout.DPadOffsetX, layout.DPadOffsetY, layout.DPadSpread, boardScale);
             BuildCluster(activeIndex, +1, -1, ClusterGeometry.Face, layout.FaceOffsetX, layout.FaceOffsetY, layout.FaceSpread, boardScale);
             BuildCluster(activeIndex, -1, +1, ClusterGeometry.LeftStick, layout.LeftStickOffsetX, layout.LeftStickOffsetY, layout.LeftStickSpread, boardScale);
             BuildCluster(activeIndex, +1, +1, ClusterGeometry.RightStick, layout.RightStickOffsetX, layout.RightStickOffsetY, layout.RightStickSpread, boardScale);
+            BuildVariantHubs(boardScale);
             ApplyMapName(activeIndex);
             _lastRenderedMapIndex = activeIndex;
         }
@@ -236,7 +226,13 @@ namespace GamepadKeyboard.UI
                    layout.RightStickOffsetX * 1.006 + layout.RightStickOffsetY * 1.007 +
                    layout.DPadSpread * 2.0 + layout.FaceSpread * 2.1 +
                    layout.LeftStickSpread * 2.2 + layout.RightStickSpread * 2.3 +
-                   layout.KeySize * 3.0;
+                   layout.KeySize * 3.0 +
+                   layout.DPadHubOffsetX * 1.008 + layout.DPadHubOffsetY * 1.009 +
+                   layout.FaceHubOffsetX * 1.010 + layout.FaceHubOffsetY * 1.011 +
+                   layout.LeftStickHubOffsetX * 1.012 + layout.LeftStickHubOffsetY * 1.013 +
+                   layout.RightStickHubOffsetX * 1.014 + layout.RightStickHubOffsetY * 1.015 +
+                   layout.CenterHubOffsetX * 1.016 + layout.CenterHubOffsetY * 1.017 +
+                   layout.HubCenterSize * 4.0 + layout.HubVariantSize * 4.1;
         }
 
         private void BuildModifierRow(double boardScale)
@@ -322,6 +318,38 @@ namespace GamepadKeyboard.UI
             }
         }
 
+        /// <summary>Builds the five modular variant hubs (one per wheel plus the
+        /// Select/Start center pair): gamepad-icon + big center button + three
+        /// combo-variant satellites, positioned relative to each wheel anchor
+        /// from per-hub X/Y setting offsets. Rebuilt with the board.</summary>
+        private void BuildVariantHubs(double boardScale)
+        {
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double centerX = BoardWidth / 2.0;
+            double centerY = BoardHeight / 2.0 + 20.0;
+
+            (string centerSlot, double offsetX, double offsetY)[] hubs =
+            {
+                ("DPadUp", layout.DPadHubOffsetX, layout.DPadHubOffsetY),
+                ("FaceY", layout.FaceHubOffsetX, layout.FaceHubOffsetY),
+                ("LeftStickPress", layout.LeftStickHubOffsetX, layout.LeftStickHubOffsetY),
+                ("RightStickPress", layout.RightStickHubOffsetX, layout.RightStickHubOffsetY),
+                ("Select", layout.CenterHubOffsetX, layout.CenterHubOffsetY),
+            };
+
+            foreach ((string centerSlot, double offsetX, double offsetY) in hubs)
+            {
+                KeyMapsVariantHub hub = new KeyMapsVariantHub(centerSlot, LabelFor);
+                hub.LayoutChildren(layout.HubCenterSize, layout.HubVariantSize);
+                Canvas hubHost = (Canvas)hub.Root;
+                Canvas.SetLeft(hubHost, centerX + offsetX * boardScale);
+                Canvas.SetTop(hubHost, centerY + offsetY * boardScale);
+                Canvas.SetZIndex(hubHost, 12);
+                _root.Children.Add(hubHost);
+                _hubs.Add(hub);
+            }
+        }
+
         private void AddTile(string slot, KeyMapDefinition map, double left, double top, double boardScale)
         {
             string label = LabelFor(map, slot);
@@ -343,74 +371,6 @@ namespace GamepadKeyboard.UI
             };
         }
 
-        // ── Shadow pills (maps key held) ────────────────────────────────────────
-
-        private void BuildShadows()
-        {
-            ClearShadows();
-            foreach (KeyValuePair<string, TileView> pair in _tiles)
-            {
-                TileView origin = pair.Value;
-                AddShadowPill(origin, 3);   // Symbols 3 (L1 combo) — up/left lane
-                AddShadowPill(origin, 2);   // Symbols 2 (R1 combo) — right/below lane
-                AddShadowPill(origin, 4);   // Function Keys (L1+R1) — below lane
-            }
-        }
-
-        private void AddShadowPill(TileView origin, int mapIndex)
-        {
-            if (mapIndex >= _maps.Count)
-            {
-                return;
-            }
-            string label = LabelFor(_maps[mapIndex], origin.Slot);
-            if (string.IsNullOrWhiteSpace(label))
-            {
-                return;   // slot unbound on that map — no shadow pill
-            }
-            (double dx, double dy) = ShadowOffsetOf(origin.Slot, mapIndex);
-            double tileWidth = origin.Width <= 0 ? TileWidth : origin.Width;
-            // Negative dx: pill hugs the tile's LEFT edge (grows leftwards);
-            // positive dx: pill grows rightwards from the tile's left edge.
-            double resolvedLeft = dx < 0
-                ? origin.Left + dx * (tileWidth / TileWidth) + (tileWidth - ShadowWidth)
-                : origin.Left + dx * (tileWidth / TileWidth);
-            TextBlock labelBlock = MakeLabel(SplitLabel(label), ShadowFontSize);
-            Border border = MakeTileBorder(ShadowWidth, ShadowHeight);
-            border.Child = labelBlock;
-            border.Opacity = IdleShadowOpacity;
-            Canvas.SetLeft(border, resolvedLeft);
-            Canvas.SetTop(border, origin.Top + dy);
-            Canvas.SetZIndex(border, 9);
-            _root.Children.Add(border);
-            if (!_shadows.TryGetValue(origin.Slot, out List<TileView>? list))
-            {
-                list = new List<TileView>();
-                _shadows[origin.Slot] = list;
-            }
-            list.Add(new TileView
-            {
-                Border = border,
-                Label = labelBlock,
-                Slot = origin.Slot,
-                Left = resolvedLeft,
-                Top = origin.Top + dy,
-                MapIndex = mapIndex,
-            });
-        }
-
-        private void ClearShadows()
-        {
-            foreach (List<TileView> list in _shadows.Values)
-            {
-                for (int index = 0; index < list.Count; index++)
-                {
-                    _root.Children.Remove(list[index].Border);
-                }
-            }
-            _shadows.Clear();
-        }
-
         private void SwapActiveMap(int activeIndex)
         {
             ApplyMapName(activeIndex);
@@ -420,18 +380,8 @@ namespace GamepadKeyboard.UI
                 string label = LabelFor(_maps[activeIndex], tile.Slot);
                 tile.Label.Text = SplitLabel(label);
                 bool boundHere = !string.IsNullOrWhiteSpace(label);
-                tile.Border.Opacity = boundHere ? ActiveOpacity : IdleShadowOpacity;
+                tile.Border.Opacity = boundHere ? ActiveOpacity : IdleOpacity;
                 Canvas.SetZIndex(tile.Border, boundHere ? 10 : 5);
-            }
-            foreach (List<TileView> list in _shadows.Values)
-            {
-                for (int index = 0; index < list.Count; index++)
-                {
-                    TileView pill = list[index];
-                    pill.Border.Opacity = pill.MapIndex == activeIndex && _wasMapsKeyHeld
-                        ? ActiveOpacity
-                        : IdleShadowOpacity;
-                }
             }
         }
 
@@ -649,91 +599,6 @@ namespace GamepadKeyboard.UI
             return string.IsNullOrWhiteSpace(value) || value == "None" ? "" : value;
         }
 
-        /// <summary>Fixed shadow pill offset per slot + combo map. dx negative
-        /// hugs the tile's left edge (pill sits to its left), dx positive
-        /// offsets rightwards from the tile's left edge; lanes are tuned per
-        /// slot so pills land in the free corners and below-lane of the plus
-        /// shapes and the three combo lanes never collide. Positions NEVER
-        /// depend on the currently active map — muscle memory stays stable.</summary>
-        private static (double Dx, double Dy) ShadowOffsetOf(string slot, int mapIndex)
-        {
-            return (slot, mapIndex) switch
-            {
-                // Up slots: diagonal corners above the cluster are free.
-                ("DPadUp", 3) => (-52, -32),
-                ("DPadUp", 2) => (+52, -32),
-                ("DPadUp", 4) => (0, +58),
-                ("FaceY", 3) => (+52, -32),
-                ("FaceY", 2) => (-52, -32),
-                ("FaceY", 4) => (0, +58),
-                ("LeftStickUp", 3) => (-52, -32),
-                ("LeftStickUp", 2) => (+52, -32),
-                ("LeftStickUp", 4) => (0, +58),
-                ("RightStickUp", 3) => (+52, -32),
-                ("RightStickUp", 2) => (-52, -32),
-                ("RightStickUp", 4) => (0, +58),
-
-                // Left-column slots: outside-left is free.
-                ("DPadLeft", 3) => (-56, -36),
-                ("DPadLeft", 2) => (-56, +8),
-                ("DPadLeft", 4) => (-56, +52),
-                ("FaceX", 3) => (+52, -36),
-                ("FaceX", 2) => (+52, +8),
-                ("FaceX", 4) => (+52, +52),
-                ("LeftStickLeft", 3) => (-56, -36),
-                ("LeftStickLeft", 2) => (-56, +8),
-                ("LeftStickLeft", 4) => (-56, +52),
-                ("RightStickLeft", 3) => (+52, -36),
-                ("RightStickLeft", 2) => (+52, +8),
-                ("RightStickLeft", 4) => (+52, +52),
-
-                // Right-column slots: outside-right is free.
-                ("DPadRight", 3) => (+56, -36),
-                ("DPadRight", 2) => (+56, +8),
-                ("DPadRight", 4) => (+56, +52),
-                ("FaceB", 3) => (-56, -36),
-                ("FaceB", 2) => (-56, +8),
-                ("FaceB", 4) => (-56, +52),
-                ("LeftStickRight", 3) => (+56, -36),
-                ("LeftStickRight", 2) => (+56, +8),
-                ("LeftStickRight", 4) => (+56, +52),
-                ("RightStickRight", 3) => (-56, -36),
-                ("RightStickRight", 2) => (-56, +8),
-                ("RightStickRight", 4) => (-56, +52),
-
-                // Down slots: below is free.
-                ("DPadDown", 3) => (-52, +30),
-                ("DPadDown", 2) => (+52, +30),
-                ("DPadDown", 4) => (0, +58),
-                ("FaceA", 3) => (+52, +30),
-                ("FaceA", 2) => (-52, +30),
-                ("FaceA", 4) => (0, +58),
-                ("LeftStickDown", 3) => (-52, +26),
-                ("LeftStickDown", 2) => (+52, +26),
-                ("LeftStickDown", 4) => (0, +58),
-                ("RightStickDown", 3) => (+52, +26),
-                ("RightStickDown", 2) => (-52, +26),
-                ("RightStickDown", 4) => (0, +58),
-
-                // Stick presses: side lanes at press-row height.
-                ("LeftStickPress", 3) => (-56, +8),
-                ("LeftStickPress", 2) => (+56, +8),
-                ("LeftStickPress", 4) => (0, +58),
-                ("RightStickPress", 3) => (+56, +8),
-                ("RightStickPress", 2) => (-56, +8),
-                ("RightStickPress", 4) => (0, +58),
-
-                // Center column: Select shadows above, Start shadows below.
-                ("Select", 3) => (-56, -34),
-                ("Select", 2) => (+56, -34),
-                ("Select", 4) => (-20, +50),
-                ("Start", 3) => (-56, -34),
-                ("Start", 2) => (+56, -34),
-                ("Start", 4) => (+20, +50),
-
-                _ => (0, +58),
-            };
-        }
 
         // ── Geometry tables ─────────────────────────────────────────────────────
 
@@ -851,6 +716,25 @@ namespace GamepadKeyboard.UI
             double screenHeight = SystemParameters.WorkArea.Height;
             Left = (screenWidth - Width) / 2.0;
             Top = screenHeight - Height - 24.0;
+            _followCursor = false;
+        }
+
+        /// <summary>Reuses the last gamepad-moved position when available
+        /// (-1 = never moved → falls back to bottom-center).</summary>
+        private void RestorePersistedPosition()
+        {
+            double storedLeft = AppSettings.Instance.KeyMapsOverlayLeft;
+            double storedTop = AppSettings.Instance.KeyMapsOverlayTop;
+            if (storedLeft < 0 || storedTop < 0)
+            {
+                PositionBottomCenter();
+                return;
+            }
+
+            double screenWidth = SystemParameters.WorkArea.Width;
+            double screenHeight = SystemParameters.WorkArea.Height;
+            Left = Math.Clamp(storedLeft, -Width + 80.0, Math.Max(screenWidth - 40.0, 80.0 - Width));
+            Top = Math.Clamp(storedTop, 0.0, Math.Max(screenHeight - 40.0, 0.0));
             _followCursor = false;
         }
     }

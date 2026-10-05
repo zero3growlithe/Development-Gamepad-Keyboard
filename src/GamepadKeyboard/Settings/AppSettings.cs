@@ -23,6 +23,8 @@ namespace GamepadKeyboard.Settings
         public double AnalogStickCurveExponent { get; set; } = 1.0;
         public double OverlayLeft { get; set; } = 100;
         public double OverlayTop { get; set; } = 100;
+        public double KeyMapsOverlayLeft { get; set; } = -1;   // -1 = not moved yet → default bottom-center
+        public double KeyMapsOverlayTop { get; set; } = -1;
         public double MouseSpeed { get; set; } = 8.0;
         public double MouseSpeedBoostMultiplier { get; set; } = 2;
         public double ScrollSpeed { get; set; } = 1.0;
@@ -396,8 +398,9 @@ namespace GamepadKeyboard.Settings
     }
 
     /// <summary>Overlay layout tuning for Key Maps mode: per-key-wheel center
-    /// offsets relative to the board's current position, per-wheel tile spread
-    /// and a global key size multiplier. All values clamped in Normalize().</summary>
+    /// offsets relative to the board's current position, per-wheel tile spread,
+    /// per-wheel variant-hub position relative to the wheel anchor, global hub
+    /// sizes and a global key size multiplier. All values clamped in Normalize().</summary>
     public sealed class KeyMapsLayoutSettings
     {
         /// <summary>Center offset of each key wheel relative to the overlay
@@ -412,12 +415,32 @@ namespace GamepadKeyboard.Settings
         public double RightStickOffsetX { get; set; } = 0.0;
         public double RightStickOffsetY { get; set; } = 0.0;
 
+        /// <summary>Variant-hub position relative to the wheel anchor, in px
+        /// (the hub = gamepad-element icon + big center button + three small
+        /// combo-variant buttons pinned to each group).</summary>
+        public double DPadHubOffsetX { get; set; } = 0.0;
+        public double DPadHubOffsetY { get; set; } = -110.0;
+        public double FaceHubOffsetX { get; set; } = 0.0;
+        public double FaceHubOffsetY { get; set; } = -110.0;
+        public double LeftStickHubOffsetX { get; set; } = -140.0;
+        public double LeftStickHubOffsetY { get; set; } = -110.0;
+        public double RightStickHubOffsetX { get; set; } = 140.0;
+        public double RightStickHubOffsetY { get; set; } = -110.0;
+        public double CenterHubOffsetX { get; set; } = 0.0;
+        public double CenterHubOffsetY { get; set; } = 132.0;
+
         /// <summary>Multiplier on the wheel's tile pitch (spread between a
         /// wheel's own tiles). 1.0 = default.</summary>
         public double DPadSpread { get; set; } = 1.0;
         public double FaceSpread { get; set; } = 1.0;
         public double LeftStickSpread { get; set; } = 1.0;
         public double RightStickSpread { get; set; } = 1.0;
+
+        /// <summary>Global big-center-button size multiplier (all hubs).</summary>
+        public double HubCenterSize { get; set; } = 1.0;
+
+        /// <summary>Global variant-button size multiplier (all hubs).</summary>
+        public double HubVariantSize { get; set; } = 1.0;
 
         /// <summary>Global tile size multiplier (labels wrap inside tiles).</summary>
         public double KeySize { get; set; } = 1.0;
@@ -437,6 +460,18 @@ namespace GamepadKeyboard.Settings
             LeftStickSpread = Math.Clamp(LeftStickSpread, 0.5, 2.0);
             RightStickSpread = Math.Clamp(RightStickSpread, 0.5, 2.0);
             KeySize = Math.Clamp(KeySize, 0.6, 2.0);
+            DPadHubOffsetX = Math.Clamp(DPadHubOffsetX, -400.0, 400.0);
+            DPadHubOffsetY = Math.Clamp(DPadHubOffsetY, -300.0, 300.0);
+            FaceHubOffsetX = Math.Clamp(FaceHubOffsetX, -400.0, 400.0);
+            FaceHubOffsetY = Math.Clamp(FaceHubOffsetY, -300.0, 300.0);
+            LeftStickHubOffsetX = Math.Clamp(LeftStickHubOffsetX, -400.0, 400.0);
+            LeftStickHubOffsetY = Math.Clamp(LeftStickHubOffsetY, -300.0, 300.0);
+            RightStickHubOffsetX = Math.Clamp(RightStickHubOffsetX, -400.0, 400.0);
+            RightStickHubOffsetY = Math.Clamp(RightStickHubOffsetY, -300.0, 300.0);
+            CenterHubOffsetX = Math.Clamp(CenterHubOffsetX, -400.0, 400.0);
+            CenterHubOffsetY = Math.Clamp(CenterHubOffsetY, -300.0, 300.0);
+            HubCenterSize = Math.Clamp(HubCenterSize, 0.5, 2.0);
+            HubVariantSize = Math.Clamp(HubVariantSize, 0.5, 2.0);
         }
     }
 

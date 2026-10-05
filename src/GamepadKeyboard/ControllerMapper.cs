@@ -95,6 +95,13 @@ namespace GamepadKeyboard
 
         /// <summary>Profile-defined keyboard move/scale mode.</summary>
         public bool AdjustMoveScaleKeyboard { get; set; }
+
+        /// <summary>Key Maps move mode: active while the user drives the
+        /// key-maps overlay position with the sticks (gamepad-driven
+        /// alternative to the settings sliders).</summary>
+        public bool AdjustKeyMapsPosition { get; set; }
+        public double KeyMapsMoveDX { get; private set; }
+        public double KeyMapsMoveDY { get; private set; }
         public double MoveDX { get; private set; }
         public double MoveDY { get; private set; }
         public double ScaleDelta { get; private set; }   // per-tick, up/down = +/-
@@ -275,6 +282,20 @@ namespace GamepadKeyboard
             // The mapper swallows + rate-limits its own errors; the app-level
             // action (Start = MouseMode) runs after the tick so it cannot be
             // interrupted mid-dispatch.
+            if (AdjustKeyMapsPosition)
+            {
+                // Right stick moves the board; the key-maps tick still runs so
+                // R2-based feedback (hubs/chips) keeps updating while moving.
+                ApplyRadialStickCurve(s.RX, s.RY, out double curvedMoveX, out double curvedMoveY);
+                KeyMapsMoveDX = curvedMoveX;
+                KeyMapsMoveDY = curvedMoveY;
+            }
+            else
+            {
+                KeyMapsMoveDX = 0;
+                KeyMapsMoveDY = 0;
+            }
+
             _keyMaps.Process(s);
             string? requestedAction = _pendingKeyMapsAction;
             _pendingKeyMapsAction = null;
@@ -967,6 +988,14 @@ namespace GamepadKeyboard
                     StateChanged?.Invoke();
                     App.Log("key maps mode: entered");
                     Notification?.Invoke("mode: Key Maps");
+                    break;
+
+                case "ToggleKeyMapsMoveMode":
+                    AdjustKeyMapsPosition = !AdjustKeyMapsPosition;
+                    KeyMapsMoveDX = KeyMapsMoveDY = 0;
+                    Notification?.Invoke(AdjustKeyMapsPosition
+                        ? "Key Maps move ON — right stick moves the board"
+                        : "Key Maps move OFF");
                     break;
 
                 case "ToggleMoveScaleKeyboard":

@@ -63,6 +63,9 @@ namespace GamepadKeyboard.UI
         private readonly TextBox _keyMapsKeySize = new() { Text = "" };
         private readonly Dictionary<string, TextBox> _keyMapsOffsets = new();
         private readonly Dictionary<string, TextBox> _keyMapsSpreads = new();
+        private readonly Dictionary<string, Slider> _keyMapsHubOffsets = new();   // "+Key+Axis" → slider (relative to wheel anchor)
+        private readonly Slider _keyMapsHubCenterSize = new() { Minimum = 0.5, Maximum = 2.0, TickFrequency = 0.1, IsSnapToTickEnabled = false };
+        private readonly Slider _keyMapsHubVariantSize = new() { Minimum = 0.5, Maximum = 2.0, TickFrequency = 0.1, IsSnapToTickEnabled = false };
 
         public SettingsWindow()
         {
@@ -291,7 +294,31 @@ namespace GamepadKeyboard.UI
                 pair.Children.Add(offsetY);
                 rows.Add((label + " center offset X/Y (px relative to board):", pair));
                 rows.Add((label + " spread (multiplier, 0.5–2.0):", spread));
+
+                Slider hubX = new() { Minimum = -400, Maximum = 400, Width = 220, TickFrequency = 10 };
+                Slider hubY = new() { Minimum = -300, Maximum = 300, Width = 220, TickFrequency = 10 };
+                _keyMapsHubOffsets[key + "HubOffsetX"] = hubX;
+                _keyMapsHubOffsets[key + "HubOffsetY"] = hubY;
+                StackPanel hubPair = new() { Orientation = Orientation.Horizontal };
+                hubPair.Children.Add(new TextBlock { Text = "X:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+                hubPair.Children.Add(hubX);
+                hubPair.Children.Add(new TextBlock { Text = "  Y:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) });
+                hubPair.Children.Add(hubY);
+                rows.Add((label + " variant-hub position X/Y (px, relative to the wheel anchor):", hubPair));
             }
+
+            Slider centerHubX = new() { Minimum = -400, Maximum = 400, Width = 220, TickFrequency = 10 };
+            Slider centerHubY = new() { Minimum = -300, Maximum = 300, Width = 220, TickFrequency = 10 };
+            _keyMapsHubOffsets["CenterHubOffsetX"] = centerHubX;
+            _keyMapsHubOffsets["CenterHubOffsetY"] = centerHubY;
+            StackPanel centerHubPair = new() { Orientation = Orientation.Horizontal };
+            centerHubPair.Children.Add(new TextBlock { Text = "X:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+            centerHubPair.Children.Add(centerHubX);
+            centerHubPair.Children.Add(new TextBlock { Text = "  Y:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) });
+            centerHubPair.Children.Add(centerHubY);
+            rows.Add(("Select/Start variant-hub position X/Y (px, relative to board center):", centerHubPair));
+            rows.Add(("Variant-hub CENTER button size (all groups, 0.5–2.0):", _keyMapsHubCenterSize));
+            rows.Add(("Variant-hub VARIANT buttons size (all groups, 0.5–2.0):", _keyMapsHubVariantSize));
             return rows.ToArray();
         }
 
@@ -309,6 +336,13 @@ namespace GamepadKeyboard.UI
                 double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 1.0;
                 pair.Value.Text = value.ToString("0.##");
             }
+            foreach (KeyValuePair<string, Slider> pair in _keyMapsHubOffsets)
+            {
+                double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 0.0;
+                pair.Value.Value = value;
+            }
+            _keyMapsHubCenterSize.Value = layout.HubCenterSize;
+            _keyMapsHubVariantSize.Value = layout.HubVariantSize;
             ConfigureNumericValidation(_keyMapsKeySize, value => value is >= 0.6 and <= 2.0, "0.##");
             foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
             {
@@ -389,6 +423,13 @@ namespace GamepadKeyboard.UI
                 typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
                     layout, ReadValidatedNumber(pair.Value));
             }
+            foreach (KeyValuePair<string, Slider> pair in _keyMapsHubOffsets)
+            {
+                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
+                    layout, pair.Value.Value);
+            }
+            layout.HubCenterSize = _keyMapsHubCenterSize.Value;
+            layout.HubVariantSize = _keyMapsHubVariantSize.Value;
             layout.Normalize();
         }
 
