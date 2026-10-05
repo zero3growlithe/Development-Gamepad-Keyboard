@@ -250,7 +250,7 @@ namespace GamepadKeyboard.UI
         /// <summary>Keyboard tab rows: the classic keyboard settings.</summary>
         private (string, FrameworkElement)[] BuildKeyboardTabRows()
         {
-            return new[]
+            return new (string, FrameworkElement)[]
             {
                 ("Key spacing (px gap between keys):", _spacing),
                 ("Keyboard move speed:", _keyboardMoveSpeed),
