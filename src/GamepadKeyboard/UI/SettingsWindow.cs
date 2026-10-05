@@ -277,6 +277,7 @@ namespace GamepadKeyboard.UI
             };
             foreach ((string key, string label) in circles)
             {
+                rows.Add(("── " + label + " ──", null!));
                 rows.Add(MakeKeyMapsSliderRow(label + " position X", key + "OffsetX", -400, 400, 5));
                 rows.Add(MakeKeyMapsSliderRow(label + " position Y", key + "OffsetY", -300, 300, 5));
                 rows.Add(MakeKeyMapsSliderRow(label + " atom spread X", key + "SpreadX", 0.0, 3.0, 0.05));
@@ -286,7 +287,8 @@ namespace GamepadKeyboard.UI
             rows.Add(("── Atom look (all atoms) ──", null!));
             rows.Add(MakeKeyMapsSliderRow("Atom (big prompt) size", "AtomSize", 0.5, 2.0, 0.05));
             rows.Add(MakeKeyMapsSliderRow("Quark (small prompt) size", "QuarkSize", 0.5, 2.0, 0.05));
-            rows.Add(MakeKeyMapsSliderRow("Quark distance from atom (-2–2)", "QuarkDistance", -2.0, 2.0, 0.1));
+            rows.Add(MakeKeyMapsSliderRow("Quark distance X (-2–2)", "QuarkDistanceX", -2.0, 2.0, 0.1));
+            rows.Add(MakeKeyMapsSliderRow("Quark distance Y (-2–2)", "QuarkDistanceY", -2.0, 2.0, 0.1));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset X", "IconOffsetX", -200, 200, 5));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset Y", "IconOffsetY", -200, 200, 5));
             rows.Add(MakeKeyMapsSliderRow("Inactive quarks alpha", "IdleQuarkAlpha", 0.0, 1.0, 0.01));

@@ -422,10 +422,11 @@ namespace GamepadKeyboard.Settings
         /// <summary>Global quark (small prompt) size multiplier.</summary>
         public double QuarkSize { get; set; } = 1.0;
 
-        /// <summary>Quark distance from their atom center; 0 = quarks hug the
-        /// center edge, 1 = default gap, −2..2 = full pull-in/push-out range
-        /// (negative pulls quarks into the atom).</summary>
-        public double QuarkDistance { get; set; } = 1.0;
+        /// <summary>Quark distance from their atom center, separate per axis;
+        /// 0 = quarks hug the center edge, 1 = default gap, −2..2 = full
+        /// pull-in/push-out range (negative pulls quarks into the atom).</summary>
+        public double QuarkDistanceX { get; set; } = 1.0;
+        public double QuarkDistanceY { get; set; } = 1.0;
 
         /// <summary>Button-image offset relative to the atom center, in px
         /// (applied to every atom's icon; manual, negative values allowed).</summary>
@@ -489,7 +490,8 @@ namespace GamepadKeyboard.Settings
             KeySize = Math.Clamp(KeySize, 0.6, 2.0);
             AtomSize = Math.Clamp(AtomSize, 0.5, 2.0);
             QuarkSize = Math.Clamp(QuarkSize, 0.5, 2.0);
-            QuarkDistance = Math.Clamp(QuarkDistance, -2.0, 2.0);
+            QuarkDistanceX = Math.Clamp(QuarkDistanceX, -2.0, 2.0);
+            QuarkDistanceY = Math.Clamp(QuarkDistanceY, -2.0, 2.0);
             IdleQuarkAlpha = Math.Clamp(IdleQuarkAlpha, 0.0, 1.0);
             IconScale = Math.Clamp(IconScale, 0.0, 2.0);
             FontScale = Math.Clamp(FontScale, 0.2, 3.0);

@@ -272,7 +272,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             {
                 KeyMapsAtom atom = new(slot, LabelFor);
                 atom.LayoutChildren(
-                    layout.AtomSize, layout.QuarkSize, layout.QuarkDistance,
+                    layout.AtomSize, layout.QuarkSize,
+                    layout.QuarkDistanceX, layout.QuarkDistanceY,
                     layout.IconOffsetX, layout.IconOffsetY, layout.IconScale, layout.FontScale);
                 double circleCenterX = centerX + circleAnchorX * 190.0 + CircleOffsetX(layout, circleKey) * boardScale;
                 double circleCenterY = centerY + circleAnchorY * 110.0 + CircleOffsetY(layout, circleKey) * boardScale;
@@ -346,7 +347,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                    layout.RightStickSpreadX * 2.06 + layout.RightStickSpreadY * 2.07 +
                    layout.KeySize * 3.0 +
                    layout.AtomSize * 4.0 + layout.QuarkSize * 4.1 +
-                   layout.QuarkDistance * 4.2 + layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4 +
+                   layout.QuarkDistanceX * 4.2 + layout.QuarkDistanceY * 4.21 +
+                   layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4 +
                    layout.IconScale * 4.5 + layout.FontScale * 4.6 +
                    layout.SelectStartOffsetX * 4.7 + layout.SelectStartOffsetY * 4.8 +
                    layout.SelectStartScale * 4.9 + layout.SelectStartSpreadX * 5.0;

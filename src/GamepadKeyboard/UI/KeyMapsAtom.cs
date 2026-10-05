@@ -142,7 +142,8 @@ namespace GamepadKeyboard.UI
 
         /// <summary>Applies sizes and the quark distance; called per rebuild.</summary>
         public void LayoutChildren(
-            double atomScale, double quarkScale, double quarkDistanceScale,
+            double atomScale, double quarkScale,
+            double quarkDistanceX, double quarkDistanceY,
             double iconOffsetX, double iconOffsetY, double iconScale, double fontScale)
         {
             double centerW = CenterWidth * atomScale;
@@ -162,8 +163,8 @@ namespace GamepadKeyboard.UI
             _center.Height = centerH;
             _centerLabel.FontSize = Math.Max(9.0, 13.0 * atomScale * fontScale);
 
-            double sideGap = QuarkPitch * quarkDistanceScale;   // gap between center edge and quark edge
-            double bottomY = centerH / 2.0 + quarkH / 2.0 + QuarkBottomGap * quarkDistanceScale;
+            double sideGap = QuarkPitch * quarkDistanceX;      // gap between center edge and quark edge
+            double bottomY = centerH / 2.0 + quarkH / 2.0 + QuarkBottomGap * quarkDistanceY;
             Canvas.SetLeft(_quarkLeft, -centerW / 2.0 - sideGap - quarkW);
             Canvas.SetTop(_quarkLeft, -quarkH / 2.0);
             Canvas.SetLeft(_quarkRight, centerW / 2.0 + sideGap);
@@ -191,9 +192,11 @@ namespace GamepadKeyboard.UI
             bool physicalPressed,
             bool shiftHeld)
         {
-            // Center prompt: the active map's key for this slot. Letters read
-            // lowercase and switch to their shifted glyph while Shift is held.
-            _centerLabel.Text = ShiftLabel(_labelFor(maps[Math.Clamp(activeMapIndex, 0, maps.Count - 1)], Slot), shiftHeld);
+            // Center prompt: while the maps key is held it is ALWAYS the
+            // Symbols 1 map's key (combos only move the highlight to quarks);
+            // without R2 it is the active (Utility) map's key.
+            int centerMapIndex = mapsKeyHeld ? 1 : Math.Clamp(activeMapIndex, 0, maps.Count - 1);
+            _centerLabel.Text = ShiftLabel(_labelFor(maps[Math.Clamp(centerMapIndex, 0, maps.Count - 1)], Slot), shiftHeld);
 
             // Quark prompts: the same slot from the combo maps (never move).
             if (maps.Count >= 5)
