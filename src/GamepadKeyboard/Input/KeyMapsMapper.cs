@@ -14,12 +14,13 @@ namespace GamepadKeyboard.Input
     /// (d-pad, face, stick deflections, stick presses, Select/Start) sends one
     /// edge-triggered tap of its mapped key, so a held stick never repeats.
     ///
-    /// Modifier locking: pressing the maps key LATCHES every currently held
-    /// modifier (Shift/Ctrl/Alt and the Windows key) down; while the maps key
-    /// stays held their physical controls toggle the latch (press again to
-    /// unlock), and releasing them does nothing — so Ctrl+key combos survive
-    /// LB/RB doing map selection. Releasing the maps key clears all latches
-    /// and the modifiers follow their physical controls again.
+    /// Modifier gating: while the maps key is held, L2/L1/R1 are map-chord
+    /// buttons — their Shift/Ctrl/Alt keys are frozen (no taps, no toggles).
+    /// A modifier physically held BEFORE the maps key went down stays latched
+    /// for the whole hold (re-pressing that button unlocks + releases it);
+    /// anything else does nothing until the maps key is released. The
+    /// Windows key (right-stick press, not a chord button) keeps the legacy
+    /// latch: it can be locked and toggled while the maps key is held.
     ///
     /// Modifier state is driven by real KeyDown/KeyUp pairs, so a held modifier
     /// naturally combines with every tapped map key. Punctuation slots are
@@ -70,6 +71,10 @@ namespace GamepadKeyboard.Input
         private bool _seedRun;
         private bool _seeded;
         private bool _previousMapsKey;
+        // Modifier state as of the maps-key press edge (frozen while held).
+        private bool _wasShiftHeldBeforeMaps;
+        private bool _wasCtrlHeldBeforeMaps;
+        private bool _wasAltHeldBeforeMaps;
         private bool _previousShift;
         private bool _previousCtrl;
         private bool _previousAlt;
@@ -170,6 +175,7 @@ namespace GamepadKeyboard.Input
             _shiftLocked = _ctrlLocked = _altLocked = _windowsLocked = false;
             _latchedWindowsVk = Vk.None;
             _previousShift = _previousCtrl = _previousAlt = false;
+            _wasShiftHeldBeforeMaps = _wasCtrlHeldBeforeMaps = _wasAltHeldBeforeMaps = false;
             _previousMapsKey = false;
             _previousRightStickPress = false;
             _previousStart = false;
@@ -187,6 +193,12 @@ namespace GamepadKeyboard.Input
             // know whether the maps key just went down on this very tick.
             bool mapsKey = snapshot.RightTrigger >= 0.5;
             bool mapsKeyEdge = mapsKey && !_previousMapsKey;
+            if (mapsKeyEdge)
+            {
+                _wasShiftHeldBeforeMaps = snapshot.LeftTrigger >= 0.5;
+                _wasCtrlHeldBeforeMaps = snapshot.LB;
+                _wasAltHeldBeforeMaps = snapshot.RB;
+            }
             _previousMapsKey = mapsKey;
             int mapIndex = mapsKey
                 ? snapshot.LB && snapshot.RB ? 4
@@ -247,11 +259,14 @@ namespace GamepadKeyboard.Input
         private void ProcessModifiers(
             in GamepadSnapshot snapshot, bool mapsKey, bool mapsKeyEdge, KeyMapDefinition map)
         {
-            UpdateLatchedModifier(snapshot.LeftTrigger >= 0.5, mapsKey, mapsKeyEdge,
+            // physicalWasHeldFirst: the button was already down when the maps
+            // key went down — only then its modifier key stays active (latched)
+            // while maps is held; otherwise the control stays frozen.
+            UpdateLatchedModifier(snapshot.LeftTrigger >= 0.5, mapsKey, mapsKeyEdge, _wasShiftHeldBeforeMaps,
                 ref _previousShift, ref _shiftLocked, ref _shiftHeld, Vk.LShift, false);
-            UpdateLatchedModifier(snapshot.LB, mapsKey, mapsKeyEdge,
+            UpdateLatchedModifier(snapshot.LB, mapsKey, mapsKeyEdge, _wasCtrlHeldBeforeMaps,
                 ref _previousCtrl, ref _ctrlLocked, ref _ctrlHeld, Vk.LControl, false);
-            UpdateLatchedModifier(snapshot.RB, mapsKey, mapsKeyEdge,
+            UpdateLatchedModifier(snapshot.RB, mapsKey, mapsKeyEdge, _wasAltHeldBeforeMaps,
                 ref _previousAlt, ref _altLocked, ref _altHeld, Vk.LMenu, false);
         }
 
@@ -266,46 +281,37 @@ namespace GamepadKeyboard.Input
         /// </summary>
         private void UpdateLatchedModifier(
             bool physical, bool mapsKey, bool mapsKeyEdge,
+            bool physicalWasHeldFirst,
             ref bool previousPhysical, ref bool locked, ref bool held,
             ushort virtualKey, bool extended)
         {
-            if (mapsKeyEdge)
-            {
-                // Entering maps: latch whatever is currently held so Ctrl/Alt
-                // keep flowing into map keys while LB/RB do map selection.
-                if (physical && !held)
-                {
-                    _sender.KeyDown(virtualKey, extended);
-                    held = true;
-                }
-                locked = physical;
-                previousPhysical = physical;
-                return;
-            }
             if (mapsKey)
             {
-                // While maps is held the physical control only TOGGLES its
-                // latch: press again to unlock, release freely without
-                // dropping the key.
-                if (physical && !previousPhysical)
+                // While the maps key is held the control keys are frozen: the
+                // button is the map-selection chord, so it must NOT tap or
+                // toggle its Ctrl/Shift/Alt key. Only a modifier that was
+                // already held BEFORE the maps key went down keeps its state
+                // (latched); it can also be unlocked by re-pressing it.
+                if (mapsKeyEdge)
                 {
-                    if (locked)
+                    if (physicalWasHeldFirst && !held)
                     {
-                        locked = false;
-                        if (held)
-                        {
-                            _sender.KeyUp(virtualKey, extended);
-                            held = false;
-                        }
+                        _sender.KeyDown(virtualKey, extended);
+                        held = true;
                     }
-                    else
+                    locked = physicalWasHeldFirst;
+                    previousPhysical = physical;
+                    return;
+                }
+                if (physical && !previousPhysical && locked)
+                {
+                    // Fresh press of a latched modifier unlocks + releases it
+                    // so the user is never stuck with a stuck modifier.
+                    locked = false;
+                    if (held)
                     {
-                        locked = true;
-                        if (!held)
-                        {
-                            _sender.KeyDown(virtualKey, extended);
-                            held = true;
-                        }
+                        _sender.KeyUp(virtualKey, extended);
+                        held = false;
                     }
                 }
                 previousPhysical = physical;
@@ -354,11 +360,71 @@ namespace GamepadKeyboard.Input
                 return;
             }
             bool extended = ControllerMapper.IsExtendedKey(virtualKey);
-            UpdateLatchedModifier(physical, mapsKey, mapsKeyEdge,
+            UpdateLatchedModifierLegacy(physical, mapsKey, mapsKeyEdge,
                 ref _previousRightStickPress, ref _windowsLocked, ref _windowsHeld,
                 virtualKey, extended);
             _latchedWindowsVk = _windowsHeld ? virtualKey : Vk.None;
             _latchedWindowsExtended = extended;
+        }
+
+        /// <summary>Old latch semantics (edge-latch + fresh-press toggle) kept
+        /// for the Windows hold slot, whose button is not a map chord.</summary>
+        private void UpdateLatchedModifierLegacy(
+            bool physical, bool mapsKey, bool mapsKeyEdge,
+            ref bool previousPhysical, ref bool locked, ref bool held,
+            ushort virtualKey, bool extended)
+        {
+            if (mapsKeyEdge)
+            {
+                if (physical && !held)
+                {
+                    _sender.KeyDown(virtualKey, extended);
+                    held = true;
+                }
+                locked = physical;
+                previousPhysical = physical;
+                return;
+            }
+            if (mapsKey)
+            {
+                if (physical && !previousPhysical)
+                {
+                    if (locked)
+                    {
+                        locked = false;
+                        if (held)
+                        {
+                            _sender.KeyUp(virtualKey, extended);
+                            held = false;
+                        }
+                    }
+                    else
+                    {
+                        locked = true;
+                        if (!held)
+                        {
+                            _sender.KeyDown(virtualKey, extended);
+                            held = true;
+                        }
+                    }
+                }
+                previousPhysical = physical;
+                return;
+            }
+            locked = false;
+            if (held != physical)
+            {
+                if (physical)
+                {
+                    _sender.KeyDown(virtualKey, extended);
+                }
+                else
+                {
+                    _sender.KeyUp(virtualKey, extended);
+                }
+                held = physical;
+            }
+            previousPhysical = physical;
         }
 
         private void TapSlot(ref bool previous, bool held, string slot)

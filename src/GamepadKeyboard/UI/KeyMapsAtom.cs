@@ -203,29 +203,35 @@ namespace GamepadKeyboard.UI
             _quarkRight.Visibility = quarkVisibility;
             _quarkBottom.Visibility = quarkVisibility;
 
-            // Highlight: pressed button → the element matching the held combo.
-            bool centerActive = physicalPressed
-                ? !sym2ComboHeld && !sym3ComboHeld && !functionComboHeld
-                : mapsKeyHeld && !sym2ComboHeld && !sym3ComboHeld && !functionComboHeld;
+            bool anyCombo = sym2ComboHeld || sym3ComboHeld || functionComboHeld;
+
+            // Green fill = physical press only, never just holding R2: the
+            // center when no combo is held, the combo's quark otherwise.
+            bool centerActive = physicalPressed && !anyCombo;
             _center.Background = centerActive ? CenterFillPressed : CenterFill;
             _center.BorderBrush = centerActive ? CenterBorderPressed : CenterBorderIdle;
 
-            // Center more opaque than quarks while R2 is held; quark opacity
-            // rises for the one matching the held combo (never swaps content).
+            // Combo membership raises opacity (never swaps content): the left
+            // / right quark only when the Function combo is NOT held, the
+            // bottom quark whenever it is — so L1+R1 lights the bottom alone.
             double idleQuarkOpacity = mapsKeyHeld ? 0.45 : 0.0;
-            _quarkLeft.Opacity = sym3ComboHeld ? 1.0 : idleQuarkOpacity;
-            _quarkRight.Opacity = sym2ComboHeld ? 1.0 : idleQuarkOpacity;
-            _quarkBottom.Opacity = functionComboHeld ? 1.0 : idleQuarkOpacity;
-            _quarkLeft.Background = sym3ComboHeld ? QuarkFillActive : QuarkFill;
-            _quarkLeft.BorderBrush = sym3ComboHeld ? QuarkBorderActive : QuarkBorderIdle;
-            _quarkRight.Background = sym2ComboHeld ? QuarkFillActive : QuarkFill;
-            _quarkRight.BorderBrush = sym2ComboHeld ? QuarkBorderActive : QuarkBorderIdle;
-            _quarkBottom.Background = functionComboHeld ? QuarkFillActive : QuarkFill;
-            _quarkBottom.BorderBrush = functionComboHeld ? QuarkBorderActive : QuarkBorderIdle;
+            bool leftRaised = sym3ComboHeld && !functionComboHeld;
+            bool rightRaised = sym2ComboHeld && !functionComboHeld;
+            bool bottomRaised = functionComboHeld;
+            _quarkLeft.Opacity = leftRaised ? 1.0 : idleQuarkOpacity;
+            _quarkRight.Opacity = rightRaised ? 1.0 : idleQuarkOpacity;
+            _quarkBottom.Opacity = bottomRaised ? 1.0 : idleQuarkOpacity;
 
-            // When a combo is held the center dims below the active quark so
+            _quarkLeft.Background = physicalPressed && leftRaised ? QuarkFillActive : QuarkFill;
+            _quarkLeft.BorderBrush = physicalPressed && leftRaised ? QuarkBorderActive : QuarkBorderIdle;
+            _quarkRight.Background = physicalPressed && rightRaised ? QuarkFillActive : QuarkFill;
+            _quarkRight.BorderBrush = physicalPressed && rightRaised ? QuarkBorderActive : QuarkBorderIdle;
+            _quarkBottom.Background = physicalPressed && bottomRaised ? QuarkFillActive : QuarkFill;
+            _quarkBottom.BorderBrush = physicalPressed && bottomRaised ? QuarkBorderActive : QuarkBorderIdle;
+
+            // When a combo is held the center dims below the raised quark so
             // the "more opaque" rule reads clearly (content stays in place).
-            _center.Opacity = sym2ComboHeld || sym3ComboHeld || functionComboHeld ? 0.55 : 1.0;
+            _center.Opacity = anyCombo ? 0.55 : 1.0;
         }
 
         // ── Button-icon factory ──────────────────────────────────────────────
