@@ -60,14 +60,11 @@ namespace GamepadKeyboard.UI
         private readonly TextBlock _hidHideSelection = new() { VerticalAlignment = VerticalAlignment.Center };
         private List<string> _hidHidePaths = new();
         private readonly List<Action> _numericValidators = new();
-        private readonly TextBox _keyMapsKeySize = new() { Text = "" };
-        private readonly Dictionary<string, TextBox> _keyMapsOffsets = new();
-        private readonly Dictionary<string, TextBox> _keyMapsSpreads = new();
-        private readonly Dictionary<string, Slider> _keyMapsHubOffsets = new();   // "+Key+Axis" → slider (relative to wheel anchor)
-        private readonly Slider _keyMapsHubCenterSize = new() { Minimum = 0.5, Maximum = 2.0, TickFrequency = 0.1, IsSnapToTickEnabled = false };
-        private readonly Slider _keyMapsHubVariantSize = new() { Minimum = 0.5, Maximum = 2.0, TickFrequency = 0.1, IsSnapToTickEnabled = false };
+        private readonly Dictionary<string, Slider> _keyMapsSliders = new();      // layout property → slider
+        private readonly Dictionary<string, TextBlock> _keyMapsValueLabels = new();
         private readonly Dictionary<string, object> _keyMapsLayoutBackup = new();
         private bool _keyMapsSettingsSavedExplicitly;
+        private bool _suppressKeyMapsLiveApply;   // while programmatically initializing sliders
 
         public SettingsWindow()
         {
@@ -188,7 +185,7 @@ namespace GamepadKeyboard.UI
             var ok = new Button { Content = "OK", Padding = new Thickness(16, 4, 16, 4), Margin = new Thickness(0, 0, 8, 0) };
             ok.Click += (_, __) => { Save(); _keyMapsSettingsSavedExplicitly = true; Close(); };
             var cancel = new Button { Content = "Cancel", Padding = new Thickness(16, 4, 16, 4) };
-            cancel.Click += (_, __) => { RestoreKeyMapsLayout(); Close(); };
+            cancel.Click += (_, __) => Close();   // OnClosed restores the pre-open layout
             buttons.Children.Add(ok);
             buttons.Children.Add(cancel);
 
@@ -242,9 +239,7 @@ namespace GamepadKeyboard.UI
         }
 
         /// <summary>Keyboard tab rows: the classic keyboard settings plus the
-        /// Key Maps layout section (per-wheel X/Y offsets relative to the board
-        /// position, per-wheel spread and the global key size) — created here
-        /// so initial values and validators bind once.</summary>
+        /// slider-only Key Maps layout section.</summary>
         private (string, FrameworkElement)[] BuildKeyboardTabRows()
         {
             List<(string, FrameworkElement)> rows = new()
@@ -258,9 +253,9 @@ namespace GamepadKeyboard.UI
             return rows.ToArray();
         }
 
-        /// <summary>Key Maps layout editors: per-wheel X/Y offsets relative to
-        /// the board position, per-wheel spread and the global key size —
-        /// created here so initial values and validators bind once.</summary>
+        /// <summary>Key Maps layout editors — every option a slider (offsets
+        /// relative to the board position, spreads, hub positions, hub sizes
+        /// and the global key size), all live-applied while dragging.</summary>
         private (string, FrameworkElement)[] BuildKeyMapsLayoutRows()
         {
             (string key, string label)[] wheels =
@@ -272,146 +267,82 @@ namespace GamepadKeyboard.UI
             };
             List<(string, FrameworkElement)> rows = new()
             {
-                ("Key size (multiplier, 0.6–2.0):", _keyMapsKeySize),
+                MakeKeyMapsSliderRow("Key size", "KeySize", 0.6, 2.0, 0.05),
             };
             foreach ((string key, string label) in wheels)
             {
-                TextBox offsetX = new() { Text = "" };
-                TextBox offsetY = new() { Text = "" };
-                TextBox spread = new() { Text = "" };
-                _keyMapsOffsets[key + "OffsetX"] = offsetX;
-                _keyMapsOffsets[key + "OffsetY"] = offsetY;
-                _keyMapsSpreads[key + "Spread"] = spread;
-                StackPanel pair = new() { Orientation = Orientation.Horizontal };
-                pair.Children.Add(new TextBlock
-                {
-                    Text = "X:",
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 4, 0)
-                });
-                pair.Children.Add(offsetX);
-                pair.Children.Add(new TextBlock
-                {
-                    Text = "  Y:",
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(8, 0, 4, 0)
-                });
-                pair.Children.Add(offsetY);
-                rows.Add((label + " center offset X/Y (px relative to board):", pair));
-                rows.Add((label + " spread (multiplier, 0.5–2.0):", spread));
-
-                Slider hubX = new() { Minimum = -400, Maximum = 400, Width = 220, TickFrequency = 10 };
-                Slider hubY = new() { Minimum = -300, Maximum = 300, Width = 220, TickFrequency = 10 };
-                hubX.ValueChanged += (_, e) => ApplyKeyMapsHubChange(key + "HubOffsetX", e.NewValue);
-                hubY.ValueChanged += (_, e) => ApplyKeyMapsHubChange(key + "HubOffsetY", e.NewValue);
-                _keyMapsHubOffsets[key + "HubOffsetX"] = hubX;
-                _keyMapsHubOffsets[key + "HubOffsetY"] = hubY;
-                StackPanel hubPair = new() { Orientation = Orientation.Horizontal };
-                hubPair.Children.Add(new TextBlock { Text = "X:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
-                hubPair.Children.Add(hubX);
-                hubPair.Children.Add(new TextBlock { Text = "  Y:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) });
-                hubPair.Children.Add(hubY);
-                rows.Add((label + " variant-hub position X/Y (px, relative to the wheel anchor):", hubPair));
+                rows.Add(MakeKeyMapsSliderRow(label + " center offset X", key + "OffsetX", -400, 400, 5));
+                rows.Add(MakeKeyMapsSliderRow(label + " center offset Y", key + "OffsetY", -300, 300, 5));
+                rows.Add(MakeKeyMapsSliderRow(label + " spread", key + "Spread", 0.5, 2.0, 0.05));
+                rows.Add(MakeKeyMapsSliderRow(label + " variant-hub position X", key + "HubOffsetX", -400, 400, 5));
+                rows.Add(MakeKeyMapsSliderRow(label + " variant-hub position Y", key + "HubOffsetY", -300, 300, 5));
             }
 
-            Slider centerHubX = new() { Minimum = -400, Maximum = 400, Width = 220, TickFrequency = 10 };
-            Slider centerHubY = new() { Minimum = -300, Maximum = 300, Width = 220, TickFrequency = 10 };
-            centerHubX.ValueChanged += (_, e) => ApplyKeyMapsHubChange("CenterHubOffsetX", e.NewValue);
-            centerHubY.ValueChanged += (_, e) => ApplyKeyMapsHubChange("CenterHubOffsetY", e.NewValue);
-            _keyMapsHubOffsets["CenterHubOffsetX"] = centerHubX;
-            _keyMapsHubOffsets["CenterHubOffsetY"] = centerHubY;
-            StackPanel centerHubPair = new() { Orientation = Orientation.Horizontal };
-            centerHubPair.Children.Add(new TextBlock { Text = "X:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
-            centerHubPair.Children.Add(centerHubX);
-            centerHubPair.Children.Add(new TextBlock { Text = "  Y:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) });
-            centerHubPair.Children.Add(centerHubY);
-            rows.Add(("Select/Start variant-hub position X/Y (px, relative to board center):", centerHubPair));
-            rows.Add(("Variant-hub CENTER button size (all groups, 0.5–2.0):", _keyMapsHubCenterSize));
-            rows.Add(("Variant-hub VARIANT buttons size (all groups, 0.5–2.0):", _keyMapsHubVariantSize));
+            rows.Add(MakeKeyMapsSliderRow("Select/Start variant-hub position X", "CenterHubOffsetX", -400, 400, 5));
+            rows.Add(MakeKeyMapsSliderRow("Select/Start variant-hub position Y", "CenterHubOffsetY", -300, 300, 5));
+            rows.Add(MakeKeyMapsSliderRow("Variant-hub CENTER button size", "HubCenterSize", 0.5, 2.0, 0.05));
+            rows.Add(MakeKeyMapsSliderRow("Variant-hub VARIANT buttons size", "HubVariantSize", 0.5, 2.0, 0.05));
             return rows.ToArray();
+        }
+
+        /// <summary>Builds one labeled slider row for a Key Maps layout property
+        /// (live-applied on drag; a read-only value caption shows the current
+        /// number and updates as the thumb moves).</summary>
+        private (string, FrameworkElement) MakeKeyMapsSliderRow(string label, string propertyName, double minimum, double maximum, double step)
+        {
+            Slider slider = new()
+            {
+                Minimum = minimum,
+                Maximum = maximum,
+                TickFrequency = step,
+                IsSnapToTickEnabled = false,
+                Width = 240,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            TextBlock valueLabel = new()
+            {
+                MinWidth = 58,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(10, 0, 0, 0),
+                Text = slider.Value.ToString("0.#"),
+            };
+            StackPanel host = new() { Orientation = Orientation.Horizontal };
+            host.Children.Add(slider);
+            host.Children.Add(valueLabel);
+            _keyMapsSliders[propertyName] = slider;
+            _keyMapsValueLabels[propertyName] = valueLabel;
+            string valueFormat = step < 1.0 ? "0.##" : "0.#";
+            slider.ValueChanged += (_, e) =>
+            {
+                valueLabel.Text = e.NewValue.ToString(valueFormat, CultureInfo.CurrentCulture);
+                ApplyKeyMapsSliderChange(propertyName, e.NewValue);
+            };
+            return (label + ":", host);
         }
 
         private void InitializeKeyMapsLayoutEditors(Settings.AppSettings s)
         {
             Settings.KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
-            _keyMapsKeySize.Text = layout.KeySize.ToString("0.##");
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
-            {
-                double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 0.0;
-                pair.Value.Text = value.ToString("0.#");
-            }
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
-            {
-                double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 1.0;
-                pair.Value.Text = value.ToString("0.##");
-            }
-            foreach (KeyValuePair<string, Slider> pair in _keyMapsHubOffsets)
+            _suppressKeyMapsLiveApply = true;
+            foreach (KeyValuePair<string, Slider> pair in _keyMapsSliders)
             {
                 double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 0.0;
                 pair.Value.Value = value;
-            }
-            _keyMapsHubCenterSize.Value = layout.HubCenterSize;
-            _keyMapsHubVariantSize.Value = layout.HubVariantSize;
-            _keyMapsHubCenterSize.ValueChanged += (_, e) => ApplyKeyMapsHubChange("HubCenterSize", e.NewValue);
-            _keyMapsHubVariantSize.ValueChanged += (_, e) => ApplyKeyMapsHubChange("HubVariantSize", e.NewValue);
-            ConfigureNumericValidation(_keyMapsKeySize, value => value is >= 0.6 and <= 2.0, "0.##");
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
-            {
-                ConfigureNumericValidation(pair.Value, value => value >= -400 && value <= 400, "0.#");
-            }
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
-            {
-                ConfigureNumericValidation(pair.Value, value => value >= 0.5 && value <= 2.0, "0.##");
-            }
-            WireKeyMapsTextBoxLiveApply();
-        }
-
-        /// <summary>Text editors for the Key Maps layout also apply live: the
-        /// value is pushed to AppSettings after the field's own validation ran
-        /// (LostKeyboardFocus / Enter), so edits show without pressing OK.</summary>
-        private void WireKeyMapsTextBoxLiveApply()
-        {
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
-            {
-                string propertyName = pair.Key;
-                pair.Value.LostKeyboardFocus += (_, __) => ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
-                pair.Value.KeyDown += (_, e) =>
+                if (_keyMapsValueLabels.TryGetValue(pair.Key, out TextBlock? label))
                 {
-                    if (e.Key == Key.Enter)
-                    {
-                        ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
-                    }
-                };
-            }
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
-            {
-                string propertyName = pair.Key;
-                pair.Value.LostKeyboardFocus += (_, __) => ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
-                pair.Value.KeyDown += (_, e) =>
-                {
-                    if (e.Key == Key.Enter)
-                    {
-                        ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
-                    }
-                };
-            }
-            _keyMapsKeySize.LostKeyboardFocus += (_, __) => ApplyKeyMapsTextBoxChange("KeySize", _keyMapsKeySize);
-            _keyMapsKeySize.KeyDown += (_, e) =>
-            {
-                if (e.Key == Key.Enter)
-                {
-                    ApplyKeyMapsTextBoxChange("KeySize", _keyMapsKeySize);
+                    label.Text = value.ToString(pair.Value.TickFrequency < 1.0 ? "0.##" : "0.#", CultureInfo.CurrentCulture);
                 }
-            };
+            }
+            _suppressKeyMapsLiveApply = false;
         }
 
-        /// <summary>Parses a validated Key Maps text field and pushes it to the
-        /// layout settings (no-op when the text is not a number — the field's
-        /// validator reverts it on these same events).</summary>
-        private void ApplyKeyMapsTextBoxChange(string propertyName, TextBox input)
+        /// <summary>Writes one slider value into the layout settings live
+        /// (drag → board rebuild in the same tick); skipped while the
+        /// initializers are seeding values.</summary>
+        private void ApplyKeyMapsSliderChange(string propertyName, double value)
         {
-            if (!double.TryParse(input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double value)
-                || !double.IsFinite(value))
+            if (_suppressKeyMapsLiveApply)
             {
                 return;
             }
@@ -422,22 +353,6 @@ namespace GamepadKeyboard.UI
             AppOrchestrator.NotifyKeyMapsLayoutChanged();
         }
 
-        /// <summary>Live-apply for Key Maps hub editors: writes the property to
-        /// AppSettings, saves the file and asks the overlay to rebuild so slider
-        /// drags show on the board immediately (the overlay's Update tick picks
-        /// up the fingerprint change itself.</summary>
-        private void ApplyKeyMapsHubChange(string propertyName, double value)
-        {
-            Settings.KeyMapsLayoutSettings layout = Settings.AppSettings.Instance.KeyMaps.Layout;
-            typeof(Settings.KeyMapsLayoutSettings).GetProperty(propertyName)!.SetValue(layout, value);
-            layout.Normalize();
-            Settings.AppSettings.Save();
-            AppOrchestrator.NotifyKeyMapsLayoutChanged();
-        }
-
-        /// <summary>Snapshots the whole Key Maps layout so window Cancel can
-        /// restore the pre-opening state (live edits write straight to
-        /// AppSettings before OK is pressed).</summary>
         private void BackupKeyMapsLayout(Settings.KeyMapsLayoutSettings layout)
         {
             _keyMapsLayoutBackup.Clear();
@@ -455,11 +370,17 @@ namespace GamepadKeyboard.UI
                 return;
             }
             Settings.KeyMapsLayoutSettings layout = Settings.AppSettings.Instance.KeyMaps.Layout;
+            _suppressKeyMapsLiveApply = true;
             foreach (KeyValuePair<string, object> pair in _keyMapsLayoutBackup)
             {
-                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
-                    layout, Convert.ToDouble(pair.Value));
+                double value = Convert.ToDouble(pair.Value);
+                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(layout, value);
+                if (_keyMapsSliders.TryGetValue(pair.Key, out Slider? slider))
+                {
+                    slider.Value = value;
+                }
             }
+            _suppressKeyMapsLiveApply = false;
             Settings.AppSettings.Save();
             AppOrchestrator.NotifyKeyMapsLayoutChanged();
         }
@@ -518,28 +439,16 @@ namespace GamepadKeyboard.UI
                 AppOrchestrator.NotifyHidHideSettingsChanged();
         }
 
-        /// <summary>Pushes validated Key Maps layout values back into settings.</summary>
+        /// <summary>Pushes slider values back into the Key Maps layout (the
+        /// sliders already live-apply; this is the authoritative write on OK).</summary>
         private void SaveKeyMapsLayout(Settings.AppSettings s)
         {
             Settings.KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
-            layout.KeySize = ReadValidatedNumber(_keyMapsKeySize);
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
-            {
-                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
-                    layout, ReadValidatedNumber(pair.Value));
-            }
-            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
-            {
-                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
-                    layout, ReadValidatedNumber(pair.Value));
-            }
-            foreach (KeyValuePair<string, Slider> pair in _keyMapsHubOffsets)
+            foreach (KeyValuePair<string, Slider> pair in _keyMapsSliders)
             {
                 typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
                     layout, pair.Value.Value);
             }
-            layout.HubCenterSize = _keyMapsHubCenterSize.Value;
-            layout.HubVariantSize = _keyMapsHubVariantSize.Value;
             layout.Normalize();
         }
 
