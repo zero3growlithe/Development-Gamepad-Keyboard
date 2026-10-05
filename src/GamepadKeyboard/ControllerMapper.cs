@@ -175,6 +175,10 @@ namespace GamepadKeyboard
             _lastCursorTime = _cursorClock.Elapsed.TotalSeconds;
         }
 
+        /// <summary>Most recent gamepad state (the overlay reads it per tick
+        /// to highlight pressed atoms).</summary>
+        public GamepadSnapshot LatestSnapshot => _lastProcessed;
+
         public void Process(in GamepadSnapshot s)
         {
             _lastProcessed = s;

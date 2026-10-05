@@ -49,7 +49,7 @@ namespace GamepadKeyboard.UI
         private readonly TextBlock _mapNameLabel;
         private readonly List<ChipView> _chips = new();
         private readonly Dictionary<string, TileView> _tiles = new();
-        private readonly List<KeyMapsVariantHub> _hubs = new();
+        private readonly Dictionary<string, KeyMapsAtom> _atoms = new();   // slot → atom (18 slots)
         private List<KeyMapDefinition> _maps = new();
         private int _lastRenderedMapIndex;
         private bool _bindingsDirty = true;
@@ -143,9 +143,11 @@ namespace GamepadKeyboard.UI
             bool sym3ComboHeld = keyMaps.Sym3ComboHeld;
             bool functionComboHeld = keyMaps.FunctionComboHeld;
             IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
-            foreach (KeyMapsVariantHub hub in _hubs)
+            foreach (KeyValuePair<string, KeyMapsAtom> pair in _atoms)
             {
-                hub.Update(maps, keyMaps.MapsKeyHeld, sym2ComboHeld, sym3ComboHeld, functionComboHeld, LabelFor);
+                pair.Value.Update(maps, keyMaps.ActiveMapIndex, keyMaps.MapsKeyHeld,
+                    sym2ComboHeld, sym3ComboHeld, functionComboHeld,
+                    IsSlotPressed(mapper, pair.Key));
             }
 
             if (keyMaps.ActiveMapIndex != _lastRenderedMapIndex)
@@ -194,7 +196,7 @@ namespace GamepadKeyboard.UI
             _root.Children.Clear();
             _chips.Clear();
             _tiles.Clear();
-            _hubs.Clear();
+            _atoms.Clear();
             if (_maps.Count < 5)
             {
                 return;
@@ -209,13 +211,62 @@ namespace GamepadKeyboard.UI
             double boardScale = Width / BoardWidth;
             BuildModifierRow(boardScale);
             BuildCenterColumn(activeIndex, boardScale);
-            BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad, layout.DPadOffsetX, layout.DPadOffsetY, layout.DPadSpread, boardScale);
-            BuildCluster(activeIndex, +1, -1, ClusterGeometry.Face, layout.FaceOffsetX, layout.FaceOffsetY, layout.FaceSpread, boardScale);
-            BuildCluster(activeIndex, -1, +1, ClusterGeometry.LeftStick, layout.LeftStickOffsetX, layout.LeftStickOffsetY, layout.LeftStickSpread, boardScale);
-            BuildCluster(activeIndex, +1, +1, ClusterGeometry.RightStick, layout.RightStickOffsetX, layout.RightStickOffsetY, layout.RightStickSpread, boardScale);
-            BuildVariantHubs(boardScale);
+            BuildAtoms(boardScale);
             ApplyMapName(activeIndex);
             _lastRenderedMapIndex = activeIndex;
+        }
+
+        /// <summary>Builds one atom per Key Maps slot from the wheel geometry
+        /// tables (d-pad plus, face plus, both sticks with the press atom
+        /// between left and right); Select/Start remain plain tiles. Positions
+        /// come from per-atom X/Y settings; per-atom quark distance/icon
+        /// offset/sizes from the global sliders.</summary>
+        private void BuildAtoms(double boardScale)
+        {
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double centerX = BoardWidth / 2.0;
+            double centerY = BoardHeight / 2.0 + 20.0;
+
+            (string slot, double anchorX, double anchorY, double atomX, double atomY, string settingsKey)[] atoms =
+            {
+                ("DPadUp",       -1, -1, layout.DPadUpAtomX,      layout.DPadUpAtomY,      "DPadUp"),
+                ("DPadLeft",     -1, -1, layout.DPadLeftAtomX,    layout.DPadLeftAtomY,    "DPadLeft"),
+                ("DPadRight",    -1, -1, layout.DPadRightAtomX,   layout.DPadRightAtomY,   "DPadRight"),
+                ("DPadDown",     -1, -1, layout.DPadDownAtomX,    layout.DPadDownAtomY,    "DPadDown"),
+                ("FaceY",        +1, -1, layout.FaceUpAtomX,      layout.FaceUpAtomY,      "FaceUp"),
+                ("FaceX",        +1, -1, layout.FaceLeftAtomX,    layout.FaceLeftAtomY,    "FaceLeft"),
+                ("FaceB",        +1, -1, layout.FaceRightAtomX,   layout.FaceRightAtomY,   "FaceRight"),
+                ("FaceA",        +1, -1, layout.FaceDownAtomX,    layout.FaceDownAtomY,    "FaceDown"),
+                ("LeftStickUp",    -1, +1, layout.LeftStickUpAtomX,    layout.LeftStickUpAtomY,    "LeftStickUp"),
+                ("LeftStickLeft",  -1, +1, layout.LeftStickLeftAtomX,  layout.LeftStickLeftAtomY,  "LeftStickLeft"),
+                ("LeftStickRight", -1, +1, layout.LeftStickRightAtomX, layout.LeftStickRightAtomY, "LeftStickRight"),
+                ("LeftStickPress", -1, +1, layout.LeftStickPressAtomX, layout.LeftStickPressAtomY, "LeftStickPress"),
+                ("LeftStickDown",  -1, +1, layout.LeftStickDownAtomX,  layout.LeftStickDownAtomY,  "LeftStickDown"),
+                ("RightStickUp",    +1, +1, layout.RightStickUpAtomX,    layout.RightStickUpAtomY,    "RightStickUp"),
+                ("RightStickLeft",  +1, +1, layout.RightStickLeftAtomX,  layout.RightStickLeftAtomY,  "RightStickLeft"),
+                ("RightStickRight", +1, +1, layout.RightStickRightAtomX, layout.RightStickRightAtomY, "RightStickRight"),
+                ("RightStickPress", +1, +1, layout.RightStickPressAtomX, layout.RightStickPressAtomY, "RightStickPress"),
+                ("RightStickDown",  +1, +1, layout.RightStickDownAtomX,  layout.RightStickDownAtomY,  "RightStickDown"),
+            };
+
+            foreach ((string slot, double anchorX, double anchorY, double atomX, double atomY, string settingsKey) in atoms)
+            {
+                KeyMapsAtom atom = new(slot, LabelFor);
+                double iconOffsetY = layout.IconOffsetY < 0
+                    ? -(KeyMapsAtom.CenterHeight * layout.AtomSize / 2.0) - KeyMapsAtom.IconSpan - 6.0
+                    : layout.IconOffsetY;
+                atom.LayoutChildren(
+                    layout.AtomSize, layout.QuarkSize, layout.QuarkDistance,
+                    layout.IconOffsetX, iconOffsetY);
+                double anchorScreenX = centerX + anchorX * 190.0;
+                double anchorScreenY = centerY + anchorY * 110.0;
+                Canvas atomHost = (Canvas)atom.Root;
+                Canvas.SetLeft(atomHost, anchorScreenX + atomX * boardScale);
+                Canvas.SetTop(atomHost, anchorScreenY + atomY * boardScale);
+                Canvas.SetZIndex(atomHost, 12);
+                _root.Children.Add(atomHost);
+                _atoms[slot] = atom;
+            }
         }
 
         /// <summary>Fingerprint of every layout-relevant setting; a change
@@ -223,19 +274,26 @@ namespace GamepadKeyboard.UI
         private static double LayoutFingerprint()
         {
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
-            return layout.DPadOffsetX + layout.DPadOffsetY * 1.001 +
+            double fingerprint = layout.DPadOffsetX + layout.DPadOffsetY * 1.001 +
                    layout.FaceOffsetX * 1.002 + layout.FaceOffsetY * 1.003 +
                    layout.LeftStickOffsetX * 1.004 + layout.LeftStickOffsetY * 1.005 +
                    layout.RightStickOffsetX * 1.006 + layout.RightStickOffsetY * 1.007 +
                    layout.DPadSpread * 2.0 + layout.FaceSpread * 2.1 +
                    layout.LeftStickSpread * 2.2 + layout.RightStickSpread * 2.3 +
                    layout.KeySize * 3.0 +
-                   layout.DPadHubOffsetX * 1.008 + layout.DPadHubOffsetY * 1.009 +
-                   layout.FaceHubOffsetX * 1.010 + layout.FaceHubOffsetY * 1.011 +
-                   layout.LeftStickHubOffsetX * 1.012 + layout.LeftStickHubOffsetY * 1.013 +
-                   layout.RightStickHubOffsetX * 1.014 + layout.RightStickHubOffsetY * 1.015 +
-                   layout.CenterHubOffsetX * 1.016 + layout.CenterHubOffsetY * 1.017 +
-                   layout.HubCenterSize * 4.0 + layout.HubVariantSize * 4.1;
+                   layout.AtomSize * 4.0 + layout.QuarkSize * 4.1 +
+                   layout.QuarkDistance * 4.2 + layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4;
+            // Per-atom positions (36 properties): folded in with unique weights.
+            double weight = 5.0;
+            foreach (System.Reflection.PropertyInfo property in typeof(KeyMapsLayoutSettings).GetProperties())
+            {
+                if (property.Name.EndsWith("AtomX") || property.Name.EndsWith("AtomY"))
+                {
+                    fingerprint += (property.GetValue(layout) as double? ?? 0.0) * weight;
+                    weight += 0.01;
+                }
+            }
+            return fingerprint;
         }
 
         private void BuildModifierRow(double boardScale)
@@ -318,38 +376,6 @@ namespace GamepadKeyboard.UI
                     baseX + placement.Column * pitchX * boardScale,
                     baseY + placement.Row * pitchY * boardScale,
                     boardScale);
-            }
-        }
-
-        /// <summary>Builds the five modular variant hubs (one per wheel plus the
-        /// Select/Start center pair): gamepad-icon + big center button + three
-        /// combo-variant satellites, positioned relative to each wheel anchor
-        /// from per-hub X/Y setting offsets. Rebuilt with the board.</summary>
-        private void BuildVariantHubs(double boardScale)
-        {
-            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
-            double centerX = BoardWidth / 2.0;
-            double centerY = BoardHeight / 2.0 + 20.0;
-
-            (string centerSlot, double offsetX, double offsetY)[] hubs =
-            {
-                ("DPadUp", layout.DPadHubOffsetX, layout.DPadHubOffsetY),
-                ("FaceY", layout.FaceHubOffsetX, layout.FaceHubOffsetY),
-                ("LeftStickPress", layout.LeftStickHubOffsetX, layout.LeftStickHubOffsetY),
-                ("RightStickPress", layout.RightStickHubOffsetX, layout.RightStickHubOffsetY),
-                ("Select", layout.CenterHubOffsetX, layout.CenterHubOffsetY),
-            };
-
-            foreach ((string centerSlot, double offsetX, double offsetY) in hubs)
-            {
-                KeyMapsVariantHub hub = new KeyMapsVariantHub(centerSlot, LabelFor);
-                hub.LayoutChildren(layout.HubCenterSize, layout.HubVariantSize);
-                Canvas hubHost = (Canvas)hub.Root;
-                Canvas.SetLeft(hubHost, centerX + offsetX * boardScale);
-                Canvas.SetTop(hubHost, centerY + offsetY * boardScale);
-                Canvas.SetZIndex(hubHost, 12);
-                _root.Children.Add(hubHost);
-                _hubs.Add(hub);
             }
         }
 
@@ -480,6 +506,36 @@ namespace GamepadKeyboard.UI
         private void ApplyMapName(int mapIndex)
         {
             _mapNameLabel.Text = _maps[mapIndex].Name;
+        }
+
+        /// <summary>Whether the atom's physical gamepad control is currently
+        /// down (drives the "pressing the button highlights" rule).</summary>
+        private static bool IsSlotPressed(ControllerMapper mapper, string slot)
+        {
+            Input.GamepadSnapshot snapshot = mapper.LatestSnapshot;
+            double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
+            return slot switch
+            {
+                "DPadUp" => snapshot.DUp,
+                "DPadDown" => snapshot.DDown,
+                "DPadLeft" => snapshot.DLeft,
+                "DPadRight" => snapshot.DRight,
+                "FaceY" => snapshot.Y,
+                "FaceA" => snapshot.A,
+                "FaceX" => snapshot.X,
+                "FaceB" => snapshot.B,
+                "LeftStickUp" => snapshot.LY >= threshold,
+                "LeftStickDown" => snapshot.LY <= -threshold,
+                "LeftStickLeft" => snapshot.LX <= -threshold,
+                "LeftStickRight" => snapshot.LX >= threshold,
+                "LeftStickPress" => snapshot.LS,
+                "RightStickUp" => snapshot.RY >= threshold,
+                "RightStickDown" => snapshot.RY <= -threshold,
+                "RightStickLeft" => snapshot.RX <= -threshold,
+                "RightStickRight" => snapshot.RX >= threshold,
+                "RightStickPress" => snapshot.RS,
+                _ => false,
+            };
         }
 
         // ── Factories ───────────────────────────────────────────────────────────
