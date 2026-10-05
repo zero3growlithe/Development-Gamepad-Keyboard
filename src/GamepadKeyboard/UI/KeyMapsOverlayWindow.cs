@@ -206,7 +206,6 @@ namespace GamepadKeyboard.UI
             BuildModifierRow(boardScale);
             BuildCenterColumn(activeIndex, boardScale);
             BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad, layout.DPadOffsetX, layout.DPadOffsetY, layout.DPadSpread, boardScale);
-            BuildCluster(activeIndex, -1, -1, ClusterGeometry.DPad, layout.DPadOffsetX, layout.DPadOffsetY, layout.DPadSpread, boardScale);
             BuildCluster(activeIndex, +1, -1, ClusterGeometry.Face, layout.FaceOffsetX, layout.FaceOffsetY, layout.FaceSpread, boardScale);
             BuildCluster(activeIndex, -1, +1, ClusterGeometry.LeftStick, layout.LeftStickOffsetX, layout.LeftStickOffsetY, layout.LeftStickSpread, boardScale);
             BuildCluster(activeIndex, +1, +1, ClusterGeometry.RightStick, layout.RightStickOffsetX, layout.RightStickOffsetY, layout.RightStickSpread, boardScale);

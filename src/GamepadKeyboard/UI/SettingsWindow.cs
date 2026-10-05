@@ -66,6 +66,8 @@ namespace GamepadKeyboard.UI
         private readonly Dictionary<string, Slider> _keyMapsHubOffsets = new();   // "+Key+Axis" → slider (relative to wheel anchor)
         private readonly Slider _keyMapsHubCenterSize = new() { Minimum = 0.5, Maximum = 2.0, TickFrequency = 0.1, IsSnapToTickEnabled = false };
         private readonly Slider _keyMapsHubVariantSize = new() { Minimum = 0.5, Maximum = 2.0, TickFrequency = 0.1, IsSnapToTickEnabled = false };
+        private readonly Dictionary<string, object> _keyMapsLayoutBackup = new();
+        private bool _keyMapsSettingsSavedExplicitly;
 
         public SettingsWindow()
         {
@@ -102,7 +104,7 @@ namespace GamepadKeyboard.UI
             _hidHideLegacy.IsChecked = s.HidHideLegacyFallbackEnabled;
             _hidHidePaths = s.HidHideDeviceInstancePaths.ToList();
             UpdateHidHideSelectionText();
-            InitializeKeyMapsLayoutEditors(s);
+            BackupKeyMapsLayout(s.KeyMaps.Layout);
 
             ConfigureNumericValidation(_spacing, value => value >= 0, "0.#");
             ConfigureNumericValidation(_keyboardMoveSpeed, value => value > 0, "0.#");
@@ -134,6 +136,7 @@ namespace GamepadKeyboard.UI
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto
                 }
             });
+            InitializeKeyMapsLayoutEditors(s);
             tabs.Items.Add(new TabItem
             {
                 Header = "Mouse",
@@ -183,9 +186,9 @@ namespace GamepadKeyboard.UI
                 Margin = new Thickness(0, 12, 0, 0)
             };
             var ok = new Button { Content = "OK", Padding = new Thickness(16, 4, 16, 4), Margin = new Thickness(0, 0, 8, 0) };
-            ok.Click += (_, __) => { Save(); Close(); };
+            ok.Click += (_, __) => { Save(); _keyMapsSettingsSavedExplicitly = true; Close(); };
             var cancel = new Button { Content = "Cancel", Padding = new Thickness(16, 4, 16, 4) };
-            cancel.Click += (_, __) => Close();
+            cancel.Click += (_, __) => { RestoreKeyMapsLayout(); Close(); };
             buttons.Children.Add(ok);
             buttons.Children.Add(cancel);
 
@@ -217,6 +220,8 @@ namespace GamepadKeyboard.UI
                 {
                     label.FontWeight = FontWeights.SemiBold;
                     label.Margin = new Thickness(0, 12, 10, 5);
+                    label.TextAlignment = TextAlignment.Center;
+                    Grid.SetRow(label, i);
                     Grid.SetColumnSpan(label, 2);
                     grid.Children.Add(label);
                     continue;
@@ -297,6 +302,8 @@ namespace GamepadKeyboard.UI
 
                 Slider hubX = new() { Minimum = -400, Maximum = 400, Width = 220, TickFrequency = 10 };
                 Slider hubY = new() { Minimum = -300, Maximum = 300, Width = 220, TickFrequency = 10 };
+                hubX.ValueChanged += (_, e) => ApplyKeyMapsHubChange(key + "HubOffsetX", e.NewValue);
+                hubY.ValueChanged += (_, e) => ApplyKeyMapsHubChange(key + "HubOffsetY", e.NewValue);
                 _keyMapsHubOffsets[key + "HubOffsetX"] = hubX;
                 _keyMapsHubOffsets[key + "HubOffsetY"] = hubY;
                 StackPanel hubPair = new() { Orientation = Orientation.Horizontal };
@@ -309,6 +316,8 @@ namespace GamepadKeyboard.UI
 
             Slider centerHubX = new() { Minimum = -400, Maximum = 400, Width = 220, TickFrequency = 10 };
             Slider centerHubY = new() { Minimum = -300, Maximum = 300, Width = 220, TickFrequency = 10 };
+            centerHubX.ValueChanged += (_, e) => ApplyKeyMapsHubChange("CenterHubOffsetX", e.NewValue);
+            centerHubY.ValueChanged += (_, e) => ApplyKeyMapsHubChange("CenterHubOffsetY", e.NewValue);
             _keyMapsHubOffsets["CenterHubOffsetX"] = centerHubX;
             _keyMapsHubOffsets["CenterHubOffsetY"] = centerHubY;
             StackPanel centerHubPair = new() { Orientation = Orientation.Horizontal };
@@ -343,6 +352,8 @@ namespace GamepadKeyboard.UI
             }
             _keyMapsHubCenterSize.Value = layout.HubCenterSize;
             _keyMapsHubVariantSize.Value = layout.HubVariantSize;
+            _keyMapsHubCenterSize.ValueChanged += (_, e) => ApplyKeyMapsHubChange("HubCenterSize", e.NewValue);
+            _keyMapsHubVariantSize.ValueChanged += (_, e) => ApplyKeyMapsHubChange("HubVariantSize", e.NewValue);
             ConfigureNumericValidation(_keyMapsKeySize, value => value is >= 0.6 and <= 2.0, "0.##");
             foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
             {
@@ -352,6 +363,105 @@ namespace GamepadKeyboard.UI
             {
                 ConfigureNumericValidation(pair.Value, value => value >= 0.5 && value <= 2.0, "0.##");
             }
+            WireKeyMapsTextBoxLiveApply();
+        }
+
+        /// <summary>Text editors for the Key Maps layout also apply live: the
+        /// value is pushed to AppSettings after the field's own validation ran
+        /// (LostKeyboardFocus / Enter), so edits show without pressing OK.</summary>
+        private void WireKeyMapsTextBoxLiveApply()
+        {
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsOffsets)
+            {
+                string propertyName = pair.Key;
+                pair.Value.LostKeyboardFocus += (_, __) => ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
+                pair.Value.KeyDown += (_, e) =>
+                {
+                    if (e.Key == Key.Enter)
+                    {
+                        ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
+                    }
+                };
+            }
+            foreach (KeyValuePair<string, TextBox> pair in _keyMapsSpreads)
+            {
+                string propertyName = pair.Key;
+                pair.Value.LostKeyboardFocus += (_, __) => ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
+                pair.Value.KeyDown += (_, e) =>
+                {
+                    if (e.Key == Key.Enter)
+                    {
+                        ApplyKeyMapsTextBoxChange(propertyName, pair.Value);
+                    }
+                };
+            }
+            _keyMapsKeySize.LostKeyboardFocus += (_, __) => ApplyKeyMapsTextBoxChange("KeySize", _keyMapsKeySize);
+            _keyMapsKeySize.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter)
+                {
+                    ApplyKeyMapsTextBoxChange("KeySize", _keyMapsKeySize);
+                }
+            };
+        }
+
+        /// <summary>Parses a validated Key Maps text field and pushes it to the
+        /// layout settings (no-op when the text is not a number — the field's
+        /// validator reverts it on these same events).</summary>
+        private void ApplyKeyMapsTextBoxChange(string propertyName, TextBox input)
+        {
+            if (!double.TryParse(input.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double value)
+                || !double.IsFinite(value))
+            {
+                return;
+            }
+            Settings.KeyMapsLayoutSettings layout = Settings.AppSettings.Instance.KeyMaps.Layout;
+            typeof(Settings.KeyMapsLayoutSettings).GetProperty(propertyName)!.SetValue(layout, value);
+            layout.Normalize();
+            Settings.AppSettings.Save();
+            AppOrchestrator.NotifyKeyMapsLayoutChanged();
+        }
+
+        /// <summary>Live-apply for Key Maps hub editors: writes the property to
+        /// AppSettings, saves the file and asks the overlay to rebuild so slider
+        /// drags show on the board immediately (the overlay's Update tick picks
+        /// up the fingerprint change itself.</summary>
+        private void ApplyKeyMapsHubChange(string propertyName, double value)
+        {
+            Settings.KeyMapsLayoutSettings layout = Settings.AppSettings.Instance.KeyMaps.Layout;
+            typeof(Settings.KeyMapsLayoutSettings).GetProperty(propertyName)!.SetValue(layout, value);
+            layout.Normalize();
+            Settings.AppSettings.Save();
+            AppOrchestrator.NotifyKeyMapsLayoutChanged();
+        }
+
+        /// <summary>Snapshots the whole Key Maps layout so window Cancel can
+        /// restore the pre-opening state (live edits write straight to
+        /// AppSettings before OK is pressed).</summary>
+        private void BackupKeyMapsLayout(Settings.KeyMapsLayoutSettings layout)
+        {
+            _keyMapsLayoutBackup.Clear();
+            foreach (System.Reflection.PropertyInfo property in typeof(Settings.KeyMapsLayoutSettings).GetProperties())
+            {
+                _keyMapsLayoutBackup[property.Name] = property.GetValue(layout);
+            }
+        }
+
+        /// <summary>Restores the pre-opening Key Maps layout after Cancel.</summary>
+        private void RestoreKeyMapsLayout()
+        {
+            if (_keyMapsLayoutBackup.Count == 0)
+            {
+                return;
+            }
+            Settings.KeyMapsLayoutSettings layout = Settings.AppSettings.Instance.KeyMaps.Layout;
+            foreach (KeyValuePair<string, object> pair in _keyMapsLayoutBackup)
+            {
+                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
+                    layout, Convert.ToDouble(pair.Value));
+            }
+            Settings.AppSettings.Save();
+            AppOrchestrator.NotifyKeyMapsLayoutChanged();
         }
 
         private void Save()
@@ -531,6 +641,10 @@ namespace GamepadKeyboard.UI
 
         protected override void OnClosed(EventArgs e)
         {
+            if (!_keyMapsSettingsSavedExplicitly)
+            {
+                RestoreKeyMapsLayout();
+            }
             base.OnClosed(e);
         }
     }

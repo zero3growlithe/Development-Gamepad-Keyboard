@@ -121,6 +121,18 @@ namespace GamepadKeyboard
             });
         }
 
+        /// <summary>Asks the Key Maps overlay to drop its cache so the next
+        /// Update tick rebuilds the board from the edited layout settings
+        /// (called live from the settings sliders).</summary>
+        public static void NotifyKeyMapsLayoutChanged()
+        {
+            AppOrchestrator? orchestrator = _current;
+            if (orchestrator == null) return;
+            System.Windows.Threading.Dispatcher? dispatcher = orchestrator._keyMapsOverlay?.Dispatcher;
+            if (dispatcher == null) return;
+            dispatcher.BeginInvoke(() => orchestrator._keyMapsOverlay?.ResetView());
+        }
+
         public static void NotifyStickPointsChanged()
         {
             _current?._mapper.ResetKeyboardCursors();
