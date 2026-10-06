@@ -268,11 +268,11 @@ namespace GamepadKeyboard.Input
             // key went down — only then its modifier key stays active (latched)
             // while maps is held; otherwise the control stays frozen.
             UpdateLatchedModifier(snapshot.LeftTrigger >= 0.5, mapsKey, mapsKeyEdge, _wasShiftHeldBeforeMaps,
-                ref _previousShift, ref _shiftLocked, ref _shiftFreed, ref _shiftHeld, Vk.LShift, false, AllowFreshPressUnlockWhileMaps: true);
+                ref _previousShift, ref _shiftLocked, ref _shiftFreed, ref _shiftHeld, Vk.LShift, false, allowFreshPressUnlockWhileMaps: true);
             UpdateLatchedModifier(snapshot.LB, mapsKey, mapsKeyEdge, _wasCtrlHeldBeforeMaps,
-                ref _previousCtrl, ref _ctrlLocked, ref _ctrlFreed, ref _ctrlHeld, Vk.LControl, false, AllowFreshPressUnlockWhileMaps: false);
+                ref _previousCtrl, ref _ctrlLocked, ref _ctrlFreed, ref _ctrlHeld, Vk.LControl, false, allowFreshPressUnlockWhileMaps: false);
             UpdateLatchedModifier(snapshot.RB, mapsKey, mapsKeyEdge, _wasAltHeldBeforeMaps,
-                ref _previousAlt, ref _altLocked, ref _altFreed, ref _altHeld, Vk.LMenu, false, AllowFreshPressUnlockWhileMaps: false);
+                ref _previousAlt, ref _altLocked, ref _altFreed, ref _altHeld, Vk.LMenu, false, allowFreshPressUnlockWhileMaps: false);
         }
 
         /// <summary>
