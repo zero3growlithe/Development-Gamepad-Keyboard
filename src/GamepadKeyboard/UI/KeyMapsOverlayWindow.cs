@@ -1156,7 +1156,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         private void RebuildProjectedPrompts(int activeIndex)
         {
             BuildProjectedPrompts(activeIndex);
-            UpdateProjectedPromptOpacityIfProjected();
         }
 
         /// <summary>Prompts are this view's core info — always visible; they
