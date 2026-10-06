@@ -75,6 +75,7 @@ namespace GamepadKeyboard.Input
         private bool _seedRun;
         private bool _seeded;
         private bool _mapsKeyToggledOn;
+        private bool _previousPhysicalMapsKey;
         private bool _previousMapsKey;
         // Modifier state as of the maps-key press edge (frozen while held).
         private bool _wasShiftHeldBeforeMaps;
@@ -181,6 +182,7 @@ namespace GamepadKeyboard.Input
             _previousShift = _previousCtrl = _previousAlt = false;
             _wasShiftHeldBeforeMaps = _wasCtrlHeldBeforeMaps = _wasAltHeldBeforeMaps = false;
             _previousMapsKey = false;
+            _previousPhysicalMapsKey = false;
             _mapsKeyToggledOn = false;
             _previousRightStickPress = false;
             _previousStart = false;
@@ -197,7 +199,7 @@ namespace GamepadKeyboard.Input
             // Map selection (physical chord) FIRST: the modifier latch needs to
             // know whether the maps key just went down on this very tick.
             bool physicalMapsKey = snapshot.RightTrigger >= 0.5;
-            bool physicalEdge = physicalMapsKey && !_previousMapsKey;
+            bool physicalEdge = physicalMapsKey && !_previousPhysicalMapsKey;
             bool mapsKey;
             if (AppSettings.Instance.KeyMaps.Layout.MapsKeyToggle)
             {
@@ -222,6 +224,7 @@ namespace GamepadKeyboard.Input
                 _wasAltHeldBeforeMaps = snapshot.RB;
             }
             _previousMapsKey = mapsKey;
+            _previousPhysicalMapsKey = physicalMapsKey;
             int mapIndex = mapsKey
                 ? snapshot.LB && snapshot.RB ? 4
                 : snapshot.LB ? 3
