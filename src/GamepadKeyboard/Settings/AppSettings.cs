@@ -16,6 +16,11 @@ namespace GamepadKeyboard.Settings
         public int SettingsVersion { get; set; } = 5;
 
         public double KeySpacing { get; set; } = 1.0;
+
+        /// <summary>Opacity of keyboard key tiles — Keyboard Mode overlay and
+        /// the Maps Mode projected keyboard (0.2–1; clamped in Normalize()).
+        /// </summary>
+        public double KeyboardKeyOpacity { get; set; } = 1.0;
         public double StickDeadzone { get; set; } = 0.1;
         public double MouseStickDeadzone { get; set; } = 0.1;   // separate deadzone for mouse mode
         public double OverlayScale { get; set; } = 1.0;
@@ -161,6 +166,7 @@ namespace GamepadKeyboard.Settings
             HidHideDeviceInstancePaths ??= new List<string>();
             KeyMaps ??= new KeyMapsSettings();
             KeyMaps.Normalize();
+            KeyboardKeyOpacity = Math.Clamp(KeyboardKeyOpacity, 0.2, 1.0);
             HidHideDeviceInstancePaths = HidHideDeviceInstancePaths
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)

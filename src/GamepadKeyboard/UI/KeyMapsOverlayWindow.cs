@@ -59,6 +59,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
 
         private readonly HashSet<KeyboardLayout.KeyDef> _projectedCovered = new();
         private readonly Dictionary<KeyboardLayout.KeyDef, Border> _projectedKeys = new();
+        private readonly HashSet<Border> _projectedExtraBorders = new();
         private readonly Dictionary<KeyboardLayout.KeyDef, bool> _projectedPressed = new();
         private readonly List<UIElement> _projectedPrompts = new();
         private readonly Dictionary<string, (KeyboardLayout.KeyDef Key, string Label)> _promptTargets = new();
@@ -399,7 +400,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                    (layout.ShowShadowMaps ? 1.0 : 0.0) * 5.08 +
                    (layout.StickUniformSpread ? 1.0 : 0.0) * 5.1 +
                    layout.LeftStickCenterOffsetY * 5.2 + layout.LeftStickBottomOffsetY * 5.3 +
-                   layout.RightStickCenterOffsetY * 5.4 + layout.RightStickBottomOffsetY * 5.5;
+                   layout.RightStickCenterOffsetY * 5.4 + layout.RightStickBottomOffsetY * 5.5 +
+                   AppSettings.Instance.KeySpacing * 47.0;
             return fingerprint;
         }
 
@@ -859,6 +861,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         private void BuildProjectedKeyboardBase(double boardScale)
         {
             _projectedKeys.Clear();
+            _projectedExtraBorders.Clear();
             _projectedPressed.Clear();
             _projectedCovered.Clear();
             foreach (UIElement prompt in _projectedPrompts)
@@ -877,7 +880,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             }
 
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
-            double pitch = 46.0 * boardScale;
+            double pitch = (46.0 + Math.Max(0.0, AppSettings.Instance.KeySpacing)) * boardScale;
             double keySpanX = _projectedLayout.GridW * pitch + pitch * 1.15;
             double keySpanY = _projectedLayout.GridH * pitch;
             double originX = (BoardWidth * boardScale - keySpanX) / 2.0 + pitch * 1.15;
@@ -912,6 +915,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             _projectedPrompts.Clear();
             _promptTargets.Clear();
             _lastPromptOpacity = double.NaN;
+            foreach (Border extraBorder in _projectedExtraBorders)
+            {
+                _root.Children.Remove(extraBorder);
+            }
+            _projectedExtraBorders.Clear();
             foreach (KeyValuePair<KeyboardLayout.KeyDef, Border> pair in _projectedKeys)
             {
                 pair.Value.Background = projectedKeyFillIdle;
@@ -921,7 +929,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             }
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             double boardScale = Width / BoardWidth;
-            double pitch = 46.0 * boardScale;
+            double pitch = (46.0 + Math.Max(0.0, AppSettings.Instance.KeySpacing)) * boardScale;
             double keySpanX = _projectedLayout!.GridW * pitch + pitch * 1.15;
             double originX = (BoardWidth * boardScale - keySpanX) / 2.0 + pitch * 1.15;
             double originY = (BoardHeight * boardScale - _projectedLayout.GridH * pitch) / 2.0
@@ -971,7 +979,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     Y = 1.0 + row * rowPitch,
                     W = 0.9,
                 };
-                AddProjectedKey(extra, originX, originY, pitch, boardScale);
+                AddProjectedKey(extra, originX, originY, pitch, boardScale, isExtraKey: true);
             }
 
             // Prompts: one vector gamepad-button icon per bound slot, over its
@@ -1009,7 +1017,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     {
                         foreach (KeyboardLayout.KeyDef key in _projectedKeys.Keys)
                         {
-                            if (key.Vk == vk && key.X < 0)
+                            if (key.Vk == vk)
                             {
                                 target = key;
                                 break;
@@ -1100,10 +1108,12 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         /// <summary>One keyboard-styled key (same look as Keyboard Mode) added
         /// to the board canvas at grid coords.</summary>
         private void AddProjectedKey(
-            KeyboardLayout.KeyDef key, double originX, double originY, double pitch, double boardScale)
+            KeyboardLayout.KeyDef key, double originX, double originY, double pitch, double boardScale,
+            bool isExtraKey = false)
         {
             double gap = 6.0 * boardScale;
             Rect rect = new(key.X * pitch, key.Y * pitch, key.W * pitch - gap, pitch - gap);
+            double keyOpacity = Math.Clamp(AppSettings.Instance.KeyboardKeyOpacity, 0.2, 1.0);
             Border border = new()
             {
                 Width = rect.Width,
@@ -1112,6 +1122,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 BorderThickness = new Thickness(1),
                 BorderBrush = projectedKeyBorderIdle,
                 Background = projectedKeyFillIdle,
+                Opacity = keyOpacity,
             };
             TextBlock label = new()
             {
@@ -1127,6 +1138,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             _root.Children.Add(border);
             _projectedKeys[key] = border;
             _projectedPressed[key] = false;
+            if (isExtraKey)
+            {
+                _projectedExtraBorders.Add(border);
+            }
         }
 
         /// <summary>Per-tick projected update: press highlights (the pressed
@@ -1268,6 +1283,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             return layout.PromptOffsetX * 31.0 + layout.PromptOffsetY * 17.0
                 + layout.ExtraKeySpacing * 13.0
                 + layout.IconScale * 43.0
+                + AppSettings.Instance.KeySpacing * 47.0
                 + (layout.ProjectKeyboard ? 3.0 : 0.0)
                 + (_projectedPreview ? 7.0 : 0.0);
         }

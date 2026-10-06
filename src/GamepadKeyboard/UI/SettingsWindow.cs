@@ -255,9 +255,40 @@ namespace GamepadKeyboard.UI
         /// <summary>Keyboard tab rows: the classic keyboard settings.</summary>
         private (string, FrameworkElement)[] BuildKeyboardTabRows()
         {
+            Slider keyOpacity = new()
+            {
+                Minimum = 0.2,
+                Maximum = 1.0,
+                TickFrequency = 0.01,
+                IsSnapToTickEnabled = true,
+                Width = 220,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            keyOpacity.Value = Math.Clamp(Settings.AppSettings.Instance.KeyboardKeyOpacity, 0.2, 1.0);
+            System.Windows.Controls.TextBlock keyOpacityValue = new()
+            {
+                Foreground = System.Windows.Media.Brushes.Gray,
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            keyOpacity.ValueChanged += (_, __) =>
+            {
+                Settings.AppSettings.Instance.KeyboardKeyOpacity = keyOpacity.Value;
+                Settings.AppSettings.Instance.Normalize();
+                Settings.AppSettings.Save();
+                keyOpacityValue.Text = keyOpacity.Value.ToString("0.##", CultureInfo.CurrentCulture);
+                AppOrchestrator.NotifyMappingsChanged();
+                AppOrchestrator.NotifyKeyMapsLayoutChanged();
+            };
+            keyOpacityValue.Text = keyOpacity.Value.ToString("0.##", CultureInfo.CurrentCulture);
+            StackPanel keyOpacityHost = new() { Orientation = Orientation.Horizontal };
+            keyOpacityHost.Children.Add(keyOpacity);
+            keyOpacityHost.Children.Add(keyOpacityValue);
+
             return new (string, FrameworkElement)[]
             {
                 ("Key spacing (px gap between keys):", _spacing),
+                ("Keyboard key opacity:", keyOpacityHost),
                 ("Keyboard move speed:", _keyboardMoveSpeed),
                 ("Stick deadzone (0.000–0.5):", _deadzone),
             };

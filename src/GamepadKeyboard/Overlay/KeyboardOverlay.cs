@@ -90,6 +90,7 @@ namespace GamepadKeyboard.Overlay
                     BorderBrush = (Brush)FindResource("KeyBorderBrush"),
                     BorderThickness = new Thickness(1),
                     Background = (Brush)FindResource("KeyBrush"),
+                    Opacity = Math.Clamp(AppSettings.Instance.KeyboardKeyOpacity, 0.2, 1.0),
                     CornerRadius = new CornerRadius(3),
                     Child = new TextBlock
                     {
