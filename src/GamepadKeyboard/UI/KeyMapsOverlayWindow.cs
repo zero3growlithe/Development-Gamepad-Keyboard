@@ -959,7 +959,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             ushort[] orderedExtra = UsedCatalogVks(usedVks);
             const int ExtraRows = 6;
             double rowPitch = 1.15 * Math.Max(0.4, layout.ExtraKeySpacing);
-            for (int extraIndex = 0; extraIndex < orderedExtra.Count; extraIndex++)
+            for (int extraIndex = 0; extraIndex < orderedExtra.Length; extraIndex++)
             {
                 ushort vk = orderedExtra[extraIndex];
                 string label = Array.Find(ExtraKeyCatalog, pair => pair.Vk == vk).Label;
