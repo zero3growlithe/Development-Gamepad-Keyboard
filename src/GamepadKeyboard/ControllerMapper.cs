@@ -1249,7 +1249,7 @@ namespace GamepadKeyboard
 
         internal static bool IsExtendedKey(ushort vk) => vk is
             Vk.Delete or Vk.Insert or Vk.Up or Vk.Down or Vk.Left or Vk.Right
-            or Vk.PageUp or Vk.PageDown or Vk.Home or Vk.End;
+            or Vk.PageUp or Vk.PageDown or Vk.Home or Vk.End or Vk.Print;
 
         private static ushort ActionToVk(string action) => action switch
         {

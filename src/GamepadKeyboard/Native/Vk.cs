@@ -28,7 +28,7 @@ namespace GamepadKeyboard.Native
         public const ushort Up = 0x26;
         public const ushort Right = 0x27;
         public const ushort Down = 0x28;
-        public const ushort Print = 0x2A;
+        public const ushort Print = 0x2C;      // VK_SNAPSHOT (PrintScreen)
         public const ushort Insert = 0x2D;
         public const ushort Delete = 0x2E;
         public const ushort LWin = 0x5B;
