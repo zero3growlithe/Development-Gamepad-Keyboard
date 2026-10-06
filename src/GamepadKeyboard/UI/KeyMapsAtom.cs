@@ -48,9 +48,10 @@ namespace GamepadKeyboard.UI
         private static readonly Brush CenterFillPressed = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57)));
         private static readonly Brush CenterBorderIdle = Frozen(new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)));
         private static readonly Brush CenterBorderPressed = Frozen(new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A)));
-        private static readonly Brush QuarkFill = Frozen(new SolidColorBrush(Color.FromArgb(0x90, 0x22, 0x22, 0x2E)));
+        // Opaque base: the "inactive quarks alpha" slider is the only alpha source
+        private static readonly Brush QuarkFill = Frozen(new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x2E)));
         private static readonly Brush QuarkFillActive = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57)));
-        private static readonly Brush QuarkBorderIdle = Frozen(new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF)));
+        private static readonly Brush QuarkBorderIdle = Frozen(new SolidColorBrush(Colors.White));
         private static readonly Brush QuarkBorderActive = Frozen(new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A)));
 private static readonly Brush QuarkFillCombo = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0xB4, 0x78, 0x1F)));
 private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0xC4, 0x5A)));
