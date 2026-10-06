@@ -493,32 +493,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             };
         }
 
-        private void BuildCluster(
-            int activeIndex, double clusterX, double clusterY, ClusterGeometry cluster,
-            double offsetPixels, double offsetY, double spread, double boardScale)
-        {
-            double pitchX = (TileWidth + TileGap) * spread;
-            double pitchY = (TileHeight + TileGap) * spread;
-            double clusterSpanX = cluster.Columns * pitchX - TileGap;
-            double clusterSpanY = cluster.Rows * pitchY - TileGap;
-            double centerX = BoardWidth / 2.0;
-            double centerY = BoardHeight / 2.0 + 20.0;
-            double breadthX = 96.0;
-            double breadthY = 132.0;
-            double baseX = centerX + clusterX * (clusterSpanX / 2.0 + breadthX / 2.0)
-                + offsetPixels * boardScale - clusterSpanX / 2.0;
-            double baseY = centerY + clusterY * (clusterSpanY / 2.0 + breadthY / 2.0)
-                + offsetY * boardScale - clusterSpanY / 2.0;
-            for (int index = 0; index < cluster.Placements.Count; index++)
-            {
-                SlotPlacement placement = cluster.Placements[index];
-                AddTile(placement.SlotName, _maps[activeIndex],
-                    baseX + placement.Column * pitchX * boardScale,
-                    baseY + placement.Row * pitchY * boardScale,
-                    boardScale);
-            }
-        }
-
         private void AddTile(string slot, KeyMapDefinition map, double left, double top, double boardScale)
         {
             string label = LabelFor(map, slot);
@@ -1402,7 +1376,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             public double Left;
             public double Top;
             public double Width;
-            public int MapIndex;
         }
 
         // ── Click-through / non-activating window ───────────────────────────────

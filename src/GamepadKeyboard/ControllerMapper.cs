@@ -1400,6 +1400,7 @@ namespace GamepadKeyboard
                 // media action is the stop transport key (VK_MEDIA_PLAY_PAUSE's
                 // sibling) — the spec asks "if present, else closest existing".
                 "BrowserStop" => Vk.MediaStop,
+                "MediaStop" => Vk.MediaStop,
                 _ => Vk.None
             };
         }

@@ -39,7 +39,6 @@ namespace GamepadKeyboard.Settings
         public bool FreeCursorEnabled { get; set; } = true;
         public double FreeCursorSpeed { get; set; } = 600.0;
         public bool HideCenterPointsAndRaysInFreeCursor { get; set; } = false;
-        public double PointEditStickSpeed { get; set; } = 0.8;
         public bool ShowOverlay { get; set; } = true;
         public bool AlwaysShowKeyboardAtCursorPosition { get; set; } = true;
         public bool RunOnStartup { get; set; } = false;

@@ -89,15 +89,6 @@ namespace GamepadKeyboard.Native
         public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         [DllImport("user32.dll")]
-        public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        public static extern bool GetCursorPos(out POINT lpPoint);
-
-        [DllImport("user32.dll")]
-        public static extern bool SetCursorPos(int X, int Y);
-
-        [DllImport("user32.dll")]
         private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
 
         [DllImport("shcore.dll")]
@@ -124,13 +115,6 @@ namespace GamepadKeyboard.Native
 
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT { public int X; public int Y; }
-
-        // ── Keyboard state (for toggle support) ───────────────────────────────
-        [DllImport("user32.dll")]
-        public static extern short GetKeyState(int nVirtKey);
-
-        [DllImport("user32.dll")]
-        public static extern short GetAsyncKeyState(int nVirtKey);
 
         // ── High-resolution timer (polling cadence when backgrounded) ──────────
         [DllImport("winmm.dll")]

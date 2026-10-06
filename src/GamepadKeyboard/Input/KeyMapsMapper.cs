@@ -143,9 +143,9 @@ namespace GamepadKeyboard.Input
             {
                 _seedRun = !_seeded;
                 _seeded = true;
-                // The seed run IS a full tick — modifiers/windows assert here,
-                // but TapSlot suppresses edges (no phantom taps from buttons
-                // held across a mode switch or ReleaseAll).
+                // The seed run IS a full tick — the seed gate in HoldSlot
+                // suppresses edges, so buttons held across a mode switch or
+                // ReleaseAll never fire phantom events on the first tick.
                 ProcessTick(snapshot);
             }
             catch (Exception exception)
@@ -454,11 +454,11 @@ namespace GamepadKeyboard.Input
         /// modifier and map-selection paths consume them first. Slots that
         /// cannot hold (app actions, mouse-button slots, Unicode-typed
         /// punctuation) keep tap/edge behavior.
+        /// While the move/scale-board mode is active the gamepad drives the
+        /// board, so EVERY slot mapping stays silent — plain keys, app-level
+        /// actions, clicks — except the move-mode toggle itself (so the same
+        /// button switches the mode back off).
         /// </summary>
-        /// <summary>While the move/scale-board mode is active the gamepad
-        /// drives the board, so EVERY slot mapping stays silent — plain keys,
-        /// app-level actions, clicks — except the move-mode toggle itself
-        /// (so the same button switches the mode back off).</summary>
         private void HoldSlot(ref bool previous, bool held, string slot)
         {
             if (!_seedRun)
@@ -702,43 +702,6 @@ namespace GamepadKeyboard.Input
                 ActionRequested?.Invoke(slot);
             }
             previous = held;
-        }
-
-        private void SendSlotTap(string slot)
-        {
-            if (string.IsNullOrWhiteSpace(slot)
-                || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-            bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
-                && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
-            if (boardOwnsInput)
-            {
-                return;
-            }
-            if (ControllerMapper.IsAppLevelAction(slot))
-            {
-                ActionRequested?.Invoke(slot);
-                return;
-            }
-            ushort virtualKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
-            if (virtualKey != Vk.None)
-            {
-                _sender.TapKey(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));
-                return;
-            }
-            if (slot.Length == 1)
-            {
-                // Punctuation slot (e.g. "+") on a US layout: a VK tap sends
-                // "=" instead, and a held Ctrl/Alt further rewrites the glyph.
-                // Typed through Unicode events for the exact character. Under
-                // a held Shift the shifted glyph goes out instead ("?" for
-                // "/"). Taps are edge-triggered, so this path never runs per
-                // tick.
-                SendShiftAwareText(slot);
-            }
-            // Names that resolve to no key are ignored silently.
         }
 
         private void LogMapChange(int mapIndex)
