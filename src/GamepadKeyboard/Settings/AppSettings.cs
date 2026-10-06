@@ -479,6 +479,17 @@ namespace GamepadKeyboard.Settings
         /// engages maps mode, the next press leaves it — instead of being
         /// held down the whole time.</summary>
         public bool MapsKeyToggle { get; set; } = false;
+
+        /// <summary>Projected-keyboard view: instead of the atom wheels, Maps
+        /// Mode draws a full US keyboard (no sticks/rays/points) and floats the
+        /// active map's button prompts over the key each slot sends.</summary>
+        public bool ProjectKeyboard { get; set; } = false;
+
+        /// <summary>Button-prompt offset relative to a key's top edge in the
+        /// projected view, in px (manual, clamped in Normalize()).</summary>
+        public double PromptOffsetX { get; set; } = 0.0;
+        public double PromptOffsetY { get; set; } = 0.0;
+
         public bool StickUniformSpread { get; set; } = true;
         public double LeftStickCenterOffsetY { get; set; } = 0.0;
         public double LeftStickBottomOffsetY { get; set; } = 0.0;
@@ -518,6 +529,8 @@ namespace GamepadKeyboard.Settings
             IdleQuarkAlpha = Math.Clamp(IdleQuarkAlpha, 0.0, 1.0);
             IconScale = Math.Clamp(IconScale, 0.0, 2.0);
             FontScale = Math.Clamp(FontScale, 0.2, 3.0);
+            PromptOffsetX = Math.Clamp(PromptOffsetX, -200.0, 200.0);
+            PromptOffsetY = Math.Clamp(PromptOffsetY, -200.0, 200.0);
             SelectStartOffsetX = Math.Clamp(SelectStartOffsetX, -400.0, 400.0);
             SelectStartOffsetY = Math.Clamp(SelectStartOffsetY, -300.0, 300.0);
             SelectStartScale = Math.Clamp(SelectStartScale, 0.5, 2.0);

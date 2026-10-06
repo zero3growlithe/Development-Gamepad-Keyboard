@@ -255,7 +255,7 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
 
         /// <summary>Vector gamepad-button icon keyed by the atom's slot:
         /// face letter, d-pad arrow, stick ring (LS/RS), pill (Select/Start).</summary>
-        private static Canvas MakeIcon(string slot)
+        internal static Canvas MakeIcon(string slot)
         {
             Canvas canvas = new()
             {
@@ -278,13 +278,13 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             switch (slot)
             {
                 case "FaceY":
-                    AddShape(canvas, MakeGlyph("Y", 0x4C, 0xC8, 0x7E), 3, 3);
+                    AddShape(canvas, MakeGlyph("Y", 0xE8, 0xC8, 0x3C), 3, 3);
                     break;
                 case "FaceA":
-                    AddShape(canvas, MakeGlyph("A", 0x5C, 0x68, 0xE8), 3, 3);
+                    AddShape(canvas, MakeGlyph("A", 0x4C, 0xC8, 0x5E), 3, 3);
                     break;
                 case "FaceX":
-                    AddShape(canvas, MakeGlyph("X", 0x38, 0x68, 0xD8), 3, 3);
+                    AddShape(canvas, MakeGlyph("X", 0x58, 0x6E, 0xE0), 3, 3);
                     break;
                 case "FaceB":
                     AddShape(canvas, MakeGlyph("B", 0xD8, 0x48, 0x54), 3, 3);
