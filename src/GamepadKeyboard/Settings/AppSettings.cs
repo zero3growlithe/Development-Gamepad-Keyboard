@@ -474,6 +474,11 @@ namespace GamepadKeyboard.Settings
         /// variants) appear beside it. Off = no quarks, no amber center
         /// highlight — center just reads the active map's binding.</summary>
         public bool ShowShadowMaps { get; set; } = true;
+
+        /// <summary>When true, R2 (maps key) works as a TOGGLE: one press
+        /// engages maps mode, the next press leaves it — instead of being
+        /// held down the whole time.</summary>
+        public bool MapsKeyToggle { get; set; } = false;
         public bool StickUniformSpread { get; set; } = true;
         public double LeftStickCenterOffsetY { get; set; } = 0.0;
         public double LeftStickBottomOffsetY { get; set; } = 0.0;
