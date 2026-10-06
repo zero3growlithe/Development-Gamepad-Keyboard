@@ -18,8 +18,10 @@ namespace GamepadKeyboard.Input
     /// Modifier gating: while the maps key is held, L2/L1/R1 are map-chord
     /// buttons — their Shift/Ctrl/Alt keys are frozen (no taps, no toggles).
     /// A modifier physically held BEFORE the maps key went down stays latched
-    /// for the whole hold (re-pressing that button unlocks + releases it);
-    /// anything else does nothing until the maps key is released. The
+    /// for the whole hold; RE-PRESSING a chord button while the maps key is
+    /// held unlocks AND FREES its modifier — from that moment the key tracks
+    /// the physical control exactly as if the maps key were not held (useful
+    /// for Shift/L2: press L2 again under R2 → Shift works normally). The
     /// Windows key (right-stick press, not a chord button) keeps the legacy
     /// latch: it can be locked and toggled while the maps key is held.
     ///
@@ -86,6 +88,12 @@ namespace GamepadKeyboard.Input
         private bool _shiftLocked;
         private bool _ctrlLocked;
         private bool _altLocked;
+        // Freed while maps held: a re-press of a chord button releases the
+        // modifier from the maps-key freeze so it tracks the physical control
+        // exactly as if the maps key were not held (used mainly for Shift/L2).
+        private bool _shiftFreed;
+        private bool _ctrlFreed;
+        private bool _altFreed;
         private bool _windowsLocked;
         private ushort _latchedWindowsVk;
         private bool _latchedWindowsExtended;
@@ -165,6 +173,7 @@ namespace GamepadKeyboard.Input
             }
             _shiftHeld = _ctrlHeld = _altHeld = _windowsHeld = false;
             _shiftLocked = _ctrlLocked = _altLocked = _windowsLocked = false;
+            _shiftFreed = _ctrlFreed = _altFreed = false;
             _latchedWindowsVk = Vk.None;
             _previousShift = _previousCtrl = _previousAlt = false;
             _wasShiftHeldBeforeMaps = _wasCtrlHeldBeforeMaps = _wasAltHeldBeforeMaps = false;
@@ -255,11 +264,11 @@ namespace GamepadKeyboard.Input
             // key went down — only then its modifier key stays active (latched)
             // while maps is held; otherwise the control stays frozen.
             UpdateLatchedModifier(snapshot.LeftTrigger >= 0.5, mapsKey, mapsKeyEdge, _wasShiftHeldBeforeMaps,
-                ref _previousShift, ref _shiftLocked, ref _shiftHeld, Vk.LShift, false);
+                ref _previousShift, ref _shiftLocked, ref _shiftFreed, ref _shiftHeld, Vk.LShift, false);
             UpdateLatchedModifier(snapshot.LB, mapsKey, mapsKeyEdge, _wasCtrlHeldBeforeMaps,
-                ref _previousCtrl, ref _ctrlLocked, ref _ctrlHeld, Vk.LControl, false);
+                ref _previousCtrl, ref _ctrlLocked, ref _ctrlFreed, ref _ctrlHeld, Vk.LControl, false);
             UpdateLatchedModifier(snapshot.RB, mapsKey, mapsKeyEdge, _wasAltHeldBeforeMaps,
-                ref _previousAlt, ref _altLocked, ref _altHeld, Vk.LMenu, false);
+                ref _previousAlt, ref _altLocked, ref _altFreed, ref _altHeld, Vk.LMenu, false);
         }
 
         /// <summary>
@@ -268,13 +277,14 @@ namespace GamepadKeyboard.Input
         /// maps-key press edge: whatever is physically held LATCHES down (real
         /// KeyDown already sent, or sent now) and stays down regardless of the
         /// physical control. While the maps key is held: a fresh press of the
-        /// physical control toggles the latch (lock, or unlock+release) so the
-        /// user is never stuck with a stuck modifier.
+        /// physical control unlocks AND FREES the modifier so it follows the
+        /// physical control as if the maps key were not held (the user is
+        /// never stuck with a stuck modifier).
         /// </summary>
         private void UpdateLatchedModifier(
             bool physical, bool mapsKey, bool mapsKeyEdge,
             bool physicalWasHeldFirst,
-            ref bool previousPhysical, ref bool locked, ref bool held,
+            ref bool previousPhysical, ref bool locked, ref bool freed, ref bool held,
             ushort virtualKey, bool extended)
         {
             if (mapsKey)
@@ -298,18 +308,42 @@ namespace GamepadKeyboard.Input
                 if (physical && !previousPhysical && locked)
                 {
                     // Fresh press of a latched modifier unlocks + releases it
-                    // so the user is never stuck with a stuck modifier.
+                    // and frees it: from now on it tracks the physical control
+                    // as if the maps key were not held (re-press = Shift down,
+                    // re-release = Shift up).
                     locked = false;
+                    freed = true;
                     if (held)
                     {
                         _sender.KeyUp(virtualKey, extended);
                         held = false;
                     }
+                    previousPhysical = physical;
+                    return;
+                }
+                if (freed)
+                {
+                    // Freed chord button behaves like the maps key is not held.
+                    if (held != physical)
+                    {
+                        if (physical)
+                        {
+                            _sender.KeyDown(virtualKey, extended);
+                        }
+                        else
+                        {
+                            _sender.KeyUp(virtualKey, extended);
+                        }
+                        held = physical;
+                    }
+                    previousPhysical = physical;
+                    return;
                 }
                 previousPhysical = physical;
                 return;
             }
             locked = false;
+            freed = false;
             if (held != physical)
             {
                 if (physical)
@@ -592,6 +626,7 @@ namespace GamepadKeyboard.Input
                 return;
             }
             locked = false;
+            freed = false;
             if (held != physical)
             {
                 if (physical)
