@@ -101,6 +101,11 @@ namespace GamepadKeyboard
         /// alternative to the settings sliders).</summary>
         public bool AdjustKeyMapsPosition { get; set; }
 
+        /// <summary>Static mirror of AdjustKeyMapsPosition read by KeyMapsMapper:
+        /// while true, stick-deflection slots must not dispatch app-level
+        /// actions (the deflection now drives the board move).</summary>
+        internal static volatile bool KeyMapsMoveModeActive;
+
         /// <summary>Live "Hold Shadow Maps" state (poll-thread write, UI read):
         /// while true the Key Maps overlay shows shadow maps regardless of the
         /// saved toggle.</summary>
@@ -202,6 +207,8 @@ namespace GamepadKeyboard
 
                 // pass-through: app injects nothing, game sees the pad natively
                 AdjustMoveScaleKeyboard = false;
+                AdjustKeyMapsPosition = false;
+                KeyMapsMoveModeActive = false;
                 MoveDX = MoveDY = ScaleDelta = 0;
                 CaptureBindingEdges(s, bindings);
                 CleanupRuntimeBindings(bindings);
@@ -1025,6 +1032,7 @@ namespace GamepadKeyboard
 
                 case "ToggleKeyMapsMoveMode":
                     AdjustKeyMapsPosition = !AdjustKeyMapsPosition;
+                    KeyMapsMoveModeActive = AdjustKeyMapsPosition;
                     KeyMapsMoveDX = KeyMapsMoveDY = 0;
                     Notification?.Invoke(AdjustKeyMapsPosition
                         ? "Key Maps move ON — right stick moves the board"
@@ -1233,6 +1241,8 @@ namespace GamepadKeyboard
 
         private void ReleaseAllModifiers()
         {
+            AdjustKeyMapsPosition = false;
+            KeyMapsMoveModeActive = false;
             foreach (var pair in _heldKeyCounts)
                 _sender.KeyUp(pair.Key, IsExtendedKey(pair.Key));
             _heldKeyCounts.Clear();
@@ -1355,7 +1365,7 @@ namespace GamepadKeyboard
             or "ToggleKeyboardMouseMode" or "EnableInput" or "DisableInput" or "ToggleInput"
             or "SwitchKeyboardProfile" or "SwitchMouseProfile" or "SwitchStickPointsProfile"
             or "ToggleOverlay" or "ToggleKeyboard" or "ToggleLegend"
-            or "ToggleMoveScaleKeyboard";
+            or "ToggleKeyMapsMoveMode" or "ToggleMoveScaleKeyboard";
 
         private void SwitchProfile(int dir)
         {
