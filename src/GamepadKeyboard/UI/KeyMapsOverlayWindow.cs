@@ -953,17 +953,22 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     }
                 }
             }
-            foreach ((string label, ushort vk) in ExtraKeyCatalog)
+            // Multi-column block to the RIGHT of the keyboard: 6 rows,
+            // as many columns as the currently shown maps need. Catalog order
+            // keeps positions stable across map switches.
+            List<ushort> orderedExtra = UsedCatalogVks(usedVks);
+            const int ExtraRows = 6;
+            double rowPitch = 1.15 * Math.Max(0.4, layout.ExtraKeySpacing);
+            for (int extraIndex = 0; extraIndex < orderedExtra.Count; extraIndex++)
             {
-                if (!usedVks.Contains(vk))
-                {
-                    continue;
-                }
+                ushort vk = orderedExtra[extraIndex];
+                string label = Array.Find(ExtraKeyCatalog, pair => pair.Vk == vk).Label;
+                int column = extraIndex / ExtraRows;
+                int row = extraIndex % ExtraRows;
                 KeyboardLayout.KeyDef extra = new(label, vk)
                 {
-                    X = -1.15,
-                    Y = 0.35 + Array.IndexOf(UsedCatalogVks(usedVks), vk) * 0.55
-                        * Math.Max(0.1, layout.ExtraKeySpacing),
+                    X = 15.55 + column * 1.05,
+                    Y = 1.0 + row * rowPitch,
                     W = 0.9,
                 };
                 AddProjectedKey(extra, originX, originY, pitch, boardScale);
@@ -1018,11 +1023,12 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     bool isActiveMap = sourceIndex == Math.Clamp(activeIndex, 0, maps.Count - 1);
                     int stackIndex = keyStackDepth.TryGetValue(target, out int depth) ? depth : 0;
                     keyStackDepth[target] = stackIndex + 1;
-                    double iconSpan = KeyMapsAtom.IconSpan * PromptIconScale * boardScale;
+                    double promptScale = PromptIconScale * Math.Max(0.05, layout.IconScale);
+                    double iconSpan = KeyMapsAtom.IconSpan * promptScale * boardScale;
                     Canvas icon = KeyMapsAtom.MakeIcon(slot);
                     icon.Opacity = _projectedPreview ? ActiveOpacity : ProjectedPromptIdleOpacity;
                     icon.RenderTransform = new ScaleTransform(
-                        PromptIconScale * boardScale, PromptIconScale * boardScale);
+                        promptScale * boardScale, promptScale * boardScale);
                     double px = originX + target.X * pitch + (target.W * pitch) / 2.0
                         - iconSpan / 2.0 + layout.PromptOffsetX * boardScale
                         + (isActiveMap ? 0.0 : PreviewStackOffsetY);
@@ -1261,6 +1267,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             return layout.PromptOffsetX * 31.0 + layout.PromptOffsetY * 17.0
                 + layout.ExtraKeySpacing * 13.0
+                + layout.IconScale * 43.0
                 + (layout.ProjectKeyboard ? 3.0 : 0.0)
                 + (_projectedPreview ? 7.0 : 0.0);
         }
