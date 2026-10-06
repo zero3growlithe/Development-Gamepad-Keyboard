@@ -626,7 +626,6 @@ namespace GamepadKeyboard.Input
                 return;
             }
             locked = false;
-            freed = false;
             if (held != physical)
             {
                 if (physical)
