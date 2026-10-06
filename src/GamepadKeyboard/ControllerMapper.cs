@@ -105,6 +105,10 @@ namespace GamepadKeyboard
         /// while true the Key Maps overlay shows shadow maps regardless of the
         /// saved toggle.</summary>
         public static volatile bool HoldShadowMapsActive;
+
+        /// <summary>Hold Preview Maps action state (poll-thread write, UI
+        /// read): while true the projected keyboard shows ALL maps' prompts.</summary>
+        public static volatile bool HoldPreviewMapsActive;
         public double KeyMapsMoveDX { get; private set; }
         public double KeyMapsMoveDY { get; private set; }
         public double MoveDX { get; private set; }
@@ -1008,6 +1012,15 @@ namespace GamepadKeyboard
                     break;
                 case "HoldShadowMaps":
                     HoldShadowMapsActive = held;
+                    break;
+
+                case "TogglePreviewMaps":
+                    KeyMaps.PreviewMapsOn = !KeyMaps.PreviewMapsOn;
+                    Notification?.Invoke("Preview maps: "
+                        + (KeyMaps.PreviewMapsOn ? "ON" : "OFF"));
+                    break;
+                case "HoldPreviewMaps":
+                    HoldPreviewMapsActive = held;
                     break;
 
                 case "ToggleKeyMapsMoveMode":

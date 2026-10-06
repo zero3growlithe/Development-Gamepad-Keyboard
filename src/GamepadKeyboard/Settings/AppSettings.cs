@@ -535,7 +535,7 @@ namespace GamepadKeyboard.Settings
             FontScale = Math.Clamp(FontScale, 0.2, 3.0);
             PromptOffsetX = Math.Clamp(PromptOffsetX, -200.0, 200.0);
             PromptOffsetY = Math.Clamp(PromptOffsetY, -200.0, 200.0);
-            ExtraKeySpacing = Math.Clamp(ExtraKeySpacing, 0.5, 2.0);
+            ExtraKeySpacing = Math.Clamp(ExtraKeySpacing, 0.2, 2.0);
             SelectStartOffsetX = Math.Clamp(SelectStartOffsetX, -400.0, 400.0);
             SelectStartOffsetY = Math.Clamp(SelectStartOffsetY, -300.0, 300.0);
             SelectStartScale = Math.Clamp(SelectStartScale, 0.5, 2.0);

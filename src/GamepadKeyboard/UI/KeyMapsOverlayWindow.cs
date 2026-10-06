@@ -146,6 +146,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             }
 
             Input.KeyMapsMapper keyMaps = mapper.KeyMaps!;
+            _projectedPreview = ControllerMapper.HoldPreviewMapsActive || keyMaps.PreviewMapsOn;
             double fingerprint = LayoutFingerprint();
             if (_bindingsDirty || !ReferenceEquals(_maps, AppSettings.Instance.KeyMaps.Maps)
                 || fingerprint != _lastLayoutFingerprint)
@@ -848,8 +849,18 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         /// sends. No sticks, no rays, no center points.</summary>
         private void BuildProjectedKeyboard(int activeIndex, double boardScale)
         {
+            BuildProjectedKeyboardBase(boardScale);
+            BuildProjectedPrompts(activeIndex);
+        }
+
+        /// <summary>Keys + extra column + map name (no prompts). Runs on
+        /// settings rebuilds only — never on map switches, so the keyboard
+        /// itself never flashes.</summary>
+        private void BuildProjectedKeyboardBase(double boardScale)
+        {
             _projectedKeys.Clear();
             _projectedPressed.Clear();
+            _projectedCovered.Clear();
             foreach (UIElement prompt in _projectedPrompts)
             {
                 _root.Children.Remove(prompt);
@@ -877,22 +888,69 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 AddProjectedKey(key, originX, originY, pitch, boardScale);
             }
 
-            // Extra column: only entries the active map actually uses, so the
-            // list stays short (catalog order keeps it stable across maps).
-            IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
-            KeyMapDefinition map = maps[Math.Clamp(activeIndex, 0, maps.Count - 1)];
-            List<ushort> usedVks = new();
-            foreach (string slot in ProjectedSlots)
+            // Map-name label (same styled element as the atom board).
+            if (!_root.Children.Contains(_mapNameLabel))
             {
-                string? value = SlotValue(map, slot);
-                if (string.IsNullOrWhiteSpace(value) || value == "None")
+                _mapNameLabel.Width = BoardWidth * boardScale;
+                _mapNameLabel.TextAlignment = TextAlignment.Center;
+                _mapNameLabel.FontSize = 16 * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale;
+                Canvas.SetLeft(_mapNameLabel, 0);
+                Canvas.SetTop(_mapNameLabel, 6 * boardScale);
+                _root.Children.Add(_mapNameLabel);
+            }
+        }
+
+        /// <summary>(Re)creates ONLY the prompt icons + covered outlines for
+        /// the current map set — runs on map switches / preview toggles so
+        /// the keyboard keys themselves never flash.</summary>
+        private void BuildProjectedPrompts(int activeIndex)
+        {
+            foreach (UIElement prompt in _projectedPrompts)
+            {
+                _root.Children.Remove(prompt);
+            }
+            _projectedPrompts.Clear();
+            _promptTargets.Clear();
+            _lastPromptOpacity = double.NaN;
+            foreach (KeyValuePair<KeyboardLayout.KeyDef, Border> pair in _projectedKeys)
+            {
+                pair.Value.Background = projectedKeyFillIdle;
+                pair.Value.BorderBrush = projectedKeyBorderIdle;
+                pair.Value.BorderThickness = new Thickness(1);
+                _projectedPressed[pair.Key] = false;
+            }
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double boardScale = Width / BoardWidth;
+            double pitch = 46.0 * boardScale;
+            double keySpanX = _projectedLayout!.GridW * pitch + pitch * 1.15;
+            double originX = (BoardWidth * boardScale - keySpanX) / 2.0 + pitch * 1.15;
+            double originY = (BoardHeight * boardScale - _projectedLayout.GridH * pitch) / 2.0
+                + 14.0 * boardScale;
+
+            IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
+            int previewMapCount = _projectedPreview ? maps.Count : 0;
+
+            // Extra column: entries used by the map(s) we show (all maps in
+            // preview mode) — catalog order keeps it stable across maps.
+            List<ushort> usedVks = new();
+            for (int mapIndex = 0; mapIndex < maps.Count; mapIndex++)
+            {
+                if (!_projectedPreview && mapIndex != Math.Clamp(activeIndex, 0, maps.Count - 1))
                 {
                     continue;
                 }
-                ushort vk = ResolveProjectedVk(value);
-                if (vk != Vk.None && _projectedLayout.FindByVk(vk) == null && !usedVks.Contains(vk))
+                foreach (string slot in ProjectedSlots)
                 {
-                    usedVks.Add(vk);
+                    string? value = SlotValue(maps[mapIndex], slot);
+                    if (string.IsNullOrWhiteSpace(value) || value == "None")
+                    {
+                        continue;
+                    }
+                    ushort vk = ResolveProjectedVk(value);
+                    if (vk != Vk.None && _projectedLayout.FindByVk(vk) == null && !usedVks.Contains(vk))
+                    {
+                        usedVks.Add(vk);
+                    }
                 }
             }
             foreach ((string label, ushort vk) in ExtraKeyCatalog)
@@ -904,89 +962,105 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 KeyboardLayout.KeyDef extra = new(label, vk)
                 {
                     X = -1.15,
-                    Y = 0.35 + Array.IndexOf(UsedCatalogVks(usedVks), vk) * 0.95
-                        * Math.Max(0.05, layout.ExtraKeySpacing),
+                    Y = 0.35 + Array.IndexOf(UsedCatalogVks(usedVks), vk) * 0.55
+                        * Math.Max(0.1, layout.ExtraKeySpacing),
                     W = 0.9,
                 };
                 AddProjectedKey(extra, originX, originY, pitch, boardScale);
             }
 
-            // Prompts: one vector gamepad-button icon per bound slot, over its key.
-            foreach (string slot in ProjectedSlots)
+            // Prompts: one vector gamepad-button icon per bound slot, over its
+            // key. In preview mode all maps contribute; redundant bindings
+            // (same slot+value or same slot+key) are dropped and several maps
+            // hitting the SAME key stack vertically beside the prompt.
+            HashSet<(string Slot, string Value)> seenBindings = new();
+            Dictionary<KeyboardLayout.KeyDef, int> keyStackDepth = new();
+            for (int mapIndex = 0; mapIndex < (previewMapCount > 0 ? maps.Count : 1); mapIndex++)
             {
-                string? value = SlotValue(map, slot);
-                if (string.IsNullOrWhiteSpace(value) || value == "None")
+                int sourceIndex = _projectedPreview ? mapIndex : Math.Clamp(activeIndex, 0, maps.Count - 1);
+                KeyMapDefinition sourceMap = maps[Math.Clamp(sourceIndex, 0, maps.Count - 1)];
+                foreach (string slot in ProjectedSlots)
                 {
-                    continue;
-                }
-                if (ControllerMapper.IsAppLevelAction(value))
-                {
-                    continue;   // app commands (MouseMode…) have no key to project onto
-                }
-                ushort vk = ResolveProjectedVk(value);
-                if (vk == Vk.None)
-                {
-                    continue;
-                }
-                KeyboardLayout.KeyDef? target = _projectedLayout.FindByVk(vk);
-                if (target == null)
-                {
-                    foreach (KeyboardLayout.KeyDef key in _projectedKeys.Keys)
+                    string? value = SlotValue(sourceMap, slot);
+                    if (string.IsNullOrWhiteSpace(value) || value == "None")
                     {
-                        if (key.Vk == vk && key.X < 0)
+                        continue;
+                    }
+                    if (!seenBindings.Add((slot, value)))
+                    {
+                        continue;   // redundant cross-map binding
+                    }
+                    if (ControllerMapper.IsAppLevelAction(value))
+                    {
+                        continue;   // app commands (MouseMode…) have no key to project onto
+                    }
+                    ushort vk = ResolveProjectedVk(value);
+                    if (vk == Vk.None)
+                    {
+                        continue;
+                    }
+                    KeyboardLayout.KeyDef? target = _projectedLayout.FindByVk(vk);
+                    if (target == null)
+                    {
+                        foreach (KeyboardLayout.KeyDef key in _projectedKeys.Keys)
                         {
-                            target = key;
-                            break;
+                            if (key.Vk == vk && key.X < 0)
+                            {
+                                target = key;
+                                break;
+                            }
                         }
                     }
+                    if (target == null)
+                    {
+                        continue;
+                    }
+                    bool isActiveMap = sourceIndex == Math.Clamp(activeIndex, 0, maps.Count - 1);
+                    int stackIndex = keyStackDepth.TryGetValue(target, out int depth) ? depth : 0;
+                    keyStackDepth[target] = stackIndex + 1;
+                    double iconSpan = KeyMapsAtom.IconSpan * PromptIconScale * boardScale;
+                    Canvas icon = KeyMapsAtom.MakeIcon(slot);
+                    icon.Opacity = _projectedPreview ? ActiveOpacity : ProjectedPromptIdleOpacity;
+                    icon.RenderTransform = new ScaleTransform(
+                        PromptIconScale * boardScale, PromptIconScale * boardScale);
+                    double px = originX + target.X * pitch + (target.W * pitch) / 2.0
+                        - iconSpan / 2.0 + layout.PromptOffsetX * boardScale
+                        + (isActiveMap ? 0.0 : PreviewStackOffsetY);
+                    double py = originY + target.Y * pitch - iconSpan - 4.0 * boardScale
+                        + layout.PromptOffsetY * boardScale
+                        + stackIndex * PreviewStackOffsetY;
+                    Canvas.SetLeft(icon, px);
+                    Canvas.SetTop(icon, py);
+                    Canvas.SetZIndex(icon, isActiveMap ? 21 : 19);
+                    _root.Children.Add(icon);
+                    _projectedPrompts.Add(icon);
+                    _projectedCoveredPending.Add(target);
+                    if (isActiveMap)
+                    {
+                        _promptTargets[slot] = (target, value);
+                    }
                 }
-                if (target == null)
-                {
-                    continue;
-                }
-                double iconSpan = KeyMapsAtom.IconSpan * PromptIconScale * boardScale;
-                Canvas icon = KeyMapsAtom.MakeIcon(slot);
-                icon.Opacity = ProjectedPromptIdleOpacity;
-                icon.RenderTransform = new ScaleTransform(
-                    PromptIconScale * boardScale, PromptIconScale * boardScale);
-                double px = originX + target.X * pitch + (target.W * pitch) / 2.0
-                    - iconSpan / 2.0 + layout.PromptOffsetX * boardScale;
-                double py = originY + target.Y * pitch - iconSpan - 4.0 * boardScale
-                    + layout.PromptOffsetY * boardScale;
-                Canvas.SetLeft(icon, px);
-                Canvas.SetTop(icon, py);
-                Canvas.SetZIndex(icon, 20);
-                _root.Children.Add(icon);
-                _projectedPrompts.Add(icon);
-                _promptTargets[slot] = (target, value);
             }
 
-            // Orange outline marks every key the active map covers.
+            // Orange outline marks every key covered by the shown maps.
             _projectedCovered.Clear();
-            foreach (KeyValuePair<string, (KeyboardLayout.KeyDef Key, string Label)> pair in _promptTargets)
+            foreach (KeyboardLayout.KeyDef key in _projectedCoveredPending)
             {
-                _projectedCovered.Add(pair.Value.Key);
-                if (_projectedKeys.TryGetValue(pair.Value.Key, out Border? covered))
+                _projectedCovered.Add(key);
+            }
+            _projectedCoveredPending.Clear();
+            foreach (KeyValuePair<KeyboardLayout.KeyDef, Border> pair in _projectedKeys)
+            {
+                if (_projectedCovered.Contains(pair.Key))
                 {
-                    covered.BorderBrush = projectedBorderCovered;
-                    covered.BorderThickness = new Thickness(1.8);
+                    pair.Value.BorderBrush = projectedBorderCovered;
+                    pair.Value.BorderThickness = new Thickness(1.8);
                 }
             }
 
             _lastProjectedFingerprint = PromptFingerprint();
             _lastProjectedShift = _shiftSeed;
             ApplyProjectedKeyLabels(_shiftSeed);
-
-            // Map-name label (same styled element as the atom board).
-            if (!_root.Children.Contains(_mapNameLabel))
-            {
-                _mapNameLabel.Width = BoardWidth * boardScale;
-                _mapNameLabel.TextAlignment = TextAlignment.Center;
-                _mapNameLabel.FontSize = 16 * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale;
-                Canvas.SetLeft(_mapNameLabel, 0);
-                Canvas.SetTop(_mapNameLabel, 6 * boardScale);
-                _root.Children.Add(_mapNameLabel);
-            }
         }
 
         private ushort[] UsedCatalogVks(List<ushort> used)
@@ -1063,20 +1137,36 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             {
                 _lastRenderedMapIndex = activeIndex;
                 _lastProjectedFingerprint = fingerprint;
-                RebuildAll(activeIndex);
+                RebuildProjectedPrompts(activeIndex);
                 return;
             }
+            UpdateProjectedPromptOpacity(keyMaps);
+            UpdateProjectedPresses(mapper);
+            UpdateProjectedModifiers(keyMaps);
 
             if (shiftHeld != _lastProjectedShift)
             {
                 _lastProjectedShift = shiftHeld;
                 ApplyProjectedKeyLabels(shiftHeld);
             }
+        }
 
-            // Prompts are this view's core info — always visible; the
-            // shadow-maps toggle governs the atom view's quarks, not here.
-            // They brighten to full while the maps key is held.
-            double promptOpacity = keyMaps.MapsKeyHeld ? ActiveOpacity : ProjectedPromptIdleOpacity;
+        /// <summary>Map switch / preview toggle: refresh prompts + outlines
+        /// without touching the keyboard keys (no flash).</summary>
+        private void RebuildProjectedPrompts(int activeIndex)
+        {
+            BuildProjectedPrompts(activeIndex);
+            UpdateProjectedPromptOpacityIfProjected();
+        }
+
+        /// <summary>Prompts are this view's core info — always visible; they
+        /// brighten to full while the maps key is held. NOT gated by
+        /// "Show shadow maps" (that toggle governs the atom view's quarks).</summary>
+        private void UpdateProjectedPromptOpacity(Input.KeyMapsMapper keyMaps)
+        {
+            double promptOpacity = _projectedPreview
+                ? ActiveOpacity
+                : keyMaps.MapsKeyHeld ? ActiveOpacity : ProjectedPromptIdleOpacity;
             if (promptOpacity != _lastPromptOpacity)
             {
                 _lastPromptOpacity = promptOpacity;
@@ -1085,7 +1175,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     prompt.Opacity = promptOpacity;
                 }
             }
+        }
 
+        private void UpdateProjectedPresses(ControllerMapper mapper)
+        {
             foreach (KeyValuePair<string, (KeyboardLayout.KeyDef Key, string Label)> pair in _promptTargets)
             {
                 bool pressed = IsSlotPressedProjected(mapper, pair.Key);
@@ -1102,8 +1195,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                         pressed ? 2.5 : _projectedCovered.Contains(pair.Value.Key) ? 1.8 : 1);
                 }
             }
+        }
 
-            // Modifier keys: same highlight rules as the atom view's chips.
+        /// <summary>Modifier keys: same highlight rules as the atom view's chips.</summary>
+        private void UpdateProjectedModifiers(Input.KeyMapsMapper keyMaps)
+        {
             ApplyProjectedModifier(Vk.LControl, keyMaps.CtrlHeld);
             ApplyProjectedModifier(Vk.RControl, keyMaps.CtrlHeld);
             ApplyProjectedModifier(Vk.LShift, keyMaps.ShiftHeld);
@@ -1111,10 +1207,21 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             ApplyProjectedModifier(Vk.LMenu, keyMaps.AltHeld);
             ApplyProjectedModifier(Vk.RMenu, keyMaps.AltHeld);
             ApplyProjectedModifier(Vk.LWin, keyMaps.WindowsHeld);
+
         }
 
         private double _lastPromptOpacity = double.NaN;
         private bool _shiftSeed;
+        private readonly HashSet<KeyboardLayout.KeyDef> _projectedCoveredPending = new();
+
+        /// <summary>Preview Maps: show prompts from ALL maps at once
+        /// (HoldPreviewMaps active right now, or TogglePreviewMaps latched).</summary>
+        private bool _projectedPreview;
+
+        /// <summary>Preview-prompt offset stacking: each slot's prompt shifts
+        /// up by this many px extra per additional map that targets the same
+        /// key, so multi-map prompts don't overlap into one blob.</summary>
+        private const double PreviewStackOffsetY = 6.0;
 
         /// <summary>Border for a projected key at rest: orange while the
         /// active map covers it, neutral gray otherwise.</summary>
@@ -1155,7 +1262,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             return layout.PromptOffsetX * 31.0 + layout.PromptOffsetY * 17.0
                 + layout.ExtraKeySpacing * 13.0
-                + (layout.ProjectKeyboard ? 3.0 : 0.0);
+                + (layout.ProjectKeyboard ? 3.0 : 0.0)
+                + (_projectedPreview ? 7.0 : 0.0);
         }
 
         /// <summary>Projected-view press source: same physical controls as the

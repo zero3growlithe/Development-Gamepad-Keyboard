@@ -308,7 +308,7 @@ namespace GamepadKeyboard.UI
             rows.Add(MakeKeyMapsToggleRow("Project onto a keyboard", "ProjectKeyboard"));
             rows.Add(MakeKeyMapsSliderRow("Prompt offset X", "PromptOffsetX", -200.0, 200.0, 1.0));
             rows.Add(MakeKeyMapsSliderRow("Prompt offset Y", "PromptOffsetY", -200.0, 200.0, 1.0));
-            rows.Add(MakeKeyMapsSliderRow("Extra keys row spacing", "ExtraKeySpacing", 0.5, 2.0, 0.05));
+            rows.Add(MakeKeyMapsSliderRow("Additional column keys spacing", "ExtraKeySpacing", 0.2, 2.0, 0.05));
             rows.Add(MakeKeyMapsSliderRow("Inactive quarks alpha", "IdleQuarkAlpha", 0.0, 1.0, 0.01));
             rows.Add(MakeKeyMapsSliderRow("Button icons scale", "IconScale", 0.0, 2.0, 0.05));
             rows.Add(MakeKeyMapsSliderRow("Label font scale", "FontScale", 0.2, 3.0, 0.05));

@@ -60,6 +60,10 @@ namespace GamepadKeyboard.Input
         public bool AltHeld => _altHeld;
         public bool WindowsHeld => _windowsHeld;
 
+    /// <summary>Preview Maps latched by TogglePreviewMaps — the projected
+    /// overlay shows prompts from ALL maps while true (poll-thread write).</summary>
+    public bool PreviewMapsOn { get; set; }
+
         /// <summary>App-level action requested by a map slot's tap edge
         /// (e.g. Start = MouseMode on the Utility map). Invoked by
         /// ControllerMapper after Process returns; only the last one counts,
@@ -177,6 +181,7 @@ namespace GamepadKeyboard.Input
             _shiftHeld = _ctrlHeld = _altHeld = _windowsHeld = false;
             _shiftLocked = _ctrlLocked = _altLocked = _windowsLocked = false;
             ControllerMapper.HoldShadowMapsActive = false;
+            ControllerMapper.HoldPreviewMapsActive = false;
             _shiftFreed = _ctrlFreed = _altFreed = false;
             _latchedWindowsVk = Vk.None;
             _previousShift = _previousCtrl = _previousAlt = false;
@@ -482,7 +487,12 @@ namespace GamepadKeyboard.Input
                 ControllerMapper.HoldShadowMapsActive = true;
                 return;
             }
-            if (string.Equals(slot, "ToggleShadowMaps", StringComparison.Ordinal))
+            if (string.Equals(slot, "HoldPreviewMaps", StringComparison.Ordinal))
+            {
+                ControllerMapper.HoldPreviewMapsActive = true;
+                return;
+            }
+            if (slot is "ToggleShadowMaps" or "TogglePreviewMaps")
             {
                 // Tap-edge toggles once on press; release does nothing.
                 ActionRequested?.Invoke(slot);
@@ -531,7 +541,12 @@ namespace GamepadKeyboard.Input
                 ControllerMapper.HoldShadowMapsActive = false;
                 return;
             }
-            if (string.Equals(slot, "ToggleShadowMaps", StringComparison.Ordinal))
+            if (string.Equals(slot, "HoldPreviewMaps", StringComparison.Ordinal))
+            {
+                ControllerMapper.HoldPreviewMapsActive = false;
+                return;
+            }
+            if (slot is "ToggleShadowMaps" or "TogglePreviewMaps")
             {
                 return;
             }
