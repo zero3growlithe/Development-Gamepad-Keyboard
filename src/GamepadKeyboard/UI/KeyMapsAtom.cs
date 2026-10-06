@@ -108,11 +108,11 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             _quarkRight = MakeQuark("QuarkRight");
             _quarkBottom = MakeQuark("QuarkBottom");
 
-            _container.Children.Add(_icon);
             _container.Children.Add(_center);
             _container.Children.Add(_quarkLeft);
             _container.Children.Add(_quarkRight);
             _container.Children.Add(_quarkBottom);
+            _container.Children.Add(_icon);   // icon last → drawn in front of the atom
         }
 
         /// <summary>The element to add to the board canvas.</summary>
