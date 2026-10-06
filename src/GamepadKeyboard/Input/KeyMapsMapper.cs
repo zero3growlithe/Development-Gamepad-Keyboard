@@ -268,11 +268,11 @@ namespace GamepadKeyboard.Input
             // key went down — only then its modifier key stays active (latched)
             // while maps is held; otherwise the control stays frozen.
             UpdateLatchedModifier(snapshot.LeftTrigger >= 0.5, mapsKey, mapsKeyEdge, _wasShiftHeldBeforeMaps,
-                ref _previousShift, ref _shiftLocked, ref _shiftFreed, ref _shiftHeld, Vk.LShift, false);
+                ref _previousShift, ref _shiftLocked, ref _shiftFreed, ref _shiftHeld, Vk.LShift, false, AllowFreshPressUnlockWhileMaps: true);
             UpdateLatchedModifier(snapshot.LB, mapsKey, mapsKeyEdge, _wasCtrlHeldBeforeMaps,
-                ref _previousCtrl, ref _ctrlLocked, ref _ctrlFreed, ref _ctrlHeld, Vk.LControl, false);
+                ref _previousCtrl, ref _ctrlLocked, ref _ctrlFreed, ref _ctrlHeld, Vk.LControl, false, AllowFreshPressUnlockWhileMaps: false);
             UpdateLatchedModifier(snapshot.RB, mapsKey, mapsKeyEdge, _wasAltHeldBeforeMaps,
-                ref _previousAlt, ref _altLocked, ref _altFreed, ref _altHeld, Vk.LMenu, false);
+                ref _previousAlt, ref _altLocked, ref _altFreed, ref _altHeld, Vk.LMenu, false, AllowFreshPressUnlockWhileMaps: false);
         }
 
         /// <summary>
@@ -290,7 +290,8 @@ namespace GamepadKeyboard.Input
             bool physical, bool mapsKey, bool mapsKeyEdge,
             bool physicalWasHeldFirst,
             ref bool previousPhysical, ref bool locked, ref bool freed, ref bool held,
-            ushort virtualKey, bool extended)
+            ushort virtualKey, bool extended,
+            bool allowFreshPressUnlockWhileMaps)
         {
             if (mapsKey)
             {
@@ -310,13 +311,14 @@ namespace GamepadKeyboard.Input
                     previousPhysical = physical;
                     return;
                 }
-                if (physical && !previousPhysical && !freed)
+                if (allowFreshPressUnlockWhileMaps && physical && !previousPhysical && !freed)
                 {
-                    // First fresh press while the maps key is held unlocks AND
-                    // frees the modifier — including one that was NOT held
-                    // before the maps key. From now it tracks the physical
-                    // control as if the maps key were not held; the held state
-                    // below starts on this very press (key goes down now).
+                    // SHIFT ONLY: first fresh press while the maps key is held
+                    // unlocks AND frees the modifier — including one that was
+                    // NOT held before the maps key. From now it tracks the
+                    // physical control as if the maps key were not held; the
+                    // held state starts on this very press (key goes down now).
+                    // Ctrl/Alt stay frozen the whole maps hold (classic latch).
                     locked = false;
                     freed = true;
                 }
