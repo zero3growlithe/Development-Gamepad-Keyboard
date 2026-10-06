@@ -52,8 +52,6 @@ namespace GamepadKeyboard.UI
         private static readonly Brush QuarkFillActive = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57)));
         private static readonly Brush QuarkBorderIdle = Frozen(new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF)));
         private static readonly Brush QuarkBorderActive = Frozen(new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A)));
-private static readonly Brush CenterFillCombo = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0xB4, 0x78, 0x1F)));
-private static readonly Brush CenterBorderCombo = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0xC4, 0x5A)));
 private static readonly Brush QuarkFillCombo = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0xB4, 0x78, 0x1F)));
 private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0xC4, 0x5A)));
         private static readonly Brush IconStroke = Frozen(new SolidColorBrush(Color.FromArgb(0xC8, 0xE8, 0xE8, 0xF4)));
@@ -221,8 +219,8 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             // Green fill = physical press only, never just holding R2: the
             // center when no combo is held, the combo's quark otherwise.
             bool centerActive = physicalPressed && !anyCombo;
-            _center.Background = centerActive ? CenterFillPressed : (anyCombo ? CenterFillCombo : CenterFill);
-            _center.BorderBrush = centerActive ? CenterBorderPressed : (anyCombo ? CenterBorderCombo : CenterBorderIdle);
+            _center.Background = centerActive ? CenterFillPressed : CenterFill;
+            _center.BorderBrush = centerActive ? CenterBorderPressed : CenterBorderIdle;
 
             // Combo membership raises opacity (never swaps content): the left
             // / right quark only when the Function combo is NOT held, the
