@@ -57,6 +57,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
 
         // ── Projected-keyboard view state ───────────────────────────────────────
 
+        private readonly HashSet<KeyboardLayout.KeyDef> _projectedCovered = new();
         private readonly Dictionary<KeyboardLayout.KeyDef, Border> _projectedKeys = new();
         private readonly Dictionary<KeyboardLayout.KeyDef, bool> _projectedPressed = new();
         private readonly List<UIElement> _projectedPrompts = new();
@@ -958,6 +959,18 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 _promptTargets[slot] = (target, value);
             }
 
+            // Orange outline marks every key the active map covers.
+            _projectedCovered.Clear();
+            foreach (KeyValuePair<string, (KeyboardLayout.KeyDef Key, string Label)> pair in _promptTargets)
+            {
+                _projectedCovered.Add(pair.Value.Key);
+                if (_projectedKeys.TryGetValue(pair.Value.Key, out Border? covered))
+                {
+                    covered.BorderBrush = projectedBorderCovered;
+                    covered.BorderThickness = new Thickness(1.8);
+                }
+            }
+
             _lastProjectedFingerprint = PromptFingerprint();
             _lastProjectedShift = _shiftSeed;
             ApplyProjectedKeyLabels(_shiftSeed);
@@ -1087,8 +1100,9 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 if (_projectedKeys.TryGetValue(pair.Value.Key, out Border? border))
                 {
                     border.Background = pressed ? projectedKeyFillPressed : projectedKeyFillIdle;
-                    border.BorderBrush = pressed ? projectedBorderPressed : projectedKeyBorderIdle;
-                    border.BorderThickness = new Thickness(pressed ? 2.5 : 1);
+                    border.BorderBrush = pressed ? projectedBorderPressed : ProjectedBorderFor(pair.Value.Key);
+                    border.BorderThickness = new Thickness(
+                        pressed ? 2.5 : _projectedCovered.Contains(pair.Value.Key) ? 1.8 : 1);
                 }
             }
 
@@ -1105,6 +1119,13 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         private double _lastPromptOpacity = double.NaN;
         private bool _shiftSeed;
 
+        /// <summary>Border for a projected key at rest: orange while the
+        /// active map covers it, neutral gray otherwise.</summary>
+        private Brush ProjectedBorderFor(KeyboardLayout.KeyDef key)
+        {
+            return _projectedCovered.Contains(key) ? projectedBorderCovered : projectedKeyBorderIdle;
+        }
+
         private void ApplyProjectedModifier(ushort vk, bool held)
         {
             KeyboardLayout.KeyDef? key = _projectedLayout?.FindByVk(vk);
@@ -1112,8 +1133,9 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             {
                 return;
             }
-            border.BorderBrush = held ? projectedBorderPressed : projectedKeyBorderIdle;
-            border.BorderThickness = new Thickness(held ? 2.5 : 1);
+            border.BorderBrush = held ? projectedBorderPressed : ProjectedBorderFor(key);
+            border.BorderThickness = new Thickness(
+                held ? 2.5 : _projectedCovered.Contains(key) ? 1.8 : 1);
         }
 
         private void ApplyProjectedKeyLabels(bool shiftActive)
@@ -1156,6 +1178,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             new SolidColorBrush(Color.FromArgb(0x88, 0xC8, 0xC8, 0xD0));
         private static readonly Brush projectedBorderPressed =
             new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A));
+        private static readonly Brush projectedBorderCovered =
+            new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x00));
         private static readonly Brush projectedKeyText =
             new SolidColorBrush(Color.FromArgb(0xE6, 0xE8, 0xE8, 0xF0));
 
