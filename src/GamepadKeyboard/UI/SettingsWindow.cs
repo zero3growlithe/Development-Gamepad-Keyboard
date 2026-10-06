@@ -121,8 +121,11 @@ namespace GamepadKeyboard.UI
             kbBtn.Click += (_, __) => new BindingsEditorWindow(mouse: false).Show();
             var moBtn = new Button { Content = "Gamepad bindings (mouse mode)…", Padding = new Thickness(10, 3, 10, 3) };
             moBtn.Click += (_, __) => new BindingsEditorWindow(mouse: true).Show();
+            var mapsBtn = new Button { Content = "Gamepad bindings (maps mode)…", Padding = new Thickness(10, 3, 10, 3) };
+            mapsBtn.Click += (_, __) => new KeyMapsBindingsEditorWindow().Show();
             editors.Children.Add(kbBtn);
             editors.Children.Add(moBtn);
+            editors.Children.Add(mapsBtn);
 
             var tabs = new TabControl { Margin = new Thickness(12, 0, 12, 0) };
             tabs.Items.Add(new TabItem

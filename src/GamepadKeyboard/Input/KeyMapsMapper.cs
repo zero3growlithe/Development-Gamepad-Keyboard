@@ -276,8 +276,9 @@ namespace GamepadKeyboard.Input
         /// simply follows the physical control (KeyDown/KeyUp on edges). On the
         /// maps-key press edge: whatever is physically held LATCHES down (real
         /// KeyDown already sent, or sent now) and stays down regardless of the
-        /// physical control. While the maps key is held: a fresh press of the
-        /// physical control unlocks AND FREES the modifier so it follows the
+        /// physical control. While the maps key is held: the FIRST fresh press
+        /// of the physical control unlocks AND FREES the modifier (whether or
+        /// not it was held before the maps key) so it follows the
         /// physical control as if the maps key were not held (the user is
         /// never stuck with a stuck modifier).
         /// </summary>
@@ -305,21 +306,15 @@ namespace GamepadKeyboard.Input
                     previousPhysical = physical;
                     return;
                 }
-                if (physical && !previousPhysical && locked)
+                if (physical && !previousPhysical && !freed)
                 {
-                    // Fresh press of a latched modifier unlocks + releases it
-                    // and frees it: from now on it tracks the physical control
-                    // as if the maps key were not held (re-press = Shift down,
-                    // re-release = Shift up).
+                    // First fresh press while the maps key is held unlocks AND
+                    // frees the modifier — including one that was NOT held
+                    // before the maps key. From now it tracks the physical
+                    // control as if the maps key were not held; the held state
+                    // below starts on this very press (key goes down now).
                     locked = false;
                     freed = true;
-                    if (held)
-                    {
-                        _sender.KeyUp(virtualKey, extended);
-                        held = false;
-                    }
-                    previousPhysical = physical;
-                    return;
                 }
                 if (freed)
                 {
@@ -456,7 +451,7 @@ namespace GamepadKeyboard.Input
             {
                 return;
             }
-            ushort virtualKey = ControllerMapper.NamedVk(slot);
+            ushort virtualKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
             if (virtualKey != Vk.None)
             {
                 bool extended = ControllerMapper.IsExtendedKey(virtualKey);
@@ -492,7 +487,7 @@ namespace GamepadKeyboard.Input
             {
                 return;
             }
-            ushort virtualKey = ControllerMapper.NamedVk(slot);
+            ushort virtualKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
             if (virtualKey != Vk.None)
             {
                 ReleaseHeldKey(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));
@@ -650,6 +645,13 @@ namespace GamepadKeyboard.Input
             previous = held;
         }
 
+        /// <summary>Pool-captured slot values arrive as "Key:<Name>"; strip
+        /// the prefix before VK resolution.</summary>
+        private static string ResolveSlotKeyName(string slot)
+        {
+            return slot.StartsWith("Key:", StringComparison.Ordinal) ? slot[4..] : slot;
+        }
+
         private void DispatchStartSlot(ref bool previous, bool held, string slot)
         {
             if (held && !previous && !_seedRun && ControllerMapper.IsAppLevelAction(slot))
@@ -671,7 +673,7 @@ namespace GamepadKeyboard.Input
                 ActionRequested?.Invoke(slot);
                 return;
             }
-            ushort virtualKey = ControllerMapper.NamedVk(slot);
+            ushort virtualKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
             if (virtualKey != Vk.None)
             {
                 _sender.TapKey(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));

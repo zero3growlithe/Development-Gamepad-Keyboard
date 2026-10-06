@@ -56,6 +56,7 @@ namespace GamepadKeyboard.UI
 private static readonly Brush QuarkFillCombo = Frozen(new SolidColorBrush(Color.FromArgb(0xE6, 0xB4, 0x78, 0x1F)));
 private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Color.FromRgb(0xFF, 0xC4, 0x5A)));
         private static readonly Brush IconStroke = Frozen(new SolidColorBrush(Color.FromArgb(0xC8, 0xE8, 0xE8, 0xF4)));
+        private static readonly Brush IconPlate = Frozen(new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x14)));
 
         private static Brush Frozen(Brush brush)
         {
@@ -220,8 +221,9 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             // Green fill = physical press only, never just holding R2: the
             // center when no combo is held, the combo's quark otherwise.
             bool centerActive = physicalPressed && !anyCombo;
-            _center.Background = centerActive ? CenterFillPressed : CenterFill;
-            _center.BorderBrush = centerActive ? CenterBorderPressed : CenterBorderIdle;
+            bool centerComboActive = mapsKeyHeld && !anyCombo;
+            _center.Background = centerActive ? CenterFillPressed : (centerComboActive ? QuarkFillCombo : CenterFill);
+            _center.BorderBrush = centerActive ? CenterBorderPressed : (centerComboActive ? QuarkBorderCombo : CenterBorderIdle);
 
             // Combo membership raises opacity (never swaps content): the left
             // / right quark only when the Function combo is NOT held, the
@@ -258,6 +260,17 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                 Height = IconSpan,
             };
             double mid = IconSpan / 2.0;
+
+            // Black circle plate behind every icon variant.
+            System.Windows.Shapes.Ellipse plate = new()
+            {
+                Width = IconSpan - 2,
+                Height = IconSpan - 2,
+                Fill = IconPlate,
+            };
+            Canvas.SetLeft(plate, 1);
+            Canvas.SetTop(plate, 1);
+            canvas.Children.Add(plate);
 
             switch (slot)
             {
@@ -348,27 +361,19 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
 
         private static void AddArrow(Canvas canvas, double mid, double degrees)
         {
+            // Pure triangle arrow — no square tail.
             System.Windows.Shapes.Polygon arrow = new()
             {
                 Points = new PointCollection
                 {
-                    new Point(mid, 2),
-                    new Point(mid + 7, 12),
-                    new Point(mid - 7, 12),
+                    new Point(mid, 3.5),
+                    new Point(mid + 7.5, 13.5),
+                    new Point(mid - 7.5, 13.5),
                 },
                 Fill = IconStroke,
                 RenderTransform = new RotateTransform(degrees, mid, mid),
             };
             canvas.Children.Add(arrow);
-            System.Windows.Shapes.Rectangle stem = new()
-            {
-                Width = 8,
-                Height = 12,
-                RadiusX = 2,
-                RadiusY = 2,
-                Fill = IconStroke,
-            };
-            AddShape(canvas, stem, mid - 4, 12);
         }
 
         private static double? StickArrowDegrees(string slot)
