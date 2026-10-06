@@ -443,8 +443,8 @@ namespace GamepadKeyboard.Input
         /// <summary>OS-style auto-repeat for keys held via hold slots
         /// (arrow keys scrolling while D-pad is held): initial delay ~500 ms,
         /// then ~30 events/s. Stopwatch ticks — no per-tick allocations.</summary>
-        private const long RepeatDelayTicks = Stopwatch.Frequency / 2;
-        private const long RepeatIntervalTicks = Stopwatch.Frequency / 30;
+        private static readonly long RepeatDelayTicks = Stopwatch.Frequency / 2;
+        private static readonly long RepeatIntervalTicks = Stopwatch.Frequency / 30;
 
         private void SendSlotDown(string slot)
         {
