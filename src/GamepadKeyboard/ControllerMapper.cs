@@ -325,12 +325,50 @@ namespace GamepadKeyboard
                 KeyMapsScaleDelta = 0;
             }
 
+            DispatchKeyMapsAppActions(s);
             _keyMaps.Process(s);
             string? requestedAction = _pendingKeyMapsAction;
             _pendingKeyMapsAction = null;
             if (requestedAction != null)
             {
                 RunActionOnce(requestedAction);
+            }
+        }
+
+        /// <summary>In Key Maps mode the wheel slots are the primary dispatch,
+        /// but the active (mouse) profile's bindings should still honor pure
+        /// app-level actions — e.g. ToggleKeyMapsMoveMode — so the action works
+        /// no matter which editor it was bound in. Keys/clicks are ignored on
+        /// purpose: slots own the keyboard in this mode.</summary>
+        private void DispatchKeyMapsAppActions(in GamepadSnapshot s)
+        {
+            List<ProfileBinding> bindings = AppSettings.Instance.MouseProfile.Bindings;
+            foreach (ProfileBinding binding in bindings)
+            {
+                if (binding.Buttons.Count != 1 || binding.Modifier
+                    || !IsAppLevelAction(binding.Action))
+                {
+                    continue;
+                }
+                BindingRuntimeState state = GetBindingState(binding.Id);
+                if (state.Action != binding.Action)
+                {
+                    ReleaseBindingState(state);
+                    state.Action = binding.Action;
+                    state.Previous = false;
+                }
+                bool held = InputValue(s, binding.Buttons[0]) >= 0.5;
+                if (ControllerMapper.KeyMapsMoveModeActive
+                    && !string.Equals(binding.Action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal))
+                {
+                    // Board owns the input: only the move toggle passes.
+                    if (held || state.Previous)
+                    {
+                        state.Previous = held;
+                    }
+                    continue;
+                }
+                DispatchButton(binding.Action, held, ref state.Previous);
             }
         }
 

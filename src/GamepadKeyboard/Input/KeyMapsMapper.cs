@@ -258,14 +258,14 @@ namespace GamepadKeyboard.Input
             HoldSlot(ref _previousFaceA, snapshot.A, map.FaceA);
             HoldSlot(ref _previousFaceX, snapshot.X, map.FaceX);
             HoldSlot(ref _previousFaceB, snapshot.B, map.FaceB);
-            HoldSlot(ref _previousLeftStickUp, snapshot.LY >= threshold, map.LeftStickUp, suppressStick: true);
-            HoldSlot(ref _previousLeftStickDown, snapshot.LY <= -threshold, map.LeftStickDown, suppressStick: true);
-            HoldSlot(ref _previousLeftStickLeft, snapshot.LX <= -threshold, map.LeftStickLeft, suppressStick: true);
-            HoldSlot(ref _previousLeftStickRight, snapshot.LX >= threshold, map.LeftStickRight, suppressStick: true);
-            HoldSlot(ref _previousRightStickUp, snapshot.RY >= threshold, map.RightStickUp, suppressStick: true);
-            HoldSlot(ref _previousRightStickDown, snapshot.RY <= -threshold, map.RightStickDown, suppressStick: true);
-            HoldSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft, suppressStick: true);
-            HoldSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight, suppressStick: true);
+            HoldSlot(ref _previousLeftStickUp, snapshot.LY >= threshold, map.LeftStickUp);
+            HoldSlot(ref _previousLeftStickDown, snapshot.LY <= -threshold, map.LeftStickDown);
+            HoldSlot(ref _previousLeftStickLeft, snapshot.LX <= -threshold, map.LeftStickLeft);
+            HoldSlot(ref _previousLeftStickRight, snapshot.LX >= threshold, map.LeftStickRight);
+            HoldSlot(ref _previousRightStickUp, snapshot.RY >= threshold, map.RightStickUp);
+            HoldSlot(ref _previousRightStickDown, snapshot.RY <= -threshold, map.RightStickDown);
+            HoldSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft);
+            HoldSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight);
             HoldSlot(ref _previousLeftStickPress, snapshot.LS, map.LeftStickPress);
             UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map);
             HoldSlot(ref _previousSelect, snapshot.View, map.Select);
@@ -405,14 +405,20 @@ namespace GamepadKeyboard.Input
             if (string.Equals(slot, "XButton1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(slot, "XButton2", StringComparison.OrdinalIgnoreCase))
             {
-                // Mouse side buttons: true hold (down on press, up on release).
-                if (physical && !_previousRightStickPress && !_seedRun)
+                // Mouse side buttons: true hold (down on press, up on release);
+                // while the board owns the input the mapping stays silent.
+                bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
+                    && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                if (!boardOwnsInput)
                 {
-                    _ = HandleMouseSlotDown(slot);
-                }
-                else if (!physical && _previousRightStickPress && !_seedRun)
-                {
-                    _ = HandleMouseSlotUp(slot);
+                    if (physical && !_previousRightStickPress && !_seedRun)
+                    {
+                        _ = HandleMouseSlotDown(slot);
+                    }
+                    else if (!physical && _previousRightStickPress && !_seedRun)
+                    {
+                        _ = HandleMouseSlotUp(slot);
+                    }
                 }
                 _previousRightStickPress = physical;
                 _latchedWindowsVk = Vk.None;
@@ -423,6 +429,14 @@ namespace GamepadKeyboard.Input
             {
                 _previousRightStickPress = physical;
                 _latchedWindowsVk = Vk.None;
+                return;
+            }
+            if (ControllerMapper.KeyMapsMoveModeActive
+                && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal))
+            {
+                // Board owns the input: hold the key-down state frozen (no
+                // edges) so the Windows latch cannot fire under the sticks.
+                _previousRightStickPress = physical;
                 return;
             }
             bool extended = ControllerMapper.IsExtendedKey(virtualKey);
@@ -441,27 +455,24 @@ namespace GamepadKeyboard.Input
         /// cannot hold (app actions, mouse-button slots, Unicode-typed
         /// punctuation) keep tap/edge behavior.
         /// </summary>
+        /// <summary>While the move/scale-board mode is active the gamepad
+        /// drives the board, so EVERY slot mapping stays silent — plain keys,
+        /// app-level actions, clicks — except the move-mode toggle itself
+        /// (so the same button switches the mode back off).</summary>
         private void HoldSlot(ref bool previous, bool held, string slot)
-        {
-            HoldSlot(ref previous, held, slot, suppressStick: false);
-        }
-
-        /// <summary>Stick-deflection variant: while the move/scale-board
-        /// mode is active the sticks drive the board, so their mappings stay
-        /// silent (both app-level actions and plain keys — deflection edges
-        /// would otherwise spam the move-mode toggle back off).</summary>
-        private void HoldSlot(ref bool previous, bool held, string slot,
-            bool suppressStick)
         {
             if (!_seedRun)
             {
                 if (held && !previous)
                 {
-                    SendSlotDown(slot, suppressStick && ControllerMapper.KeyMapsMoveModeActive);
+                    bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
+                        && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                    SendSlotDown(slot, boardOwnsInput);
                 }
                 else if (!held && previous)
                 {
-                    SendSlotUp(slot);
+                    SendSlotUp(slot, ControllerMapper.KeyMapsMoveModeActive
+                        && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal));
                 }
             }
             previous = held;
@@ -519,10 +530,15 @@ namespace GamepadKeyboard.Input
             }
         }
 
-        private void SendSlotUp(string slot)
+        private void SendSlotUp(string slot, bool suppressSlot = false)
         {
             if (string.IsNullOrWhiteSpace(slot)
                 || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            if (suppressSlot
+                && slot is not ("ToggleShadowMaps" or "TogglePreviewMaps"))
             {
                 return;
             }
@@ -692,6 +708,12 @@ namespace GamepadKeyboard.Input
         {
             if (string.IsNullOrWhiteSpace(slot)
                 || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
+                && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+            if (boardOwnsInput)
             {
                 return;
             }
