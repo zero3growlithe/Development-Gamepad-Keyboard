@@ -831,6 +831,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         };
 
         private const double PromptIconScale = 1.55;
+        private const double ProjectedPromptIdleOpacity = 0.8;
 
         private static readonly string[] ProjectedSlots =
         {
@@ -903,7 +904,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 KeyboardLayout.KeyDef extra = new(label, vk)
                 {
                     X = -1.15,
-                    Y = 0.4 + Array.IndexOf(UsedCatalogVks(usedVks), vk) * 1.35,
+                    Y = 0.35 + Array.IndexOf(UsedCatalogVks(usedVks), vk) * 0.95
+                        * Math.Max(0.05, layout.ExtraKeySpacing),
                     W = 0.9,
                 };
                 AddProjectedKey(extra, originX, originY, pitch, boardScale);
@@ -944,7 +946,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 }
                 double iconSpan = KeyMapsAtom.IconSpan * PromptIconScale * boardScale;
                 Canvas icon = KeyMapsAtom.MakeIcon(slot);
-                icon.Opacity = IdleOpacity;
+                icon.Opacity = ProjectedPromptIdleOpacity;
                 icon.RenderTransform = new ScaleTransform(
                     PromptIconScale * boardScale, PromptIconScale * boardScale);
                 double px = originX + target.X * pitch + (target.W * pitch) / 2.0
@@ -1071,15 +1073,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 ApplyProjectedKeyLabels(shiftHeld);
             }
 
-            // Prompt visibility follows the shadow-maps gate: prompts are the
-            // projected view's shadow layer, so they hide when shadows are off
-            // (unless temporarily forced via HoldShadowMaps) and light up
-            // while the maps key is held.
-            bool shadowsVisible = AppSettings.Instance.KeyMaps.Layout.ShowShadowMaps
-                || ControllerMapper.HoldShadowMapsActive;
-            double promptOpacity = !shadowsVisible ? 0.0
-                : keyMaps.MapsKeyHeld ? ActiveOpacity
-                : IdleOpacity;
+            // Prompts are this view's core info — always visible; the
+            // shadow-maps toggle governs the atom view's quarks, not here.
+            // They brighten to full while the maps key is held.
+            double promptOpacity = keyMaps.MapsKeyHeld ? ActiveOpacity : ProjectedPromptIdleOpacity;
             if (promptOpacity != _lastPromptOpacity)
             {
                 _lastPromptOpacity = promptOpacity;
@@ -1157,6 +1154,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         {
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             return layout.PromptOffsetX * 31.0 + layout.PromptOffsetY * 17.0
+                + layout.ExtraKeySpacing * 13.0
                 + (layout.ProjectKeyboard ? 3.0 : 0.0);
         }
 

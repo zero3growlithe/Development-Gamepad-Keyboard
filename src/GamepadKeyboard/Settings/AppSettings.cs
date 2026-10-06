@@ -490,6 +490,10 @@ namespace GamepadKeyboard.Settings
         public double PromptOffsetX { get; set; } = 0.0;
         public double PromptOffsetY { get; set; } = 0.0;
 
+        /// <summary>Row spacing multiplier for the extra off-keyboard key
+        /// column in the projected view (0.5–2, 1 = default).</summary>
+        public double ExtraKeySpacing { get; set; } = 1.0;
+
         public bool StickUniformSpread { get; set; } = true;
         public double LeftStickCenterOffsetY { get; set; } = 0.0;
         public double LeftStickBottomOffsetY { get; set; } = 0.0;
@@ -531,6 +535,7 @@ namespace GamepadKeyboard.Settings
             FontScale = Math.Clamp(FontScale, 0.2, 3.0);
             PromptOffsetX = Math.Clamp(PromptOffsetX, -200.0, 200.0);
             PromptOffsetY = Math.Clamp(PromptOffsetY, -200.0, 200.0);
+            ExtraKeySpacing = Math.Clamp(ExtraKeySpacing, 0.5, 2.0);
             SelectStartOffsetX = Math.Clamp(SelectStartOffsetX, -400.0, 400.0);
             SelectStartOffsetY = Math.Clamp(SelectStartOffsetY, -300.0, 300.0);
             SelectStartScale = Math.Clamp(SelectStartScale, 0.5, 2.0);
