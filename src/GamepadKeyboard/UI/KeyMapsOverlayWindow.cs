@@ -146,6 +146,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             bool functionComboHeld = keyMaps.FunctionComboHeld;
             IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
             IdleQuarkAlphaSetting.Value = AppSettings.Instance.KeyMaps.Layout.IdleQuarkAlpha;
+            KeyMapsShadowMapsRuntime.Show = AppSettings.Instance.KeyMaps.Layout.ShowShadowMaps
+                || ControllerMapper.HoldShadowMapsActive;
             bool shiftHeld = keyMaps.ShiftHeld;
             foreach (KeyValuePair<string, KeyMapsAtom> pair in _atoms)
             {
@@ -364,6 +366,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                    layout.IconScale * 4.5 + layout.FontScale * 4.6 +
                    layout.SelectStartOffsetX * 4.7 + layout.SelectStartOffsetY * 4.8 +
                    layout.SelectStartScale * 4.9 + layout.SelectStartSpreadX * 5.0 +
+                   (layout.ShowShadowMaps ? 1.0 : 0.0) * 5.08 +
                    (layout.StickUniformSpread ? 1.0 : 0.0) * 5.1 +
                    layout.LeftStickCenterOffsetY * 5.2 + layout.LeftStickBottomOffsetY * 5.3 +
                    layout.RightStickCenterOffsetY * 5.4 + layout.RightStickBottomOffsetY * 5.5;

@@ -196,10 +196,12 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             bool physicalPressed,
             bool shiftHeld)
         {
-            // Center prompt: while the maps key is held it is ALWAYS the
-            // Symbols 1 map's key (combos only move the highlight to quarks);
-            // without R2 it is the active (Utility) map's key.
-            int centerMapIndex = mapsKeyHeld ? 1 : Math.Clamp(activeMapIndex, 0, maps.Count - 1);
+            // Shadows off: center simply reads the ACTIVE map's binding.
+            // Shadows on (default): while the maps key is held it is ALWAYS
+            // the Symbols 1 map's key (combos only move the highlight to
+            // quarks); without R2 it is the active (Utility) map's key.
+            bool shadows = KeyMapsShadowMapsRuntime.Show;
+            int centerMapIndex = (mapsKeyHeld && shadows) ? 1 : Math.Clamp(activeMapIndex, 0, maps.Count - 1);
             _centerLabel.Text = ShiftLabel(_labelFor(maps[Math.Clamp(centerMapIndex, 0, maps.Count - 1)], Slot), shiftHeld);
 
             // Quark prompts: the same slot from the combo maps (never move).
@@ -210,8 +212,9 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                 _quarkLabels["QuarkBottom"].Text = ShiftLabel(_labelFor(maps[4], Slot), shiftHeld);
             }
 
-            // Visibility: quarks only while the maps key is held.
-            Visibility quarkVisibility = mapsKeyHeld ? Visibility.Visible : Visibility.Collapsed;
+            // Visibility: quarks only while the maps key is held AND shadow
+            // maps are enabled; hidden otherwise (center shows active map).
+            Visibility quarkVisibility = mapsKeyHeld && shadows ? Visibility.Visible : Visibility.Collapsed;
             _quarkLeft.Visibility = quarkVisibility;
             _quarkRight.Visibility = quarkVisibility;
             _quarkBottom.Visibility = quarkVisibility;
@@ -221,7 +224,7 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             // Green fill = physical press only, never just holding R2: the
             // center when no combo is held, the combo's quark otherwise.
             bool centerActive = physicalPressed && !anyCombo;
-            bool centerComboActive = mapsKeyHeld && !anyCombo;
+            bool centerComboActive = mapsKeyHeld && !anyCombo && shadows;
             _center.Background = centerActive ? CenterFillPressed : (centerComboActive ? QuarkFillCombo : CenterFill);
             _center.BorderBrush = centerActive ? CenterBorderPressed : (centerComboActive ? QuarkBorderCombo : CenterBorderIdle);
 
@@ -547,4 +550,11 @@ public static class KeyMapsShift
 internal static class IdleQuarkAlphaSetting
 {
     public static double Value { get; set; } = 0.45;
+}
+
+/// <summary>Per-tick runtime flag mirrors the "Show shadow maps" toggle;
+/// static so per-atom Update calls keep their signature (no per-tick allocs).</summary>
+public static class KeyMapsShadowMapsRuntime
+{
+    public static bool Show { get; set; } = true;
 }

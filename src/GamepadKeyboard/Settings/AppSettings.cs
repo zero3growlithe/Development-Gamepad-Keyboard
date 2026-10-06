@@ -469,6 +469,11 @@ namespace GamepadKeyboard.Settings
         /// <summary>True = stick atoms spread uniformly from the circle center
         /// (dir factors −1.25/−0.25/+1.25 like the other circles). False =
         /// the center and bottom atoms get manual Y offsets below.</summary>
+        /// <summary>Show shadow maps: when R2 is held the atom centers show
+        /// the ACTIVE map's binding and the quarks (Symbols 2/3/Function
+        /// variants) appear beside it. Off = no quarks, no amber center
+        /// highlight — center just reads the active map's binding.</summary>
+        public bool ShowShadowMaps { get; set; } = true;
         public bool StickUniformSpread { get; set; } = true;
         public double LeftStickCenterOffsetY { get; set; } = 0.0;
         public double LeftStickBottomOffsetY { get; set; } = 0.0;

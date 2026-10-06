@@ -100,6 +100,11 @@ namespace GamepadKeyboard
         /// key-maps overlay position with the sticks (gamepad-driven
         /// alternative to the settings sliders).</summary>
         public bool AdjustKeyMapsPosition { get; set; }
+
+        /// <summary>Live "Hold Shadow Maps" state (poll-thread write, UI read):
+        /// while true the Key Maps overlay shows shadow maps regardless of the
+        /// saved toggle.</summary>
+        public static volatile bool HoldShadowMapsActive;
         public double KeyMapsMoveDX { get; private set; }
         public double KeyMapsMoveDY { get; private set; }
         public double MoveDX { get; private set; }
@@ -992,6 +997,17 @@ namespace GamepadKeyboard
                     StateChanged?.Invoke();
                     App.Log("key maps mode: entered");
                     Notification?.Invoke("mode: Key Maps");
+                    break;
+
+                case "ToggleShadowMaps":
+                    AppSettings.Instance.KeyMaps.Layout.ShowShadowMaps =
+                        !AppSettings.Instance.KeyMaps.Layout.ShowShadowMaps;
+                    AppSettings.Save();
+                    Notification?.Invoke("Shadow maps: "
+                        + (AppSettings.Instance.KeyMaps.Layout.ShowShadowMaps ? "ON" : "OFF"));
+                    break;
+                case "HoldShadowMaps":
+                    HoldShadowMapsActive = held;
                     break;
 
                 case "ToggleKeyMapsMoveMode":

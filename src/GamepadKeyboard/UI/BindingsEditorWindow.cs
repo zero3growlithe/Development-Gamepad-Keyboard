@@ -721,6 +721,7 @@ namespace GamepadKeyboard.UI
             "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode", "DirectInputMode", "KeyMapsMode", "CycleInputMode",
             "ToggleMoveScaleKeyboard",
             "ToggleKeyMapsMoveMode",
+            "ToggleShadowMaps", "HoldShadowMaps",
             "ToggleKeyboard", "ToggleLegend",
             "SwitchKeyboardProfile", "SwitchMouseProfile", "SwitchStickPointsProfile",
             // media

@@ -303,6 +303,7 @@ namespace GamepadKeyboard.UI
             rows.Add(MakeKeyMapsSliderRow("Quark distance Y (-2–2)", "QuarkDistanceY", -2.0, 2.0, 0.1));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset X", "IconOffsetX", -200, 200, 5));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset Y", "IconOffsetY", -200, 200, 5));
+            rows.Add(MakeKeyMapsToggleRow("Show shadow maps", "ShowShadowMaps"));
             rows.Add(MakeKeyMapsSliderRow("Inactive quarks alpha", "IdleQuarkAlpha", 0.0, 1.0, 0.01));
             rows.Add(MakeKeyMapsSliderRow("Button icons scale", "IconScale", 0.0, 2.0, 0.05));
             rows.Add(MakeKeyMapsSliderRow("Label font scale", "FontScale", 0.2, 3.0, 0.05));
@@ -425,8 +426,15 @@ namespace GamepadKeyboard.UI
             _suppressKeyMapsLiveApply = true;
             foreach (KeyValuePair<string, object> pair in _keyMapsLayoutBackup)
             {
+                System.Reflection.PropertyInfo property = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!;
+                if (property.PropertyType == typeof(bool))
+                {
+                    // Toggles restore as booleans; sliders never see them.
+                    property.SetValue(layout, pair.Value is true);
+                    continue;
+                }
                 double value = Convert.ToDouble(pair.Value);
-                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(layout, value);
+                property.SetValue(layout, value);
                 if (_keyMapsSliders.TryGetValue(pair.Key, out Slider? slider))
                 {
                     slider.Value = value;

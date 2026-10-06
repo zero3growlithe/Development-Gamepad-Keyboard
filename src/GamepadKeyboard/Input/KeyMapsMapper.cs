@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using GamepadKeyboard.Native;
 using GamepadKeyboard.Settings;
@@ -173,6 +174,7 @@ namespace GamepadKeyboard.Input
             }
             _shiftHeld = _ctrlHeld = _altHeld = _windowsHeld = false;
             _shiftLocked = _ctrlLocked = _altLocked = _windowsLocked = false;
+            ControllerMapper.HoldShadowMapsActive = false;
             _shiftFreed = _ctrlFreed = _altFreed = false;
             _latchedWindowsVk = Vk.None;
             _previousShift = _previousCtrl = _previousAlt = false;
@@ -221,6 +223,8 @@ namespace GamepadKeyboard.Input
             // slots anywhere — they are the chord for Symbols 2/3/FunctionKeys.
             // While the maps key is held they latch instead of tapping.
             ProcessModifiers(snapshot, mapsKey, mapsKeyEdge, map);
+
+            PumpHeldKeyRepeats();
 
             double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
             HoldSlot(ref _previousDPadUp, snapshot.DUp, map.DPadUp);
@@ -433,13 +437,25 @@ namespace GamepadKeyboard.Input
         /// per-tick allocations (18 holdable slots max).</summary>
         private readonly ushort[] _heldSlotKeys = new ushort[24];
         private readonly bool[] _heldSlotExtended = new bool[24];
+        private readonly long[] _heldSlotLastDownTicks = new long[24];
         private int _heldSlotCount;
+
+        /// <summary>OS-style auto-repeat for keys held via hold slots
+        /// (arrow keys scrolling while D-pad is held): initial delay ~500 ms,
+        /// then ~30 events/s. Stopwatch ticks — no per-tick allocations.</summary>
+        private const long RepeatDelayTicks = Stopwatch.Frequency / 2;
+        private const long RepeatIntervalTicks = Stopwatch.Frequency / 30;
 
         private void SendSlotDown(string slot)
         {
             if (string.IsNullOrWhiteSpace(slot)
                 || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
             {
+                return;
+            }
+            if (string.Equals(slot, "HoldShadowMaps", StringComparison.Ordinal))
+            {
+                ControllerMapper.HoldShadowMapsActive = true;
                 return;
             }
             if (ControllerMapper.IsAppLevelAction(slot))
@@ -460,6 +476,7 @@ namespace GamepadKeyboard.Input
                 {
                     _heldSlotKeys[_heldSlotCount] = virtualKey;
                     _heldSlotExtended[_heldSlotCount] = extended;
+                    _heldSlotLastDownTicks[_heldSlotCount] = Stopwatch.GetTimestamp();
                     _heldSlotCount++;
                 }
                 return;
@@ -477,6 +494,11 @@ namespace GamepadKeyboard.Input
             if (string.IsNullOrWhiteSpace(slot)
                 || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
             {
+                return;
+            }
+            if (string.Equals(slot, "HoldShadowMaps", StringComparison.Ordinal))
+            {
+                ControllerMapper.HoldShadowMapsActive = false;
                 return;
             }
             if (ControllerMapper.IsAppLevelAction(slot))
@@ -549,11 +571,35 @@ namespace GamepadKeyboard.Input
                     _sender.KeyUp(virtualKey, extended);
                     _heldSlotKeys[index] = _heldSlotKeys[_heldSlotCount - 1];
                     _heldSlotExtended[index] = _heldSlotExtended[_heldSlotCount - 1];
+                    _heldSlotLastDownTicks[index] = _heldSlotLastDownTicks[_heldSlotCount - 1];
                     _heldSlotCount--;
                     return;
                 }
             }
             _sender.KeyUp(virtualKey, extended);
+        }
+
+        /// <summary>Re-sends KeyDown for keys still physically held so Windows
+        /// apps get auto-repeat (arrow-key scrolling with D-pad held etc.);
+        /// OS-style 500 ms delay then ~30/s. One pass per poll tick.</summary>
+        private void PumpHeldKeyRepeats()
+        {
+            if (_heldSlotCount == 0)
+            {
+                return;
+            }
+            long now = Stopwatch.GetTimestamp();
+            for (int index = 0; index < _heldSlotCount; index++)
+            {
+                long elapsed = now - _heldSlotLastDownTicks[index];
+                if (elapsed - RepeatDelayTicks >= RepeatIntervalTicks)
+                {
+                    // Schedule next repeat by aligning to the interval grid.
+                    long overshoot = (elapsed - RepeatDelayTicks) % RepeatIntervalTicks;
+                    _heldSlotLastDownTicks[index] = now - overshoot;
+                    _sender.KeyDown(_heldSlotKeys[index], _heldSlotExtended[index]);
+                }
+            }
         }
 
         /// <summary>Single-character punctuation under a held Shift sends its
@@ -573,7 +619,6 @@ namespace GamepadKeyboard.Input
                 _heldSlotKeys[index] = 0;
             }
             _heldSlotCount = 0;
-            ReleaseHeldSlots();
         }
 
         /// <summary>Old latch semantics (edge-latch + fresh-press toggle) kept
