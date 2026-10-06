@@ -258,14 +258,14 @@ namespace GamepadKeyboard.Input
             HoldSlot(ref _previousFaceA, snapshot.A, map.FaceA);
             HoldSlot(ref _previousFaceX, snapshot.X, map.FaceX);
             HoldSlot(ref _previousFaceB, snapshot.B, map.FaceB);
-            HoldSlot(ref _previousLeftStickUp, snapshot.LY >= threshold, map.LeftStickUp, suppressAppLevel: true);
-            HoldSlot(ref _previousLeftStickDown, snapshot.LY <= -threshold, map.LeftStickDown, suppressAppLevel: true);
-            HoldSlot(ref _previousLeftStickLeft, snapshot.LX <= -threshold, map.LeftStickLeft, suppressAppLevel: true);
-            HoldSlot(ref _previousLeftStickRight, snapshot.LX >= threshold, map.LeftStickRight, suppressAppLevel: true);
-            HoldSlot(ref _previousRightStickUp, snapshot.RY >= threshold, map.RightStickUp, suppressAppLevel: true);
-            HoldSlot(ref _previousRightStickDown, snapshot.RY <= -threshold, map.RightStickDown, suppressAppLevel: true);
-            HoldSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft, suppressAppLevel: true);
-            HoldSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight, suppressAppLevel: true);
+            HoldSlot(ref _previousLeftStickUp, snapshot.LY >= threshold, map.LeftStickUp, suppressStick: true);
+            HoldSlot(ref _previousLeftStickDown, snapshot.LY <= -threshold, map.LeftStickDown, suppressStick: true);
+            HoldSlot(ref _previousLeftStickLeft, snapshot.LX <= -threshold, map.LeftStickLeft, suppressStick: true);
+            HoldSlot(ref _previousLeftStickRight, snapshot.LX >= threshold, map.LeftStickRight, suppressStick: true);
+            HoldSlot(ref _previousRightStickUp, snapshot.RY >= threshold, map.RightStickUp, suppressStick: true);
+            HoldSlot(ref _previousRightStickDown, snapshot.RY <= -threshold, map.RightStickDown, suppressStick: true);
+            HoldSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft, suppressStick: true);
+            HoldSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight, suppressStick: true);
             HoldSlot(ref _previousLeftStickPress, snapshot.LS, map.LeftStickPress);
             UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map);
             HoldSlot(ref _previousSelect, snapshot.View, map.Select);
@@ -443,21 +443,21 @@ namespace GamepadKeyboard.Input
         /// </summary>
         private void HoldSlot(ref bool previous, bool held, string slot)
         {
-            HoldSlot(ref previous, held, slot, suppressAppLevel: false);
+            HoldSlot(ref previous, held, slot, suppressStick: false);
         }
 
-        /// <summary>Stick-deflection variant: while the move-board mode is
-        /// active the sticks drive the move, so an app-level action bound to
-        /// a deflection (e.g. the move-mode toggle itself) must not fire from
-        /// deflection edges or the mode would instantly toggle back off.</summary>
+        /// <summary>Stick-deflection variant: while the move/scale-board
+        /// mode is active the sticks drive the board, so their mappings stay
+        /// silent (both app-level actions and plain keys — deflection edges
+        /// would otherwise spam the move-mode toggle back off).</summary>
         private void HoldSlot(ref bool previous, bool held, string slot,
-            bool suppressAppLevel)
+            bool suppressStick)
         {
             if (!_seedRun)
             {
                 if (held && !previous)
                 {
-                    SendSlotDown(slot, suppressAppLevel && ControllerMapper.KeyMapsMoveModeActive);
+                    SendSlotDown(slot, suppressStick && ControllerMapper.KeyMapsMoveModeActive);
                 }
                 else if (!held && previous)
                 {
@@ -467,7 +467,7 @@ namespace GamepadKeyboard.Input
             previous = held;
         }
 
-        private void SendSlotDown(string slot, bool suppressAppLevel = false)
+        private void SendSlotDown(string slot, bool suppressSlot = false)
         {
             if (string.IsNullOrWhiteSpace(slot)
                 || string.Equals(slot, "None", StringComparison.OrdinalIgnoreCase))
@@ -490,12 +490,15 @@ namespace GamepadKeyboard.Input
                 ActionRequested?.Invoke(slot);
                 return;
             }
+            if (suppressSlot)
+            {
+                // Stick deflection while the move/scale-board mode is active:
+                // the stick drives the board, its mapping stays silent.
+                return;
+            }
             if (ControllerMapper.IsAppLevelAction(slot))
             {
-                if (!suppressAppLevel)
-                {
-                    ActionRequested?.Invoke(slot);
-                }
+                ActionRequested?.Invoke(slot);
                 return;
             }
             if (HandleMouseSlotDown(slot))

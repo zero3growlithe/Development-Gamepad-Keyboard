@@ -116,6 +116,11 @@ namespace GamepadKeyboard
         public static volatile bool HoldPreviewMapsActive;
         public double KeyMapsMoveDX { get; private set; }
         public double KeyMapsMoveDY { get; private set; }
+
+        /// <summary>Left-stick scale input for the Key Maps adjust mode
+        /// (push up = bigger, pull down = smaller); per-tick, like
+        /// <see cref="ScaleDelta"/> for the keyboard adjust mode.</summary>
+        public double KeyMapsScaleDelta { get; private set; }
         public double MoveDX { get; private set; }
         public double MoveDY { get; private set; }
         public double ScaleDelta { get; private set; }   // per-tick, up/down = +/-
@@ -304,16 +309,20 @@ namespace GamepadKeyboard
             // interrupted mid-dispatch.
             if (AdjustKeyMapsPosition)
             {
-                // Right stick moves the board; the key-maps tick still runs so
-                // R2-based feedback (hubs/chips) keeps updating while moving.
+                // Right stick moves the board, left stick scales it (same
+                // roles as the keyboard adjust mode); the key-maps tick still
+                // runs so R2-based feedback (hubs/chips) keeps updating while
+                // adjusting.
                 ApplyRadialStickCurve(s.RX, s.RY, out double curvedMoveX, out double curvedMoveY);
                 KeyMapsMoveDX = curvedMoveX;
                 KeyMapsMoveDY = curvedMoveY;
+                KeyMapsScaleDelta = ApplyStickCurve(s.LY);
             }
             else
             {
                 KeyMapsMoveDX = 0;
                 KeyMapsMoveDY = 0;
+                KeyMapsScaleDelta = 0;
             }
 
             _keyMaps.Process(s);

@@ -150,6 +150,10 @@ namespace GamepadKeyboard
 
         private bool _keyboardShown;
 
+        /// <summary>Accumulated (unapplied) left-stick scale change for the
+        /// Key Maps adjust mode; flushed in 0.05 steps.</summary>
+        private double _keyMapsScaleRemainder;
+
         private void ShowKeyboard()
         {
             _mapper.ResetKeyboardCursors();
@@ -505,6 +509,37 @@ namespace GamepadKeyboard
                     Settings.AppSettings.Instance.OverlayScale = _keyboard.Scale;
                     _settingsDirty = true;
                 }
+            }
+
+            // Key Maps board repositioning (gamepad-driven move mode + persisted window pos)
+            if (_mapper.Mode == ControllerMapper.MapperMode.DirectInput && _mapper.AdjustKeyMapsPosition
+                && Math.Abs(_mapper.KeyMapsScaleDelta) > 0.01)
+            {
+                // Same roles as the keyboard adjust mode: left stick scales.
+                // Quantized to the settings-slider step so the live rebuild
+                // cadence matches dragging the "Key size" slider.
+                _keyMapsScaleRemainder += _mapper.KeyMapsScaleDelta * 0.02;
+                double step = 0.05;
+                if (_keyMapsScaleRemainder >= step)
+                {
+                    _keyMapsScaleRemainder = 0;
+                    Settings.KeyMapsLayoutSettings keyMapsLayout = Settings.AppSettings.Instance.KeyMaps.Layout;
+                    keyMapsLayout.KeySize = Math.Min(2.0, Math.Round((keyMapsLayout.KeySize + step) * 100) / 100);
+                    Settings.AppSettings.Save();
+                    AppOrchestrator.NotifyKeyMapsLayoutChanged();
+                }
+                else if (_keyMapsScaleRemainder <= -step)
+                {
+                    _keyMapsScaleRemainder = 0;
+                    Settings.KeyMapsLayoutSettings keyMapsLayout = Settings.AppSettings.Instance.KeyMaps.Layout;
+                    keyMapsLayout.KeySize = Math.Max(0.6, Math.Round((keyMapsLayout.KeySize - step) * 100) / 100);
+                    Settings.AppSettings.Save();
+                    AppOrchestrator.NotifyKeyMapsLayoutChanged();
+                }
+            }
+            else
+            {
+                _keyMapsScaleRemainder = 0;
             }
 
             // Key Maps board repositioning (gamepad-driven move mode + persisted window pos)
