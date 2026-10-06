@@ -198,6 +198,7 @@ namespace GamepadKeyboard.Input
             // know whether the maps key just went down on this very tick.
             bool physicalMapsKey = snapshot.RightTrigger >= 0.5;
             bool physicalEdge = physicalMapsKey && !_previousMapsKey;
+            bool mapsKey;
             if (AppSettings.Instance.KeyMaps.Layout.MapsKeyToggle)
             {
                 // Toggle mode: a press edge flips maps mode on/off; while
