@@ -956,7 +956,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             // Multi-column block to the RIGHT of the keyboard: 6 rows,
             // as many columns as the currently shown maps need. Catalog order
             // keeps positions stable across map switches.
-            List<ushort> orderedExtra = UsedCatalogVks(usedVks);
+            ushort[] orderedExtra = UsedCatalogVks(usedVks);
             const int ExtraRows = 6;
             double rowPitch = 1.15 * Math.Max(0.4, layout.ExtraKeySpacing);
             for (int extraIndex = 0; extraIndex < orderedExtra.Count; extraIndex++)
