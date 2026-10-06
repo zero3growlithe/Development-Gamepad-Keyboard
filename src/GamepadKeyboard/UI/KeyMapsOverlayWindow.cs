@@ -933,10 +933,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             double boardScale = Width / BoardWidth;
             double pitch = (46.0 + Math.Max(0.0, AppSettings.Instance.KeySpacing)) * boardScale;
+            // Same geometry as BuildProjectedKeyboardBase — keys, prompts and
+            // the extra grid must share one origin or they drift apart.
             double keySpanX = _projectedLayout!.GridW * pitch + pitch * 1.15;
             double originX = (BoardWidth * boardScale - keySpanX) / 2.0 + pitch * 1.15;
-            double originY = (BoardHeight * boardScale - _projectedLayout.GridH * pitch) / 2.0
-                + 14.0 * boardScale;
+            double originY = 44.0 * boardScale;
 
             IReadOnlyList<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
             int previewMapCount = _projectedPreview ? maps.Count : 0;
