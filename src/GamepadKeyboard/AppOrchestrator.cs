@@ -178,6 +178,31 @@ namespace GamepadKeyboard
             _keyboard.Top = Math.Clamp(cursor.Y * scaleY, workTop, maxTop);
         }
 
+        private static void OpenSettingsFolder()
+        {
+            try
+            {
+                string directory = System.IO.Path.GetDirectoryName(Settings.AppSettings.FilePath);
+                if (string.IsNullOrEmpty(directory) || !System.IO.Directory.Exists(directory))
+                {
+                    directory = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "DevelopmentGamepadKeyboard");
+                    System.IO.Directory.CreateDirectory(directory);
+                }
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = directory,
+                        UseShellExecute = true
+                    });
+            }
+            catch
+            {
+                // Explorer open failure must never crash the tray.
+            }
+        }
+
         private void ResetKeyboardPosition()
         {
             const double defaultLeft = 100;
@@ -270,6 +295,9 @@ namespace GamepadKeyboard
             settingsItem.Font = new Font(settingsItem.Font, System.Drawing.FontStyle.Bold);
             settingsItem.Click += (_, __) => SettingsWindow.ShowSingleton();
 
+            var openSettingsFolderItem = new ToolStripMenuItem("Open settings folder");
+            openSettingsFolderItem.Click += (_, __) => OpenSettingsFolder();
+
             var aboutItem = new ToolStripMenuItem("About…");
             aboutItem.Click += (_, __) => AboutWindow.ShowSingleton();
 
@@ -281,6 +309,7 @@ namespace GamepadKeyboard
             menu.Items.Add(monitorItem);
             menu.Items.Add(diagItem);
             menu.Items.Add(settingsItem);
+            menu.Items.Add(openSettingsFolderItem);
             menu.Items.Add(aboutItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(adminItem);
