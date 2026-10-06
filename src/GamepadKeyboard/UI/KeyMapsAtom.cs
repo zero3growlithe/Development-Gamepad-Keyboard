@@ -306,14 +306,14 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                 case "LeftStickLeft":
                 case "LeftStickRight":
                 case "LeftStickPress":
-                    AddStick(canvas, mid, 0x3C, 0x9C, 0xF4, StickArrowDegrees(slot), "L");
+                    AddStick(canvas, mid, 0x3C, 0x9C, 0xF4, StickArrowDegrees(slot));
                     break;
                 case "RightStickUp":
                 case "RightStickDown":
                 case "RightStickLeft":
                 case "RightStickRight":
                 case "RightStickPress":
-                    AddStick(canvas, mid, 0xE0, 0x64, 0xA8, StickArrowDegrees(slot), "R");
+                    AddStick(canvas, mid, 0xE0, 0x64, 0xA8, StickArrowDegrees(slot));
                     break;
                 default:
                     AddShape(canvas, new System.Windows.Shapes.Rectangle
@@ -391,7 +391,7 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             };
         }
 
-                private static void AddStick(Canvas canvas, double mid, byte r, byte g, byte b, double? arrowDegrees, string letter)
+                private static void AddStick(Canvas canvas, double mid, byte r, byte g, byte b, double? arrowDegrees)
         {
             System.Windows.Shapes.Ellipse ring = new()
             {
@@ -403,29 +403,16 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             Canvas.SetLeft(ring, 3);
             Canvas.SetTop(ring, 3);
             canvas.Children.Add(ring);
-            // Letter centered inside the ring.
-            TextBlock label = new()
-            {
-                Text = letter,
-                Foreground = System.Windows.Media.Brushes.White,
-                FontSize = 10,
-                FontWeight = FontWeights.Bold,
-            };
-            label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Canvas.SetLeft(label, mid - label.DesiredSize.Width / 2.0);
-            Canvas.SetTop(label, mid - label.DesiredSize.Height / 2.0);
-            canvas.Children.Add(label);
             if (arrowDegrees.HasValue)
             {
-                // Small arrow OUTSIDE the ring, in the direction it points:
-                // base on the ring edge, tip toward the canvas border.
+                // Arrow centered inside the ring, pointing up before rotation.
                 System.Windows.Shapes.Polygon arrow = new()
                 {
                     Points = new PointCollection
                     {
-                        new Point(mid, (IconSpan / 2.0 - 2.0)),
-                        new Point(mid + 4.0, (IconSpan / 2.0 - 2.0) + 6.0),
-                        new Point(mid - 4.0, (IconSpan / 2.0 - 2.0) + 6.0),
+                        new Point(mid, mid - 7.0),
+                        new Point(mid + 6.5, mid + 5.5),
+                        new Point(mid - 6.5, mid + 5.5),
                     },
                     Fill = new SolidColorBrush(Color.FromRgb(r, g, b)),
                     RenderTransform = new RotateTransform(arrowDegrees.Value, mid, mid),
