@@ -279,6 +279,18 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 double circleCenterY = centerY + circleAnchorY * 110.0 + CircleOffsetY(layout, circleKey) * boardScale;
                 double atomX = dirX * AtomSpreadPitchX * CircleSpreadX(layout, circleKey);
                 double atomY = dirY * AtomSpreadPitchY * CircleSpreadY(layout, circleKey);
+                if (!layout.StickUniformSpread && circleKey.EndsWith("Stick", StringComparison.Ordinal))
+                {
+                    bool isLeft = circleKey == "LeftStick";
+                    if (slot.EndsWith("Press", StringComparison.Ordinal))
+                    {
+                        atomY = (isLeft ? layout.LeftStickCenterOffsetY : layout.RightStickCenterOffsetY);
+                    }
+                    else if (slot.EndsWith("Down", StringComparison.Ordinal))
+                    {
+                        atomY = (isLeft ? layout.LeftStickBottomOffsetY : layout.RightStickBottomOffsetY);
+                    }
+                }
                 Canvas atomHost = (Canvas)atom.Root;
                 Canvas.SetLeft(atomHost, circleCenterX + atomX * boardScale);
                 Canvas.SetTop(atomHost, circleCenterY + atomY * boardScale);
@@ -351,7 +363,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                    layout.IconOffsetX * 4.3 + layout.IconOffsetY * 4.4 +
                    layout.IconScale * 4.5 + layout.FontScale * 4.6 +
                    layout.SelectStartOffsetX * 4.7 + layout.SelectStartOffsetY * 4.8 +
-                   layout.SelectStartScale * 4.9 + layout.SelectStartSpreadX * 5.0;
+                   layout.SelectStartScale * 4.9 + layout.SelectStartSpreadX * 5.0 +
+                   (layout.StickUniformSpread ? 1.0 : 0.0) * 5.1 +
+                   layout.LeftStickCenterOffsetY * 5.2 + layout.LeftStickBottomOffsetY * 5.3 +
+                   layout.RightStickCenterOffsetY * 5.4 + layout.RightStickBottomOffsetY * 5.5;
             return fingerprint;
         }
 
@@ -414,9 +429,9 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             double height = TileHeight * tileScale;
             double spread = (CenterColumnOffset * 2.0 + TileWidth) * layout.SelectStartSpreadX * boardScale;
             AddTileSized("Select", _maps[activeIndex], centerX - width / 2.0 - spread / 2.0,
-                centerY - height - 2.0 * tileScale, width, height, boardScale);
+                centerY - height / 2.0, width, height, boardScale);
             AddTileSized("Start", _maps[activeIndex], centerX - width / 2.0 + spread / 2.0,
-                centerY + 2.0 * tileScale, width, height, boardScale);
+                centerY - height / 2.0, width, height, boardScale);
         }
 
         /// <summary>AddTile with an explicit tile size (Select/Start sliders).</summary>

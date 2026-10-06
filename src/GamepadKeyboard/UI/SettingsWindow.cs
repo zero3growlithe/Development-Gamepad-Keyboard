@@ -61,6 +61,7 @@ namespace GamepadKeyboard.UI
         private List<string> _hidHidePaths = new();
         private readonly List<Action> _numericValidators = new();
         private readonly Dictionary<string, Slider> _keyMapsSliders = new();      // layout property → slider
+        private readonly Dictionary<string, CheckBox> _keyMapsToggles = new();    // layout bool property → toggle
         private readonly Dictionary<string, TextBlock> _keyMapsValueLabels = new();
         private readonly Dictionary<string, object> _keyMapsLayoutBackup = new();
         private bool _keyMapsSettingsSavedExplicitly;
@@ -133,7 +134,6 @@ namespace GamepadKeyboard.UI
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto
                 }
             });
-            InitializeKeyMapsLayoutEditors(s);
             tabs.Items.Add(new TabItem
             {
                 Header = "Keyboard Maps",
@@ -184,6 +184,8 @@ namespace GamepadKeyboard.UI
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto
                 }
             });
+
+            InitializeKeyMapsLayoutEditors(s);
 
             var buttons = new StackPanel
             {
@@ -284,6 +286,13 @@ namespace GamepadKeyboard.UI
                 rows.Add(MakeKeyMapsSliderRow(label + " atom spread Y", key + "SpreadY", 0.0, 3.0, 0.05));
             }
 
+            rows.Add(("── Analog sticks layout ──", null!));
+            rows.Add(MakeKeyMapsToggleRow("Uniform stick atom spread", "StickUniformSpread"));
+            rows.Add(MakeKeyMapsSliderRow("Left stick center atom Y offset (-200-200)", "LeftStickCenterOffsetY", -200.0, 200.0, 1.0));
+            rows.Add(MakeKeyMapsSliderRow("Left stick bottom atom Y offset (-200-200)", "LeftStickBottomOffsetY", -200.0, 200.0, 1.0));
+            rows.Add(MakeKeyMapsSliderRow("Right stick center atom Y offset (-200-200)", "RightStickCenterOffsetY", -200.0, 200.0, 1.0));
+            rows.Add(MakeKeyMapsSliderRow("Right stick bottom atom Y offset (-200-200)", "RightStickBottomOffsetY", -200.0, 200.0, 1.0));
+
             rows.Add(("── Atom look (all atoms) ──", null!));
             rows.Add(MakeKeyMapsSliderRow("Atom (big prompt) size", "AtomSize", 0.5, 2.0, 0.05));
             rows.Add(MakeKeyMapsSliderRow("Quark (small prompt) size", "QuarkSize", 0.5, 2.0, 0.05));
@@ -338,6 +347,15 @@ namespace GamepadKeyboard.UI
             return (label + ":", host);
         }
 
+        /// <summary>Boolean toggle row for the Key Maps tab, live-applied.</summary>
+        private (string, FrameworkElement) MakeKeyMapsToggleRow(string label, string propertyName)
+        {
+            CheckBox toggle = new() { Content = label, VerticalAlignment = VerticalAlignment.Center };
+            _keyMapsToggles[propertyName] = toggle;
+            toggle.Click += (_, __) => ApplyKeyMapsSliderChange(propertyName, toggle.IsChecked == true ? 1.0 : 0.0);
+            return ("", toggle);
+        }
+
         private void InitializeKeyMapsLayoutEditors(Settings.AppSettings s)
         {
             Settings.KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
@@ -350,6 +368,12 @@ namespace GamepadKeyboard.UI
                 {
                     label.Text = value.ToString(pair.Value.TickFrequency < 1.0 ? "0.##" : "0.#", CultureInfo.CurrentCulture);
                 }
+            }
+            foreach (KeyValuePair<string, CheckBox> pair in _keyMapsToggles)
+            {
+                _suppressKeyMapsLiveApply = true;
+                bool flagValue = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as bool? ?? false;
+                pair.Value.IsChecked = flagValue;
             }
             _suppressKeyMapsLiveApply = false;
         }
@@ -364,7 +388,15 @@ namespace GamepadKeyboard.UI
                 return;
             }
             Settings.KeyMapsLayoutSettings layout = Settings.AppSettings.Instance.KeyMaps.Layout;
-            typeof(Settings.KeyMapsLayoutSettings).GetProperty(propertyName)!.SetValue(layout, value);
+                        System.Reflection.PropertyInfo property = typeof(Settings.KeyMapsLayoutSettings).GetProperty(propertyName)!;
+            if (property.PropertyType == typeof(bool))
+            {
+                property.SetValue(layout, value >= 0.5);
+            }
+            else
+            {
+                property.SetValue(layout, value);
+            }
             layout.Normalize();
             Settings.AppSettings.Save();
             AppOrchestrator.NotifyKeyMapsLayoutChanged();
@@ -465,6 +497,11 @@ namespace GamepadKeyboard.UI
             {
                 typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
                     layout, pair.Value.Value);
+            }
+            foreach (KeyValuePair<string, CheckBox> pair in _keyMapsToggles)
+            {
+                typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.SetValue(
+                    layout, pair.Value.IsChecked == true);
             }
             layout.Normalize();
         }

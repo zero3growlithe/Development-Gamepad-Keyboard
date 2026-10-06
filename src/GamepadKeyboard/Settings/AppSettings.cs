@@ -466,6 +466,15 @@ namespace GamepadKeyboard.Settings
 
 
 
+        /// <summary>True = stick atoms spread uniformly from the circle center
+        /// (dir factors −1.25/−0.25/+1.25 like the other circles). False =
+        /// the center and bottom atoms get manual Y offsets below.</summary>
+        public bool StickUniformSpread { get; set; } = true;
+        public double LeftStickCenterOffsetY { get; set; } = 0.0;
+        public double LeftStickBottomOffsetY { get; set; } = 0.0;
+        public double RightStickCenterOffsetY { get; set; } = 0.0;
+        public double RightStickBottomOffsetY { get; set; } = 0.0;
+
         /// <summary>Global tile size multiplier (labels wrap inside tiles).</summary>
         public double KeySize { get; set; } = 1.0;
 
@@ -487,6 +496,10 @@ namespace GamepadKeyboard.Settings
             LeftStickSpreadY = Math.Clamp(LeftStickSpreadY, 0.0, 3.0);
             RightStickSpreadX = Math.Clamp(RightStickSpreadX, 0.0, 3.0);
             RightStickSpreadY = Math.Clamp(RightStickSpreadY, 0.0, 3.0);
+            LeftStickCenterOffsetY = Math.Clamp(LeftStickCenterOffsetY, -200.0, 200.0);
+            LeftStickBottomOffsetY = Math.Clamp(LeftStickBottomOffsetY, -200.0, 200.0);
+            RightStickCenterOffsetY = Math.Clamp(RightStickCenterOffsetY, -200.0, 200.0);
+            RightStickBottomOffsetY = Math.Clamp(RightStickBottomOffsetY, -200.0, 200.0);
             KeySize = Math.Clamp(KeySize, 0.6, 2.0);
             AtomSize = Math.Clamp(AtomSize, 0.5, 2.0);
             QuarkSize = Math.Clamp(QuarkSize, 0.5, 2.0);
