@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Collections.Generic;
 using GamepadKeyboard.Native;
 using GamepadKeyboard.Settings;
@@ -170,7 +169,6 @@ namespace GamepadKeyboard.Input
         public void ReleaseAll()
         {
             _seeded = false;
-            ReleaseHeldSlots();
             if (_shiftHeld) _sender.KeyUp(Vk.LShift);
             if (_ctrlHeld) _sender.KeyUp(Vk.LControl);
             if (_altHeld) _sender.KeyUp(Vk.LMenu);
@@ -250,8 +248,6 @@ namespace GamepadKeyboard.Input
             // slots anywhere — they are the chord for Symbols 2/3/FunctionKeys.
             // While the maps key is held they latch instead of tapping.
             ProcessModifiers(snapshot, mapsKey, mapsKeyEdge, map);
-
-            PumpHeldKeyRepeats();
 
             double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
             HoldSlot(ref _previousDPadUp, snapshot.DUp, map.DPadUp);
@@ -461,20 +457,6 @@ namespace GamepadKeyboard.Input
             previous = held;
         }
 
-        /// <summary>Registry of keys currently held by hold slots, so a mode
-        /// switch / ReleaseAll never leaves a key stuck down. Fixed-size — no
-        /// per-tick allocations (18 holdable slots max).</summary>
-        private readonly ushort[] _heldSlotKeys = new ushort[24];
-        private readonly bool[] _heldSlotExtended = new bool[24];
-        private readonly long[] _heldSlotLastDownTicks = new long[24];
-        private int _heldSlotCount;
-
-        /// <summary>OS-style auto-repeat for keys held via hold slots
-        /// (arrow keys scrolling while D-pad is held): initial delay ~500 ms,
-        /// then ~30 events/s. Stopwatch ticks — no per-tick allocations.</summary>
-        private static readonly long RepeatDelayTicks = Stopwatch.Frequency / 2;
-        private static readonly long RepeatIntervalTicks = Stopwatch.Frequency / 30;
-
         private void SendSlotDown(string slot)
         {
             if (string.IsNullOrWhiteSpace(slot)
@@ -510,15 +492,7 @@ namespace GamepadKeyboard.Input
             ushort virtualKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
             if (virtualKey != Vk.None)
             {
-                bool extended = ControllerMapper.IsExtendedKey(virtualKey);
-                _sender.KeyDown(virtualKey, extended);
-                if (_heldSlotCount < _heldSlotKeys.Length)
-                {
-                    _heldSlotKeys[_heldSlotCount] = virtualKey;
-                    _heldSlotExtended[_heldSlotCount] = extended;
-                    _heldSlotLastDownTicks[_heldSlotCount] = Stopwatch.GetTimestamp();
-                    _heldSlotCount++;
-                }
+                _sender.KeyDown(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));
                 return;
             }
             if (slot.Length == 1)
@@ -561,7 +535,7 @@ namespace GamepadKeyboard.Input
             ushort virtualKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
             if (virtualKey != Vk.None)
             {
-                ReleaseHeldKey(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));
+                _sender.KeyUp(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));
             }
         }
 
@@ -611,45 +585,6 @@ namespace GamepadKeyboard.Input
             return false;
         }
 
-        private void ReleaseHeldKey(ushort virtualKey, bool extended)
-        {
-            for (int index = 0; index < _heldSlotCount; index++)
-            {
-                if (_heldSlotKeys[index] == virtualKey)
-                {
-                    _sender.KeyUp(virtualKey, extended);
-                    _heldSlotKeys[index] = _heldSlotKeys[_heldSlotCount - 1];
-                    _heldSlotExtended[index] = _heldSlotExtended[_heldSlotCount - 1];
-                    _heldSlotLastDownTicks[index] = _heldSlotLastDownTicks[_heldSlotCount - 1];
-                    _heldSlotCount--;
-                    return;
-                }
-            }
-            _sender.KeyUp(virtualKey, extended);
-        }
-
-        /// <summary>Re-sends KeyDown for keys still physically held so Windows
-        /// apps get auto-repeat (arrow-key scrolling with D-pad held etc.);
-        /// OS-style 500 ms delay then ~30/s. One pass per poll tick.</summary>
-        private void PumpHeldKeyRepeats()
-        {
-            if (_heldSlotCount == 0)
-            {
-                return;
-            }
-            long now = Stopwatch.GetTimestamp();
-            for (int index = 0; index < _heldSlotCount; index++)
-            {
-                long elapsed = now - _heldSlotLastDownTicks[index];
-                if (elapsed - RepeatDelayTicks >= RepeatIntervalTicks)
-                {
-                    // Schedule next repeat by aligning to the interval grid.
-                    long overshoot = (elapsed - RepeatDelayTicks) % RepeatIntervalTicks;
-                    _heldSlotLastDownTicks[index] = now - overshoot;
-                    _sender.KeyDown(_heldSlotKeys[index], _heldSlotExtended[index]);
-                }
-            }
-        }
 
         /// <summary>Single-character punctuation under a held Shift sends its
         /// shifted glyph (Unicode typing ignores the physical modifier).</summary>
@@ -659,16 +594,6 @@ namespace GamepadKeyboard.Input
             _sender.TypeText(sent);
         }
 
-        /// <summary>Releases every key a hold slot left down (mode switch).</summary>
-        private void ReleaseHeldSlots()
-        {
-            for (int index = 0; index < _heldSlotCount; index++)
-            {
-                _sender.KeyUp(_heldSlotKeys[index], _heldSlotExtended[index]);
-                _heldSlotKeys[index] = 0;
-            }
-            _heldSlotCount = 0;
-        }
 
         /// <summary>Old latch semantics (edge-latch + fresh-press toggle) kept
         /// for the Windows hold slot, whose button is not a map chord.</summary>
