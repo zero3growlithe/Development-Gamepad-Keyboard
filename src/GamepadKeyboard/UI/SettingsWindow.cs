@@ -274,7 +274,6 @@ namespace GamepadKeyboard.UI
             keyOpacity.ValueChanged += (_, __) =>
             {
                 Settings.AppSettings.Instance.KeyboardKeyOpacity = keyOpacity.Value;
-                Settings.AppSettings.Instance.Normalize();
                 Settings.AppSettings.Save();
                 keyOpacityValue.Text = keyOpacity.Value.ToString("0.##", CultureInfo.CurrentCulture);
                 AppOrchestrator.NotifyMappingsChanged();
