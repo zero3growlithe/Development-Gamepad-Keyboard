@@ -482,6 +482,12 @@ namespace GamepadKeyboard.Input
                 ControllerMapper.HoldShadowMapsActive = true;
                 return;
             }
+            if (string.Equals(slot, "ToggleShadowMaps", StringComparison.Ordinal))
+            {
+                // Tap-edge toggles once on press; release does nothing.
+                ActionRequested?.Invoke(slot);
+                return;
+            }
             if (ControllerMapper.IsAppLevelAction(slot))
             {
                 ActionRequested?.Invoke(slot);
@@ -523,6 +529,10 @@ namespace GamepadKeyboard.Input
             if (string.Equals(slot, "HoldShadowMaps", StringComparison.Ordinal))
             {
                 ControllerMapper.HoldShadowMapsActive = false;
+                return;
+            }
+            if (string.Equals(slot, "ToggleShadowMaps", StringComparison.Ordinal))
+            {
                 return;
             }
             if (ControllerMapper.IsAppLevelAction(slot))
