@@ -884,7 +884,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             double keySpanX = _projectedLayout.GridW * pitch + pitch * 1.15;
             double keySpanY = _projectedLayout.GridH * pitch;
             double originX = (BoardWidth * boardScale - keySpanX) / 2.0 + pitch * 1.15;
-            double originY = (BoardHeight * boardScale - keySpanY) / 2.0 + 14.0 * boardScale;
+            // Sit the keyboard just under the map-name label (label top 6*scale,
+            // ~28*scale tall) — the old center-aligned Y left a ~180 px void
+            // between label and first key row.
+            double originY = 44.0 * boardScale;
 
             foreach (KeyboardLayout.KeyDef key in _projectedLayout.Keys)
             {
@@ -1159,6 +1162,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 _lastRenderedMapIndex = activeIndex;
                 _lastProjectedFingerprint = fingerprint;
                 RebuildProjectedPrompts(activeIndex);
+                ApplyMapName(activeIndex);
                 return;
             }
             UpdateProjectedPromptOpacity(keyMaps);
@@ -1298,12 +1302,15 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         }
 
         // ── Frozen projected-key brushes ─────────────────────────────────────────
+        // Opaque bases: all translucency comes ONLY from the per-key Opacity
+        // (KeyboardKeyOpacity slider) — a semi-alpha brush multiplied by element
+        // opacity made keys look translucent even at slider = 1.
         private static readonly Brush projectedKeyFillIdle =
-            new SolidColorBrush(Color.FromArgb(0xB4, 0x14, 0x14, 0x1A));
+            new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x1A));
         private static readonly Brush projectedKeyFillPressed =
-            new SolidColorBrush(Color.FromArgb(0xE6, 0x2E, 0x8B, 0x57));
+            new SolidColorBrush(Color.FromRgb(0x2E, 0x8B, 0x57));
         private static readonly Brush projectedKeyBorderIdle =
-            new SolidColorBrush(Color.FromArgb(0x88, 0xC8, 0xC8, 0xD0));
+            new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xD0));
         private static readonly Brush projectedBorderPressed =
             new SolidColorBrush(Color.FromRgb(0x7C, 0xFC, 0x9A));
         private static readonly Brush projectedBorderCovered =
