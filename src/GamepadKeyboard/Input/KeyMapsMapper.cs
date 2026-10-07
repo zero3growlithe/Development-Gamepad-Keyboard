@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using GamepadKeyboard.Native;
 using GamepadKeyboard.Settings;
 using GamepadKeyboard.UI;
@@ -8,10 +9,11 @@ namespace GamepadKeyboard.Input
 {
     /// <summary>
     /// Key Maps mode: the gamepad as a chord keyboard via maps of key
-    /// assignments. L2 holds Shift, L1 holds Ctrl and R1 holds Alt; holding R2
-    /// (the maps key) selects the map while it is held — alone to Symbols 1,
-    /// with R1 to Symbols 2, with L1 to Symbols 3, with L1+R1 to Function Keys —
-    /// and releasing R2 returns to the Utility map. Every other physical slot
+    /// assignments. L2/L1/R1 run their configured actions (hold/toggle a
+    /// modifier, tap a key, fire an app action); holding R2 (the maps key)
+    /// selects the map while it is held — the map whose OpenWith combination
+    /// (subset of L2/L1/R1/L3/R3) best matches the currently held buttons —
+    /// and releasing the maps key returns to the Utility map. Every other physical slot
     /// (d-pad, face, stick deflections, stick presses, Select/Start) sends one
     /// edge-triggered tap of its mapped key, so a held stick never repeats.
     ///
@@ -44,20 +46,40 @@ namespace GamepadKeyboard.Input
         /// and the overlay's layout array).</summary>
         public int ActiveMapIndex { get; private set; }
 
-        /// <summary>Physical chord state while the maps key is held — the
-        /// overlay brightens the RIGHT strip for Symbols 2 (R2+R1), the LEFT
-        /// strip for Symbols 3 (R2+L1) and the BOTTOM strip for Function Keys
-        /// (R2+L1+R1).</summary>
+        /// <summary>Physical chord state while the maps key is held — true
+        /// while the held buttons are exactly a candidate map's OpenWith set
+        /// (the overlay brightens the matching quark); the ACTIVE map may
+        /// differ when two combinations match simultaneously.</summary>
         public bool Sym2ComboHeld { get; private set; }
         public bool Sym3ComboHeld { get; private set; }
         public bool FunctionComboHeld { get; private set; }
 
-        /// <summary>Effective (latched OR physically held) modifier states —
-        /// what the overlay's [Ctrl][Shift][Alt][Windows] chips highlight.</summary>
-        public bool CtrlHeld => _ctrlHeld;
-        public bool ShiftHeld => _shiftHeld;
-        public bool AltHeld => _altHeld;
-        public bool WindowsHeld => _windowsHeld;
+        /// <summary>Effective modifier states — what the overlay's
+        /// [Ctrl][Shift][Alt][Windows] chips highlight. Derived from every
+        /// configurable system button's current down virtual key (hold or
+        /// sticky toggle) plus the right-stick-press hold slot.</summary>
+        public bool CtrlHeld => IsModifierFamilyDown(Vk.LControl, Vk.RControl);
+        public bool ShiftHeld => IsModifierFamilyDown(Vk.LShift, Vk.RShift);
+        public bool AltHeld => IsModifierFamilyDown(Vk.LMenu, Vk.RMenu);
+        public bool WindowsHeld => IsModifierFamilyDown(Vk.LWin, Vk.RWin) || _windowsHeld;
+
+        private bool IsModifierFamilyDown(ushort primaryVk, ushort alternateVk)
+        {
+            if (_heldModifierVks.Contains(primaryVk) || _heldModifierVks.Contains(alternateVk)
+                || _toggledModifierVks.Contains(primaryVk) || _toggledModifierVks.Contains(alternateVk))
+            {
+                return true;
+            }
+            return ButtonDownVk(_leftTrigger, primaryVk, alternateVk)
+                || ButtonDownVk(_leftBumper, primaryVk, alternateVk)
+                || ButtonDownVk(_rightBumper, primaryVk, alternateVk)
+                || (_windowsHeld && (_latchedWindowsVk == primaryVk || _latchedWindowsVk == alternateVk));
+        }
+
+        private static bool ButtonDownVk(SystemButtonState state, ushort primaryVk, ushort alternateVk)
+        {
+            return state.Held && (state.VirtualKey == primaryVk || state.VirtualKey == alternateVk);
+        }
 
     /// <summary>Preview Maps latched by TogglePreviewMaps — the projected
     /// overlay shows prompts from ALL maps while true (poll-thread write).</summary>
@@ -80,26 +102,17 @@ namespace GamepadKeyboard.Input
         private bool _mapsKeyToggledOn;
         private bool _previousPhysicalMapsKey;
         private bool _previousMapsKey;
-        // Modifier state as of the maps-key press edge (frozen while held).
-        private bool _wasShiftHeldBeforeMaps;
-        private bool _wasCtrlHeldBeforeMaps;
-        private bool _wasAltHeldBeforeMaps;
-        private bool _previousShift;
-        private bool _previousCtrl;
-        private bool _previousAlt;
-        private bool _shiftHeld;
-        private bool _ctrlHeld;
-        private bool _altHeld;
+        // ── Locks logic: per-button state of the three configurable system
+        // buttons (L2/L1/R1). While the maps key is held a chord member is
+        // frozen (a modifier held BEFORE the maps key went down latches down
+        // for the whole hold); a button in NO combination keeps running its
+        // configured action, with the friendlier free semantics: pre-held
+        // latches, a fresh press frees the modifier so it tracks the physical
+        // control exactly as if the maps key were not held.
+        private readonly SystemButtonState _leftTrigger = new();
+        private readonly SystemButtonState _leftBumper = new();
+        private readonly SystemButtonState _rightBumper = new();
         private bool _windowsHeld;
-        private bool _shiftLocked;
-        private bool _ctrlLocked;
-        private bool _altLocked;
-        // Freed while maps held: a re-press of a chord button releases the
-        // modifier from the maps-key freeze so it tracks the physical control
-        // exactly as if the maps key were not held (used mainly for Shift/L2).
-        private bool _shiftFreed;
-        private bool _ctrlFreed;
-        private bool _altFreed;
         private bool _windowsLocked;
         private ushort _latchedWindowsVk;
         private bool _latchedWindowsExtended;
@@ -123,6 +136,13 @@ namespace GamepadKeyboard.Input
         private bool _previousRightStickPress;
         private bool _previousSelect;
         private bool _previousStart;
+        /// <summary>Chord-button mask of the CURRENT tick (L2/L1/R1/L3/R3);
+        /// recomputed each tick before selection, read by matching helpers.</summary>
+        private string CurrentChordMask = "";
+        // Sticky (toggle) modifier VKs and hold-down VKs across ALL system
+        // buttons — the Ctrl/Shift/Alt/Windows family probes read these.
+        private readonly HashSet<ushort> _toggledModifierVks = new();
+        private readonly HashSet<ushort> _heldModifierVks = new();
         private bool _heldXButton1;
         private bool _heldXButton2;
 
@@ -169,21 +189,20 @@ namespace GamepadKeyboard.Input
         public void ReleaseAll()
         {
             _seeded = false;
-            if (_shiftHeld) _sender.KeyUp(Vk.LShift);
-            if (_ctrlHeld) _sender.KeyUp(Vk.LControl);
-            if (_altHeld) _sender.KeyUp(Vk.LMenu);
+            ReleaseSystemButton(_leftTrigger);
+            ReleaseSystemButton(_leftBumper);
+            ReleaseSystemButton(_rightBumper);
             if (_windowsHeld && _latchedWindowsVk != Vk.None)
             {
                 _sender.KeyUp(_latchedWindowsVk, _latchedWindowsExtended);
             }
-            _shiftHeld = _ctrlHeld = _altHeld = _windowsHeld = false;
-            _shiftLocked = _ctrlLocked = _altLocked = _windowsLocked = false;
+            _windowsHeld = false;
+            _windowsLocked = false;
             ControllerMapper.HoldShadowMapsActive = false;
             ControllerMapper.HoldPreviewMapsActive = false;
-            _shiftFreed = _ctrlFreed = _altFreed = false;
             _latchedWindowsVk = Vk.None;
-            _previousShift = _previousCtrl = _previousAlt = false;
-            _wasShiftHeldBeforeMaps = _wasCtrlHeldBeforeMaps = _wasAltHeldBeforeMaps = false;
+            _toggledModifierVks.Clear();
+            _heldModifierVks.Clear();
             _previousMapsKey = false;
             _previousPhysicalMapsKey = false;
             _mapsKeyToggledOn = false;
@@ -219,35 +238,33 @@ namespace GamepadKeyboard.Input
             {
                 mapsKey = physicalMapsKey;
             }
+            KeyMapsSettings mapsSettings = AppSettings.Instance.KeyMaps;
+            CurrentChordMask = ChordMask(
+                snapshot.LeftTrigger >= 0.5, snapshot.LB, snapshot.RB, snapshot.LS, snapshot.RS);
             bool mapsKeyEdge = mapsKey && !_previousMapsKey;
-            if (mapsKeyEdge)
-            {
-                _wasShiftHeldBeforeMaps = snapshot.LeftTrigger >= 0.5;
-                _wasCtrlHeldBeforeMaps = snapshot.LB;
-                _wasAltHeldBeforeMaps = snapshot.RB;
-            }
             _previousMapsKey = mapsKey;
             _previousPhysicalMapsKey = physicalMapsKey;
-            int mapIndex = mapsKey
-                ? snapshot.LB && snapshot.RB ? 4
-                : snapshot.LB ? 3
-                : snapshot.RB ? 2
-                : 1
-                : 0;
+            int mapIndex = SelectMapForChord(mapsSettings, mapsKey);
             MapsKeyHeld = mapsKey;
             ActiveMapIndex = mapIndex;
-            Sym2ComboHeld = mapsKey && snapshot.RB;
-            Sym3ComboHeld = mapsKey && snapshot.LB;
-            FunctionComboHeld = mapsKey && snapshot.LB && snapshot.RB;
+            UpdateComboHighlights(mapsSettings, mapsKey);
             LogMapChange(mapIndex);
 
-            List<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
-            KeyMapDefinition map = maps[Math.Clamp(mapIndex, 0, maps.Count - 1)];
+            KeyMapDefinition map = mapsSettings.Maps[Math.Clamp(mapIndex, 0, mapsSettings.Maps.Count - 1)];
 
-            // Modifier-selection buttons (LB/RB) MUST NOT be consumed as map
-            // slots anywhere — they are the chord for Symbols 2/3/FunctionKeys.
-            // While the maps key is held they latch instead of tapping.
-            ProcessModifiers(snapshot, mapsKey, mapsKeyEdge, map);
+            // System buttons (L2/L1/R1) run their configured actions through
+            // the locks logic: while the maps key is held a chord member is
+            // frozen (a pre-held modifier latches down, a re-press frees it),
+            // a button in NO combination keeps working. R3/L3 chord membership
+            // freezes the respective stick-press slots.
+            UpdateSystemButton(_leftTrigger, snapshot.LeftTrigger >= 0.5,
+                mapsSettings.LeftTriggerAction, mapsKey, mapsKeyEdge, ChordUses(mapsSettings, "L2"));
+            UpdateSystemButton(_leftBumper, snapshot.LB,
+                mapsSettings.LeftBumperAction, mapsKey, mapsKeyEdge, ChordUses(mapsSettings, "L1"));
+            UpdateSystemButton(_rightBumper, snapshot.RB,
+                mapsSettings.RightBumperAction, mapsKey, mapsKeyEdge, ChordUses(mapsSettings, "R1"));
+            UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map,
+                ChordUses(mapsSettings, "R3"));
 
             double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
             HoldSlot(ref _previousDPadUp, snapshot.DUp, map.DPadUp);
@@ -266,8 +283,8 @@ namespace GamepadKeyboard.Input
             HoldSlot(ref _previousRightStickDown, snapshot.RY <= -threshold, map.RightStickDown);
             HoldSlot(ref _previousRightStickLeft, snapshot.RX <= -threshold, map.RightStickLeft);
             HoldSlot(ref _previousRightStickRight, snapshot.RX >= threshold, map.RightStickRight);
-            HoldSlot(ref _previousLeftStickPress, snapshot.LS, map.LeftStickPress);
-            UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map);
+            HoldSlot(ref _previousLeftStickPress, snapshot.LS, map.LeftStickPress,
+                mapsKey && ChordUses(mapsSettings, "L3"));
             HoldSlot(ref _previousSelect, snapshot.View, map.Select);
 
             // Start LAST: on the Utility map it requests the MouseMode switch,
@@ -282,20 +299,370 @@ namespace GamepadKeyboard.Input
             }
         }
 
-        // ── Modifiers: physical hold + maps-key latch/lock ─────────────────────
+        // ── System buttons: configurable actions + maps-key locks logic ────────
 
-        private void ProcessModifiers(
-            in GamepadSnapshot snapshot, bool mapsKey, bool mapsKeyEdge, KeyMapDefinition map)
+        private sealed class SystemButtonState
         {
-            // physicalWasHeldFirst: the button was already down when the maps
-            // key went down — only then its modifier key stays active (latched)
-            // while maps is held; otherwise the control stays frozen.
-            UpdateLatchedModifier(snapshot.LeftTrigger >= 0.5, mapsKey, mapsKeyEdge, _wasShiftHeldBeforeMaps,
-                ref _previousShift, ref _shiftLocked, ref _shiftFreed, ref _shiftHeld, Vk.LShift, false, allowFreshPressUnlockWhileMaps: true);
-            UpdateLatchedModifier(snapshot.LB, mapsKey, mapsKeyEdge, _wasCtrlHeldBeforeMaps,
-                ref _previousCtrl, ref _ctrlLocked, ref _ctrlFreed, ref _ctrlHeld, Vk.LControl, false, allowFreshPressUnlockWhileMaps: false);
-            UpdateLatchedModifier(snapshot.RB, mapsKey, mapsKeyEdge, _wasAltHeldBeforeMaps,
-                ref _previousAlt, ref _altLocked, ref _altFreed, ref _altHeld, Vk.LMenu, false, allowFreshPressUnlockWhileMaps: false);
+            public bool Held;
+            public bool Locked;
+            public bool Freed;
+            public bool PreviousPhysical;
+            public ushort VirtualKey;
+            public bool Extended;
+            public string Action = "";
+        }
+
+        /// <summary>One configurable system button's full state machine.
+        /// Outside the maps key the configured action runs exactly as the
+        /// bindings editor would (hold/toggle modifier, key hold, mouse hold,
+        /// app action on the press edge). While the maps key is held and the
+        /// button IS a chord member (takes part in any OpenWith combination)
+        /// the action is frozen: a modifier held BEFORE the maps key went down
+        /// LATCHES down for the whole hold; anything else goes silent so the
+        /// button purely selects maps. While the maps key is held and the
+        /// button is in NO combination, the friendlier free semantics apply:
+        /// pre-held latches down, a fresh press releases the freeze so the
+        /// modifier tracks the physical control (the maps key never hijacks an
+        /// unneeded button — this keeps Hold Ctrl/Shift/Alt/Windows working
+        /// through the locks logic).</summary>
+        /// <summary>One configurable system button's full state machine.
+        /// Outside the maps key the configured action runs on the physical
+        /// edges (hold/toggle modifier, key hold, mouse hold, app action).
+        /// While the maps key is held:
+        /// • chord member (in an OpenWith combination) → frozen so the button
+        ///   purely selects maps, EXCEPT a modifier: held BEFORE the maps key
+        ///   edge → latched down for the whole hold; a re-press while held →
+        ///   unlocked AND freed so it tracks the physical control (the user is
+        ///   never stuck with a stuck modifier — Shift/L2 typing use case);
+        /// • NOT a chord member → keeps working: pre-held latches, a fresh
+        ///   press frees the modifier so Hold Ctrl/Shift/Alt/Windows actions
+        ///   work through the locks logic exactly as without the maps key.
+        /// </summary>
+        private void UpdateSystemButton(
+            SystemButtonState state,
+            bool physical,
+            string action,
+            bool mapsKey,
+            bool mapsKeyEdge,
+            bool isChordMember)
+        {
+            if (!mapsKey)
+            {
+                state.Locked = false;
+                state.Freed = false;
+                RunAction(state, physical, action);
+                state.PreviousPhysical = physical;
+                return;
+            }
+            if (!isChordMember)
+            {
+                if (mapsKeyEdge)
+                {
+                    // Held BEFORE the maps key went down: latched for the hold.
+                    state.Locked = physical && state.Held;
+                }
+                else if (physical && !state.PreviousPhysical && !state.Freed)
+                {
+                    // Fresh press: unlock + free — the modifier follows the
+                    // physical control as if the maps key were not held.
+                    // (Also unlocks a latched pre-held hold: the key is
+                    // already down, it just resumes tracking the physical.)
+                    state.Locked = false;
+                    state.Freed = true;
+                }
+                if (!state.Locked || state.Freed)
+                {
+                    RunAction(state, physical, action);
+                }
+                state.PreviousPhysical = physical;
+                return;
+            }
+            if (mapsKeyEdge)
+            {
+                // Chord member held before the maps key edge: latched down.
+                state.Locked = physical && state.Held;
+            }
+            else if (physical && !state.PreviousPhysical && IsHoldModifierAction(action))
+            {
+                // Re-press of the chord button while maps is held: unlock +
+                // free so the modifier tracks the physical control.
+                state.Locked = false;
+                state.Freed = true;
+                RunAction(state, physical, action);
+            }
+            else if (state.Freed)
+            {
+                RunAction(state, physical, action);
+            }
+            state.PreviousPhysical = physical;
+        }
+
+        private static bool IsHoldModifierAction(string action) => action is
+            "HoldShift" or "HoldCtrl" or "HoldAlt" or "HoldWin";
+
+        /// <summary>Runs the configured action for one system button on its
+        /// physical edges.</summary>
+        private void RunAction(SystemButtonState state, bool physical, string action)
+        {
+            if (!string.Equals(state.Action, action, StringComparison.Ordinal) && state.Held
+                && state.VirtualKey != Vk.None)
+            {
+                // The configured action changed while a hold was down: release
+                // the OLD key so the new action does not leave it stuck.
+                _sender.KeyUp(state.VirtualKey, state.Extended);
+                _heldModifierVks.Remove(state.VirtualKey);
+                state.Held = false;
+            }
+            state.Action = action;
+            if (string.IsNullOrWhiteSpace(action)
+                || string.Equals(action, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                state.VirtualKey = Vk.None;
+                state.Held = false;
+                return;
+            }
+            switch (action)
+            {
+                case "HoldShift":
+                case "HoldCtrl":
+                case "HoldAlt":
+                case "HoldWin":
+                    ushort modifierVk = ActionVkFor(action);
+                    state.VirtualKey = modifierVk;
+                    state.Extended = false;
+                    if (physical && !state.Held)
+                    {
+                        _sender.KeyDown(modifierVk);
+                        state.Held = true;
+                        // A hold supersedes a sticky toggle in the same family.
+                        _toggledModifierVks.Remove(modifierVk);
+                        _heldModifierVks.Add(modifierVk);
+                    }
+                    else if (!physical && state.Held)
+                    {
+                        _sender.KeyUp(modifierVk);
+                        state.Held = false;
+                        _heldModifierVks.Remove(modifierVk);
+                    }
+                    return;
+                case "ToggleShift":
+                case "ToggleCtrl":
+                case "ToggleAlt":
+                case "ToggleWin":
+                    state.VirtualKey = Vk.None;
+                    if (physical && !state.PreviousPhysical)
+                    {
+                        ToggleSystemModifier(ActionVkFor(action));
+                    }
+                    return;
+                default:
+                    // Plain key / mouse / app action: hold semantics down on
+                    // press, up on release; app actions fire on the press edge.
+                    // The seed run stays silent (legacy: no phantom key/app
+                    // fires from buttons held across a mode switch).
+                    state.VirtualKey = Vk.None;
+                    if (_seedRun)
+                    {
+                        return;
+                    }
+                    if (physical && !state.PreviousPhysical)
+                    {
+                        SendSlotDown(ResolveSlotKeyName(action), ControllerMapper.KeyMapsMoveModeActive
+                            && !string.Equals(action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal));
+                    }
+                    else if (!physical && state.PreviousPhysical)
+                    {
+                        SendSlotUp(ResolveSlotKeyName(action), ControllerMapper.KeyMapsMoveModeActive
+                            && !string.Equals(action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal));
+                    }
+                    return;
+            }
+        }
+
+        private static ushort ActionVkFor(string action) => action switch
+        {
+            "HoldShift" or "ToggleShift" => Vk.LShift,
+            "HoldCtrl" or "ToggleCtrl" => Vk.LControl,
+            "HoldAlt" or "ToggleAlt" => Vk.LMenu,
+            "HoldWin" or "ToggleWin" => Vk.LWin,
+            _ => Vk.None,
+        };
+
+        private void ToggleSystemModifier(ushort virtualKey)
+        {
+            if (_toggledModifierVks.Remove(virtualKey))
+            {
+                if (!_heldModifierVks.Contains(virtualKey))
+                {
+                    _sender.KeyUp(virtualKey);
+                }
+                return;
+            }
+            _toggledModifierVks.Add(virtualKey);
+            if (_heldModifierVks.Add(virtualKey))
+            {
+                _sender.KeyDown(virtualKey);
+            }
+        }
+
+        /// <summary>Releases everything a system button can hold.</summary>
+        private void ReleaseSystemButton(SystemButtonState state)
+        {
+            if (state.Held && state.VirtualKey != Vk.None)
+            {
+                _sender.KeyUp(state.VirtualKey, state.Extended);
+                _heldModifierVks.Remove(state.VirtualKey);
+            }
+            state.Held = false;
+            state.Locked = false;
+            state.Freed = false;
+            state.VirtualKey = Vk.None;
+            state.Action = "";
+        }
+
+        // ── Chord masks: canonical OpenWith parsing + best-subset selection ────
+
+        /// <summary>Held-button mask, canonical order L2, L1, R1, L3, R3
+        /// ("", "L1", "L1+R3", ...). Returns canonical constants for the
+        /// common shapes so mask comparison with configured combos is
+        /// allocation-free in the hot path.</summary>
+        private static string ChordMask(bool l2, bool l1, bool r1, bool l3, bool r3)
+        {
+            if (!l2 && !l1 && !r1 && !l3 && !r3) return "";
+            if (!l2 && l1 && !r1 && !l3 && !r3) return "L1";
+            if (!l2 && !l1 && r1 && !l3 && !r3) return "R1";
+            if (!l2 && l1 && r1 && !l3 && !r3) return "L1+R1";
+            if (!l2 && !l1 && !r1 && l3 && !r3) return "L3";
+            if (!l2 && !l1 && !r1 && !l3 && r3) return "R3";
+            if (!l2 && l1 && !r1 && l3 && !r3) return "L1+L3";
+            if (!l2 && l1 && !r1 && !l3 && r3) return "L1+R3";
+            if (!l2 && !l1 && r1 && !l3 && r3) return "R1+R3";
+            if (!l2 && l1 && r1 && l3 && !r3) return "L1+R1+L3";
+            if (!l2 && l1 && r1 && !l3 && r3) return "L1+R1+R3";
+            if (!l2 && !l1 && r1 && l3 && r3) return "R1+L3+R3";
+            if (l2 && !l1 && !r1 && !l3 && !r3) return "L2";
+            System.Text.StringBuilder builder = new(14);
+            if (l2) builder.Append("L2+");
+            if (l1) builder.Append("L1+");
+            if (r1) builder.Append("R1+");
+            if (l3) builder.Append("L3+");
+            if (r3) builder.Append("R3");
+            return builder[^1] == '+' ? builder.ToString(0, builder.Length - 1) : builder.ToString();
+        }
+
+        private static bool IsCanonicalChord(string combo)
+        {
+            if (combo.Length == 0)
+            {
+                return true;
+            }
+            foreach (string part in combo.Split('+'))
+            {
+                if (part is not ("L2" or "L1" or "R1" or "L3" or "R3"))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static int CountChordButtons(string combo)
+        {
+            int count = 1;
+            foreach (char c in combo)
+            {
+                if (c == '+') count++;
+            }
+            return count;
+        }
+
+        private static bool ChordSubset(string candidate, string held)
+        {
+            if (candidate.Length == 0)
+            {
+                return true;
+            }
+            foreach (string part in candidate.Split('+'))
+            {
+                if (!HeldChordContains(held, part))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool HeldChordContains(string held, string button)
+        {
+            return held.Split('+').Contains(button, StringComparer.Ordinal);
+        }
+
+        private static bool ChordUses(KeyMapsSettings settings, string button)
+        {
+            for (int index = 1; index < settings.Maps.Count; index++)
+            {
+                string combo = settings.Maps[index].OpenWith ?? string.Empty;
+                if (!IsCanonicalChord(combo))
+                {
+                    continue;
+                }
+                foreach (string part in combo.Split('+'))
+                {
+                    if (part == button)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Best-subset map selection: the candidate map whose OpenWith
+        /// combination is a subset of the held chord buttons with the LARGEST
+        /// button count wins (ties → first match); none → Utility (0). The
+        /// maps key alone (empty combination) matches candidates with
+        /// OpenWith = "".</summary>
+        private int SelectMapForChord(KeyMapsSettings settings, bool mapsKey)
+        {
+            if (!mapsKey)
+            {
+                return 0;
+            }
+            string held = CurrentChordMask;
+            int best = 0;
+            int bestSize = -1;
+            for (int candidate = 1; candidate < settings.Maps.Count; candidate++)
+            {
+                string combo = settings.Maps[candidate].OpenWith ?? string.Empty;
+                if (!IsCanonicalChord(combo) || !ChordSubset(combo, held))
+                {
+                    continue;
+                }
+                int size = combo.Length == 0 ? 0 : CountChordButtons(combo);
+                if (size > bestSize)
+                {
+                    bestSize = size;
+                    best = candidate;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>Quark/chip highlight state — INDEX-based: the highlight
+        /// marks the map actually selected by the current chord (right quark =
+        /// Symbols 2, left = Symbols 3, bottom = Function Keys), so it stays
+        /// correct with ANY configured open combinations.</summary>
+        private void UpdateComboHighlights(KeyMapsSettings settings, bool mapsKey)
+        {
+            if (!mapsKey)
+            {
+                Sym2ComboHeld = Sym3ComboHeld = FunctionComboHeld = false;
+                return;
+            }
+            int selected = ActiveMapIndex;
+            Sym2ComboHeld = selected == 2;
+            Sym3ComboHeld = selected == 3;
+            FunctionComboHeld = selected >= 4;
         }
 
         /// <summary>
@@ -309,88 +676,42 @@ namespace GamepadKeyboard.Input
         /// physical control as if the maps key were not held (the user is
         /// never stuck with a stuck modifier).
         /// </summary>
-        private void UpdateLatchedModifier(
-            bool physical, bool mapsKey, bool mapsKeyEdge,
-            bool physicalWasHeldFirst,
-            ref bool previousPhysical, ref bool locked, ref bool freed, ref bool held,
-            ushort virtualKey, bool extended,
-            bool allowFreshPressUnlockWhileMaps)
-        {
-            if (mapsKey)
-            {
-                // While the maps key is held the control keys are frozen: the
-                // button is the map-selection chord, so it must NOT tap or
-                // toggle its Ctrl/Shift/Alt key. Only a modifier that was
-                // already held BEFORE the maps key went down keeps its state
-                // (latched); it can also be unlocked by re-pressing it.
-                if (mapsKeyEdge)
-                {
-                    if (physicalWasHeldFirst && !held)
-                    {
-                        _sender.KeyDown(virtualKey, extended);
-                        held = true;
-                    }
-                    locked = physicalWasHeldFirst;
-                    previousPhysical = physical;
-                    return;
-                }
-                if (allowFreshPressUnlockWhileMaps && physical && !previousPhysical && !freed)
-                {
-                    // SHIFT ONLY: first fresh press while the maps key is held
-                    // unlocks AND frees the modifier — including one that was
-                    // NOT held before the maps key. From now it tracks the
-                    // physical control as if the maps key were not held; the
-                    // held state starts on this very press (key goes down now).
-                    // Ctrl/Alt stay frozen the whole maps hold (classic latch).
-                    locked = false;
-                    freed = true;
-                }
-                if (freed)
-                {
-                    // Freed chord button behaves like the maps key is not held.
-                    if (held != physical)
-                    {
-                        if (physical)
-                        {
-                            _sender.KeyDown(virtualKey, extended);
-                        }
-                        else
-                        {
-                            _sender.KeyUp(virtualKey, extended);
-                        }
-                        held = physical;
-                    }
-                    previousPhysical = physical;
-                    return;
-                }
-                previousPhysical = physical;
-                return;
-            }
-            locked = false;
-            freed = false;
-            if (held != physical)
-            {
-                if (physical)
-                {
-                    _sender.KeyDown(virtualKey, extended);
-                }
-                else
-                {
-                    _sender.KeyUp(virtualKey, extended);
-                }
-                held = physical;
-            }
-            previousPhysical = physical;
-        }
-
+        /// <summary>One modifier's full state machine kept as the legacy
+        /// fallback for the Windows hold slot (see UpdateLatchedModifierLegacy).
+        /// The L2/L1/R1 buttons run through UpdateSystemButton instead, which
+        /// supports the configurable Hold/Toggle/key/mouse/app actions.</summary>
         /// <summary>
         /// The right-stick PRESS is a HOLD slot (default: Windows key) — key
         /// goes down with the stick press and up with its release. The mapped
         /// key participates in the maps-key latch like the modifiers do.
         /// </summary>
         private void UpdateWindowsHold(
-            bool physical, bool mapsKey, bool mapsKeyEdge, KeyMapDefinition map)
+            bool physical, bool mapsKey, bool mapsKeyEdge, KeyMapDefinition map,
+            bool isChordMember)
         {
+            // R3 in a combination → chord member under the maps key: frozen
+            // (the stick press is consumed by map selection). A windows key
+            // latched BEFORE the maps-key edge stays down for the whole hold;
+            // a RE-PRESS of the stick while the maps key is held unlocks the
+            // latched key so it follows the physical control again.
+            if (mapsKey && isChordMember)
+            {
+                if (mapsKeyEdge)
+                {
+                    _windowsLocked = physical && _windowsHeld;
+                }
+                else if (physical && !_previousRightStickPress && _windowsLocked && _windowsHeld)
+                {
+                    // Re-press: unlock + release the latched key.
+                    _windowsLocked = false;
+                    _sender.KeyUp(_latchedWindowsVk == Vk.None ? Vk.LWin : _latchedWindowsVk,
+                        _latchedWindowsExtended);
+                    _windowsHeld = false;
+                }
+                _previousRightStickPress = physical;
+                _latchedWindowsVk = _windowsHeld ? _latchedWindowsVk : Vk.None;
+                return;
+            }
             string slot = map.RightStickPress;
             if (ControllerMapper.IsAppLevelAction(slot))
             {
@@ -459,8 +780,16 @@ namespace GamepadKeyboard.Input
         /// actions, clicks — except the move-mode toggle itself (so the same
         /// button switches the mode back off).
         /// </summary>
-        private void HoldSlot(ref bool previous, bool held, string slot)
+        private void HoldSlot(ref bool previous, bool held, string slot, bool chordFrozen = false)
         {
+            // A chord-member button (stick press in an OpenWith combination)
+            // is consumed by map selection while the maps key is held — its
+            // slot mapping stays silent (and remembers no edges).
+            if (chordFrozen)
+            {
+                previous = held;
+                return;
+            }
             if (!_seedRun)
             {
                 if (held && !previous)

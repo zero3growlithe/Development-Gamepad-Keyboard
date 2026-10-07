@@ -368,6 +368,19 @@ namespace GamepadKeyboard.Settings
     {
         public double StickTapThreshold { get; set; } = 0.55;
         public bool ShowOverlay { get; set; } = true;
+
+        /// <summary>Action the LEFT TRIGGER (L2) runs outside map chords —
+        /// hold/toggle a modifier, tap a key or fire an app action. While the
+        /// maps key is held the button is frozen only when it takes part in a
+        /// map-open combination; otherwise the action keeps working.</summary>
+        public string LeftTriggerAction { get; set; } = "HoldShift";
+
+        /// <summary>Action the LEFT BUMPER (L1) runs outside map chords.</summary>
+        public string LeftBumperAction { get; set; } = "HoldCtrl";
+
+        /// <summary>Action the RIGHT BUMPER (R1) runs outside map chords.</summary>
+        public string RightBumperAction { get; set; } = "HoldAlt";
+
         public KeyMapsLayoutSettings Layout { get; set; } = new();
         public List<KeyMapDefinition> Maps { get; set; } = new()
         {
@@ -377,6 +390,12 @@ namespace GamepadKeyboard.Settings
             new KeyMapDefinition("Symbols 3"),
             new KeyMapDefinition("Function Keys")
         };
+
+        /// <summary>One-shot marker: pre-combination settings files lack the
+        /// per-map OpenWith* flags, so their first Normalize() seeds the
+        /// historical chords (Utility/Symbols 1 = none, Symbols 2 = R1,
+        /// Symbols 3 = L1, Function Keys = L1+R1) exactly once.</summary>
+        public bool OpenCombosConfigured { get; set; }
 
         /// <summary>Clamp to exactly the spec's five maps (repair drifted files).</summary>
         public void Normalize()
@@ -389,6 +408,14 @@ namespace GamepadKeyboard.Settings
                 {
                     map.Normalize();
                 }
+                if (!OpenCombosConfigured)
+                {
+                    foreach (KeyMapDefinition map in Maps)
+                    {
+                        map.ApplyDefaultOpenCombo();
+                    }
+                    OpenCombosConfigured = true;
+                }
                 return;
             }
             Maps = new List<KeyMapDefinition>
@@ -399,6 +426,7 @@ namespace GamepadKeyboard.Settings
                 new KeyMapDefinition("Symbols 3"),
                 new KeyMapDefinition("Function Keys")
             };
+            OpenCombosConfigured = true;
         }
     }
 
@@ -576,6 +604,14 @@ namespace GamepadKeyboard.Settings
         public string RightStickRight { get; set; }
         public string RightStickPress { get; set; }
 
+        /// <summary>Gamepad buttons (subset of L2, L1, R1, L3, R3) that must be
+        /// held together with the maps key to open this map while it is held.
+        /// Stored as canonical short names "L2", "L1", "R1", "L3", "R3"
+        /// separated by '+' (empty = maps key alone). "" on fresh defaults so
+        /// ApplyDefaultOpenCombo() can seed the historical chords exactly once
+        /// for files created before this option existed.</summary>
+        public string OpenWith { get; set; } = "";
+
         public KeyMapDefinition(string name)
         {
             Name = name;
@@ -678,6 +714,26 @@ namespace GamepadKeyboard.Settings
             RightStickLeft = RightStickLeft ?? defaults.RightStickLeft;
             RightStickRight = RightStickRight ?? defaults.RightStickRight;
             RightStickPress = RightStickPress ?? defaults.RightStickPress;
+        }
+
+        /// <summary>Seeds the historical open-combinations exactly once (the
+        /// first Normalize of a settings file without OpenWith data): Utility
+        /// and Symbols 1 open with the maps key alone, Symbols 2 with R1,
+        /// Symbols 3 with L1, Function Keys with L1+R1. Kept unchanged when the
+        /// file already carries combinations.</summary>
+        public void ApplyDefaultOpenCombo()
+        {
+            if (!string.IsNullOrEmpty(OpenWith))
+            {
+                return;
+            }
+            OpenWith = Name switch
+            {
+                "Symbols 2" => "R1",
+                "Symbols 3" => "L1",
+                "Function Keys" => "L1+R1",
+                _ => "",
+            };
         }
     }
 }

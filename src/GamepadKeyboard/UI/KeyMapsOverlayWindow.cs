@@ -261,6 +261,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             }
             ApplyMapName(activeIndex);
             _lastRenderedMapIndex = activeIndex;
+            RefreshComboChipLabels();
         }
 
         /// <summary>Builds one atom per Key Maps slot from the wheel geometry
@@ -435,9 +436,9 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             double upperRowY = (BoardHeight / 2.0 + 20.0) - (3 * TilePitchY - TileGap) / 2.0 - 132.0 / 2.0 + (TilePitchY - TileGap) / 2.0;
             double chipY = upperRowY - ChipHeight * boardScale / 2.0;
             double bottomY = BoardHeight - 44.0;
-            _comboChips[0] = MakeComboChip("L1", 12, chipY, boardScale);
-            _comboChips[1] = MakeComboChip("R1", BoardWidth - 12 - 46 * boardScale, chipY, boardScale);
-            _comboChips[2] = MakeComboChip("L1 + R1", (BoardWidth - 74 * boardScale) / 2.0, bottomY, boardScale);
+            _comboChips[0] = MakeComboChip(ComboChipLabel(0, "L1"), 12, chipY, boardScale, 0);
+            _comboChips[1] = MakeComboChip(ComboChipLabel(1, "R1"), BoardWidth - 12 - 46 * boardScale, chipY, boardScale, 1);
+            _comboChips[2] = MakeComboChip(ComboChipLabel(2, "L1 + R1"), (BoardWidth - 74 * boardScale) / 2.0, bottomY, boardScale, 2);
             _lastRenderedComboHeld = false;
             foreach (Border? chip in _comboChips)
             {
@@ -534,11 +535,22 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         /// <summary>Combo chips: [L1] [R1] [L1+R1] on the board edges — built
         /// once per rebuild, opacity-driven per tick.</summary>
         private readonly Border?[] _comboChips = new Border?[3];
+        private readonly TextBlock?[] _comboChipTexts = new TextBlock?[3];
         private bool _lastRenderedComboHeld;
         private bool _lastRenderedShiftHeld;
 
-        private Border MakeComboChip(string label, double x, double y, double boardScale)
+        private Border MakeComboChip(string label, double x, double y, double boardScale, int chipIndex)
         {
+            TextBlock chipText = new()
+            {
+                Text = label,
+                Foreground = Brushes.White,
+                FontSize = 12 * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale,
+                FontWeight = FontWeights.Medium,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
             Border chip = new()
             {
                 Width = label.Length > 2 ? 74 * boardScale : 46 * boardScale,
@@ -548,21 +560,52 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF)),
                 Background = new SolidColorBrush(Color.FromArgb(0x30, 0x20, 0x20, 0x20)),
                 Opacity = 0.55,
-                Child = new TextBlock
-                {
-                    Text = label,
-                    Foreground = Brushes.White,
-                    FontSize = 12 * boardScale * AppSettings.Instance.KeyMaps.Layout.FontScale,
-                    FontWeight = FontWeights.Medium,
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
+                Child = chipText,
             };
+            _comboChipTexts[chipIndex] = chipText;
             Canvas.SetLeft(chip, x);
             Canvas.SetTop(chip, y);
             _root.Children.Add(chip);
             return chip;
+        }
+
+        /// <summary>Combo chip labels for the CURRENT configuration: the
+        /// shape of the map's OpenWith combination (map 2 → right chip,
+        /// map 3 → left chip, map 4+ → bottom chip). Falls back to the
+        /// historical defaults when combinations are unconfigured.</summary>
+        private static string ComboChipLabel(int chipIndex, string fallback)
+        {
+            System.Collections.Generic.List<KeyMapDefinition> maps = AppSettings.Instance.KeyMaps.Maps;
+            int mapIndex = chipIndex switch { 0 => 3, 1 => 2, _ => 4 };
+            if (mapIndex < maps.Count)
+            {
+                string combo = maps[mapIndex].OpenWith ?? string.Empty;
+                if (combo.Length > 0)
+                {
+                    return combo.Replace("+", " + ");
+                }
+            }
+            return fallback;
+        }
+
+        /// <summary>Live-apply new chip labels after the OpenWith editor
+        /// changed combinations (called on rebuild; cheap text writes).</summary>
+        private void RefreshComboChipLabels()
+        {
+            string[] fallbacks = { "L1", "R1", "L1 + R1" };
+            for (int index = 0; index < _comboChipTexts.Length; index++)
+            {
+                TextBlock? text = _comboChipTexts[index];
+                Border? chip = _comboChips[index];
+                if (text == null || chip == null)
+                {
+                    continue;
+                }
+                string label = ComboChipLabel(index, fallbacks[index]);
+                double boardScale = chip.Height / ChipHeight;
+                text.Text = label;
+                chip.Width = (label.Length > 2 ? 74 : 46) * boardScale;
+            }
         }
 
         private void ApplyComboChipStates(Input.KeyMapsMapper keyMaps)

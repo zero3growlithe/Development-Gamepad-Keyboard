@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Text;
 using System.Windows.Controls;
 using System.Windows.Media;
 using GamepadKeyboard.Settings;
@@ -79,6 +80,9 @@ namespace GamepadKeyboard.UI
             DockPanel.SetDock(buttonBar, Dock.Bottom);
             root.Children.Add(buttonBar);
             var tabs = new TabControl { Margin = new Thickness(0, 8, 0, 0) };
+            ScrollViewer systemScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            systemScroll.Content = BuildSystemTab();
+            tabs.Items.Add(new TabItem { Header = "System & open combos", Content = systemScroll });
             for (int mapIndex = 0; mapIndex < _mapsSettings.Maps.Count; mapIndex++)
             {
                 KeyMapDefinition map = _mapsSettings.Maps[mapIndex];
@@ -88,6 +92,199 @@ namespace GamepadKeyboard.UI
             }
             root.Children.Add(tabs);
             Content = root;
+        }
+
+        /// <summary>The system tab: what the triggers/bumpers run (actions
+        /// from the shared catalog) and the button combination that opens each
+        /// map while the maps key is held (subset of L2, L1, R1, L3, R3;
+        /// empty = the maps key alone).</summary>
+        private FrameworkElement BuildSystemTab()
+        {
+            Grid grid = new() { Margin = new Thickness(10) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            int row = 0;
+
+            AddHeader(grid, ref row, "Trigger / bumper actions");
+            AddSystemActionRow(grid, ref row, "Left trigger (L2) action", _mapsSettings.LeftTriggerAction, value => _mapsSettings.LeftTriggerAction = value);
+            AddSystemActionRow(grid, ref row, "Left bumper (L1) action", _mapsSettings.LeftBumperAction, value => _mapsSettings.LeftBumperAction = value);
+            AddSystemActionRow(grid, ref row, "Right bumper (R1) action", _mapsSettings.RightBumperAction, value => _mapsSettings.RightBumperAction = value);
+
+            AddHeader(grid, ref row, "Map open combinations (held with the maps key)");
+            TextBlock hint = new()
+            {
+                Text = "Buttons held together with the maps key (R2 by default). " +
+                       "Available: L2, L1, R1, L3, R3. Leave empty for the maps key alone. " +
+                       "The best-matching map wins; releasing the maps key returns to Utility.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 6),
+                Foreground = System.Windows.Media.Brushes.Gray,
+            };
+            Grid.SetRow(hint, row);
+            Grid.SetColumnSpan(hint, 2);
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.Children.Add(hint);
+            row++;
+
+            for (int mapIndex = 0; mapIndex < _mapsSettings.Maps.Count; mapIndex++)
+            {
+                KeyMapDefinition map = _mapsSettings.Maps[mapIndex];
+                string mapName = string.IsNullOrWhiteSpace(map.Name) ? ("Map " + (mapIndex + 1)) : map.Name;
+                if (mapIndex == 0)
+                {
+                    // Utility is the fallback map — opened by releasing the maps key; not configurable.
+                    TextBlock fixedLabel = new()
+                    {
+                        Text = mapName + " — opens when the maps key is released (fixed)",
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 2, 10, 2),
+                        Foreground = System.Windows.Media.Brushes.Gray,
+                    };
+                    Grid.SetRow(fixedLabel, row);
+                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    grid.Children.Add(fixedLabel);
+                    row++;
+                    continue;
+                }
+                AddOpenComboRow(grid, ref row, map, mapName);
+            }
+            return grid;
+        }
+
+        private void AddSystemActionRow(Grid grid, ref int row, string label, string current, Action<string> write)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            TextBlock name = new()
+            {
+                Text = label,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 2, 10, 2),
+            };
+            Grid.SetRow(name, row);
+            Grid.SetColumn(name, 0);
+            grid.Children.Add(name);
+
+            ComboBox combo = new() { MinWidth = 260 };
+            foreach (string action in ActionCatalog.All)
+            {
+                combo.Items.Add(action);
+            }
+            combo.SelectedItem = current;
+            combo.SelectionChanged += (_, __) =>
+            {
+                if (_suppress)
+                {
+                    return;
+                }
+                string chosen = combo.SelectedItem as string;
+                if (!string.IsNullOrEmpty(chosen))
+                {
+                    write(chosen);
+                    Persist();
+                }
+            };
+            Grid.SetRow(combo, row);
+            Grid.SetColumn(combo, 1);
+            grid.Children.Add(combo);
+            row++;
+        }
+
+        /// <summary>One "open with" row: five checkboxes (L2, L1, R1, L3, R3)
+        /// reflecting the map's OpenWith combination; each change rewrites the
+        /// canonical "L2+L1+R1"-style value and persists.</summary>
+        private void AddOpenComboRow(Grid grid, ref int row, KeyMapDefinition map, string mapName)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            TextBlock name = new()
+            {
+                Text = mapName + " — open with",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 2, 10, 2),
+            };
+            Grid.SetRow(name, row);
+            Grid.SetColumn(name, 0);
+            grid.Children.Add(name);
+
+            HashSet<string> selected = ParseOpenCombo(map.OpenWith);
+            List<CheckBox> rowChecks = new(ChordButtonChoices.Length);
+            StackPanel picker = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            foreach ((string button, string label) in ChordButtonChoices)
+            {
+                CheckBox check = new() { Content = label, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center, Tag = button };
+                check.IsChecked = selected.Contains(button);
+                rowChecks.Add(check);
+                picker.Children.Add(check);
+            }
+            KeyMapDefinition capturedMap = map;
+            List<CheckBox> capturedChecks = rowChecks;
+            foreach (CheckBox check in rowChecks)
+            {
+                check.Click += (_, __) =>
+                {
+                    if (_suppress)
+                    {
+                        return;
+                    }
+                    // Rewrite the canonical combination from ALL the row's
+                    // boxes (the clicked one already carries its new state).
+                    WriteOpenCombo(capturedMap, capturedChecks);
+                };
+            }
+            Grid.SetRow(picker, row);
+            Grid.SetColumn(picker, 1);
+            grid.Children.Add(picker);
+            row++;
+        }
+
+        private static readonly (string Button, string Label)[] ChordButtonChoices =
+        {
+            ("L2", "L2"), ("L1", "L1"), ("R1", "R1"), ("L3", "L3"), ("R3", "R3"),
+        };
+
+        /// <summary>Parses "L2+R1" into a set; unknown tokens are dropped.</summary>
+        private static HashSet<string> ParseOpenCombo(string combo)
+        {
+            HashSet<string> parsed = new(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(combo))
+            {
+                return parsed;
+            }
+            foreach (string part in combo.Split('+'))
+            {
+                foreach ((string button, _) in ChordButtonChoices)
+                {
+                    if (part == button)
+                    {
+                        parsed.Add(button);
+                        break;
+                    }
+                }
+            }
+            return parsed;
+        }
+
+        /// <summary>Rebuilds the map's OpenWith value from the row's checked
+        /// boxes in canonical L2, L1, R1, L3, R3 order and persists.</summary>
+        private void WriteOpenCombo(KeyMapDefinition map, List<CheckBox> checks)
+        {
+            StringBuilder builder = new(20);
+            foreach ((string button, _) in ChordButtonChoices)
+            {
+                foreach (CheckBox check in checks)
+                {
+                    if (check.IsChecked == true && string.Equals((string)check.Tag, button, StringComparison.Ordinal))
+                    {
+                        if (builder.Length > 0)
+                        {
+                            builder.Append('+');
+                        }
+                        builder.Append(button);
+                        break;
+                    }
+                }
+            }
+            map.OpenWith = builder.ToString();
+            Persist();
         }
 
         private FrameworkElement BuildMapTab(KeyMapDefinition map, int mapIndex)
