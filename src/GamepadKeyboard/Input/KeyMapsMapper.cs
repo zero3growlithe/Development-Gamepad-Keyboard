@@ -85,6 +85,17 @@ namespace GamepadKeyboard.Input
     /// overlay shows prompts from ALL maps while true (poll-thread write).</summary>
     public bool PreviewMapsOn { get; set; }
 
+    /// <summary>LEVEL input for the "Maps modifier hold" binding action
+    /// (poll-thread write each tick; DispatchButton relays hold state). The
+    /// maps key = this HOLD, or the sticky TOGGLE below, or the physical
+    /// right trigger for backward compatibility.</summary>
+    public bool MapsModifierRequested { get; set; }
+
+    /// <summary>EDGE request for the "Maps modifier toggle" binding action;
+    /// consumed (reset) by the next poll tick.</summary>
+    public bool MapsModifierToggleRequested { get; set; }
+
+
         /// <summary>App-level action requested by a map slot's tap edge
         /// (e.g. Start = MouseMode on the Utility map). Invoked by
         /// ControllerMapper after Process returns; only the last one counts,
@@ -189,6 +200,8 @@ namespace GamepadKeyboard.Input
         public void ReleaseAll()
         {
             _seeded = false;
+            MapsModifierToggleRequested = false;
+            MapsModifierRequested = false;
             ReleaseSystemButton(_leftTrigger);
             ReleaseSystemButton(_leftBumper);
             ReleaseSystemButton(_rightBumper);
@@ -220,27 +233,34 @@ namespace GamepadKeyboard.Input
         {
             // Map selection (physical chord) FIRST: the modifier latch needs to
             // know whether the maps key just went down on this very tick.
-            bool physicalMapsKey = snapshot.RightTrigger >= 0.5;
-            bool physicalEdge = physicalMapsKey && !_previousPhysicalMapsKey;
-            bool mapsKey;
-            if (AppSettings.Instance.KeyMaps.Layout.MapsKeyToggle)
+            // Maps key source, in priority order: the sticky TOGGLE request
+            // (MapsModifierToggle binding flips it; an edge also unlatches),
+            // the HOLD request (MapsModifierHold binding), the physical right
+            // trigger (backward compatibility / default binding).
+            bool toggleEdge = MapsModifierToggleRequested;
+            MapsModifierToggleRequested = false;
+            if (toggleEdge)
             {
-                // Toggle mode: a press edge flips maps mode on/off; while
-                // latched on, the chord behaves exactly as if R2 is held —
-                // releasing the trigger does NOT exit maps mode.
-                if (physicalEdge)
-                {
-                    _mapsKeyToggledOn = !_mapsKeyToggledOn;
-                }
-                mapsKey = _mapsKeyToggledOn;
-            }
-            else
-            {
-                mapsKey = physicalMapsKey;
+                _mapsKeyToggledOn = !_mapsKeyToggledOn;
             }
             KeyMapsSettings mapsSettings = AppSettings.Instance.KeyMaps;
+            // A button whose action IS a maps-modifier action is the maps key
+            // itself — it never counts toward a chord (its combos are stripped).
+            bool mapsKeyIsL2 = mapsSettings.LeftTriggerAction is "MapsModifierHold" or "MapsModifierToggle";
+            bool mapsKeyIsL1 = mapsSettings.LeftBumperAction is "MapsModifierHold" or "MapsModifierToggle";
+            bool mapsKeyIsR1 = mapsSettings.RightBumperAction is "MapsModifierHold" or "MapsModifierToggle";
+            bool heldFromBinding = MapsModifierRequested
+                // A system button mapped to "Maps modifier hold" acts as the
+                // maps key too — any trigger/bumper can open the maps.
+                || (mapsKeyIsL2 && snapshot.LeftTrigger >= 0.5)
+                || (mapsKeyIsL1 && snapshot.LB)
+                || (mapsKeyIsR1 && snapshot.RB);
+            bool physicalMapsKey = snapshot.RightTrigger >= 0.5;
+            bool physicalEdge = physicalMapsKey && !_previousPhysicalMapsKey;
+            bool mapsKey = _mapsKeyToggledOn || heldFromBinding || physicalMapsKey;
             CurrentChordMask = ChordMask(
-                snapshot.LeftTrigger >= 0.5, snapshot.LB, snapshot.RB, snapshot.LS, snapshot.RS);
+                snapshot.LeftTrigger >= 0.5 && !mapsKeyIsL2, snapshot.LB && !mapsKeyIsL1,
+                snapshot.RB && !mapsKeyIsR1, snapshot.LS, snapshot.RS);
             bool mapsKeyEdge = mapsKey && !_previousMapsKey;
             _previousMapsKey = mapsKey;
             _previousPhysicalMapsKey = physicalMapsKey;
@@ -258,11 +278,14 @@ namespace GamepadKeyboard.Input
             // a button in NO combination keeps working. R3/L3 chord membership
             // freezes the respective stick-press slots.
             UpdateSystemButton(_leftTrigger, snapshot.LeftTrigger >= 0.5,
-                mapsSettings.LeftTriggerAction, mapsKey, mapsKeyEdge, ChordUses(mapsSettings, "L2"));
+                mapsSettings.LeftTriggerAction, mapsKey && !mapsKeyIsL2, mapsKeyEdge && !mapsKeyIsL2,
+                ChordUses(mapsSettings, "L2"), mapsSettings.LeftTriggerMitigateLock);
             UpdateSystemButton(_leftBumper, snapshot.LB,
-                mapsSettings.LeftBumperAction, mapsKey, mapsKeyEdge, ChordUses(mapsSettings, "L1"));
+                mapsSettings.LeftBumperAction, mapsKey && !mapsKeyIsL1, mapsKeyEdge && !mapsKeyIsL1,
+                ChordUses(mapsSettings, "L1"), mapsSettings.LeftBumperMitigateLock);
             UpdateSystemButton(_rightBumper, snapshot.RB,
-                mapsSettings.RightBumperAction, mapsKey, mapsKeyEdge, ChordUses(mapsSettings, "R1"));
+                mapsSettings.RightBumperAction, mapsKey && !mapsKeyIsR1, mapsKeyEdge && !mapsKeyIsR1,
+                ChordUses(mapsSettings, "R1"), mapsSettings.RightBumperMitigateLock);
             UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map,
                 ChordUses(mapsSettings, "R3"));
 
@@ -344,7 +367,8 @@ namespace GamepadKeyboard.Input
             string action,
             bool mapsKey,
             bool mapsKeyEdge,
-            bool isChordMember)
+            bool isChordMember,
+            bool mitigateLock)
         {
             if (!mapsKey)
             {
@@ -354,7 +378,11 @@ namespace GamepadKeyboard.Input
                 state.PreviousPhysical = physical;
                 return;
             }
-            if (!isChordMember)
+            // "Mitigate lock": a button NOT in any open combination gets the
+            // same locks semantics as chord members (its current state sticks
+            // at the maps-key edge and survives the whole hold; a re-press
+            // unlocks + frees). Default (off): the button keeps working.
+            if (!isChordMember && !mitigateLock)
             {
                 if (mapsKeyEdge)
                 {
@@ -398,7 +426,9 @@ namespace GamepadKeyboard.Input
         }
 
         private static bool IsHoldModifierAction(string action) => action is
-            "HoldShift" or "HoldCtrl" or "HoldAlt" or "HoldWin";
+            "HoldShift" or "HoldCtrl" or "HoldAlt" or "HoldWin"
+            or "ToggleShift" or "ToggleCtrl" or "ToggleAlt" or "ToggleWin"
+            or "MapsModifierHold" or "MapsModifierToggle";
 
         /// <summary>Runs the configured action for one system button on its
         /// physical edges.</summary>
@@ -423,6 +453,14 @@ namespace GamepadKeyboard.Input
             }
             switch (action)
             {
+                case "MapsModifierHold":
+                case "MapsModifierToggle":
+                    // Handled by the maps-key source in ProcessTick (the button
+                    // IS the maps key); RunAction stays a no-op so the pass in
+                    // which mapsKey reads false never double-fires.
+                    state.VirtualKey = Vk.None;
+                    state.Held = false;
+                    return;
                 case "HoldShift":
                 case "HoldCtrl":
                 case "HoldAlt":
@@ -715,7 +753,9 @@ namespace GamepadKeyboard.Input
             string slot = map.RightStickPress;
             if (ControllerMapper.IsAppLevelAction(slot))
             {
-                if (physical && !_previousRightStickPress && !_seedRun)
+                bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
+                    && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                if (physical && !_previousRightStickPress && !_seedRun && !boardOwnsInput)
                 {
                     ActionRequested?.Invoke(slot);
                 }
@@ -814,6 +854,12 @@ namespace GamepadKeyboard.Input
             {
                 return;
             }
+            if (suppressSlot)
+            {
+                // Stick deflection while the move/scale-board mode is active:
+                // the stick drives the board, its mapping stays silent.
+                return;
+            }
             if (string.Equals(slot, "HoldShadowMaps", StringComparison.Ordinal))
             {
                 ControllerMapper.HoldShadowMapsActive = true;
@@ -828,12 +874,6 @@ namespace GamepadKeyboard.Input
             {
                 // Tap-edge toggles once on press; release does nothing.
                 ActionRequested?.Invoke(slot);
-                return;
-            }
-            if (suppressSlot)
-            {
-                // Stick deflection while the move/scale-board mode is active:
-                // the stick drives the board, its mapping stays silent.
                 return;
             }
             if (ControllerMapper.IsAppLevelAction(slot))
@@ -867,7 +907,7 @@ namespace GamepadKeyboard.Input
                 return;
             }
             if (suppressSlot
-                && slot is not ("ToggleShadowMaps" or "TogglePreviewMaps"))
+                && slot is not ("ToggleShadowMaps" or "TogglePreviewMaps" or "ToggleKeyMapsMoveMode"))
             {
                 return;
             }
@@ -1028,7 +1068,12 @@ namespace GamepadKeyboard.Input
         {
             if (held && !previous && !_seedRun && ControllerMapper.IsAppLevelAction(slot))
             {
-                ActionRequested?.Invoke(slot);
+                bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
+                    && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                if (!boardOwnsInput)
+                {
+                    ActionRequested?.Invoke(slot);
+                }
             }
             previous = held;
         }

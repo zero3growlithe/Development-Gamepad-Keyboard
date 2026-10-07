@@ -61,9 +61,7 @@ namespace GamepadKeyboard.UI
         private List<string> _hidHidePaths = new();
         private readonly List<Action> _numericValidators = new();
         private readonly Dictionary<string, Slider> _keyMapsSliders = new();
-        private readonly Dictionary<string, string> _keyMapsActionBackup = new();      // layout property → slider
         private readonly Dictionary<string, CheckBox> _keyMapsToggles = new();
-        private readonly Dictionary<string, ComboBox> _keyMapsActionCombos = new();    // Key Maps system-button action → combo
         private readonly Dictionary<string, TextBlock> _keyMapsValueLabels = new();
         private readonly Dictionary<string, object> _keyMapsLayoutBackup = new();
         private bool _keyMapsSettingsSavedExplicitly;
@@ -189,8 +187,6 @@ namespace GamepadKeyboard.UI
                 }
             });
 
-            // Backup AFTER the row builders ran: the action combo backup reads
-            // _keyMapsActionCombos, which only MakeKeyMapsActionRow populates.
             BackupKeyMapsLayout(s.KeyMaps.Layout);
 
             InitializeKeyMapsLayoutEditors(s);
@@ -339,12 +335,7 @@ namespace GamepadKeyboard.UI
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset X", "IconOffsetX", -200, 200, 5));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset Y", "IconOffsetY", -200, 200, 5));
             rows.Add(MakeKeyMapsToggleRow("Show shadow maps", "ShowShadowMaps"));
-            rows.Add(MakeKeyMapsToggleRow("R2 as toggle (press once to enter maps mode)", "MapsKeyToggle"));
             rows.Add(MakeKeyMapsToggleRow("Project onto a keyboard", "ProjectKeyboard"));
-            rows.Add(("── System buttons (L2 / L1 / R1) ──", null!));
-            rows.Add(MakeKeyMapsActionRow("Left trigger (L2) action", "LeftTriggerAction"));
-            rows.Add(MakeKeyMapsActionRow("Left bumper (L1) action", "LeftBumperAction"));
-            rows.Add(MakeKeyMapsActionRow("Right bumper (R1) action", "RightBumperAction"));
             rows.Add(MakeKeyMapsSliderRow("Prompt offset X", "PromptOffsetX", -200.0, 200.0, 1.0));
             rows.Add(MakeKeyMapsSliderRow("Prompt offset Y", "PromptOffsetY", -200.0, 200.0, 1.0));
             rows.Add(MakeKeyMapsSliderRow("Additional column keys spacing", "ExtraKeySpacing", 0.2, 2.0, 0.05));
@@ -404,59 +395,10 @@ namespace GamepadKeyboard.UI
             return ("", toggle);
         }
 
-        /// <summary>System-button action dropdown (L2/L1/R1): the same action
-        /// vocabulary as the bindings editor — modifiers, keys, mouse, app
-        /// actions. Applies live (the mapper reads the property every tick).
-        /// Registered in _keyMapsActionCombos; OK/Cancel paths restore state.</summary>
-        private (string, FrameworkElement) MakeKeyMapsActionRow(string label, string propertyName)
-        {
-            StackPanel row = new() { Orientation = Orientation.Horizontal };
-            TextBlock name = new()
-            {
-                Text = label,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 10, 0),
-                MinWidth = 170,
-            };
-            ComboBox combo = new() { MinWidth = 220 };
-            foreach (string action in ActionCatalog.All)
-            {
-                combo.Items.Add(action);
-            }
-            string current = typeof(Settings.KeyMapsSettings).GetProperty(propertyName)
-                ?.GetValue(Settings.AppSettings.Instance.KeyMaps) as string ?? "";
-            combo.SelectedItem = current;
-            combo.SelectionChanged += (_, __) =>
-            {
-                if (_suppressKeyMapsLiveApply)
-                {
-                    return;
-                }
-                string chosen = combo.SelectedItem as string;
-                if (string.IsNullOrEmpty(chosen))
-                {
-                    return;
-                }
-                typeof(Settings.KeyMapsSettings).GetProperty(propertyName)!
-                    .SetValue(Settings.AppSettings.Instance.KeyMaps, chosen);
-                Settings.AppSettings.Save();
-            };
-            _keyMapsActionCombos[propertyName] = combo;
-            row.Children.Add(name);
-            row.Children.Add(combo);
-            return ("", row);
-        }
-
         private void InitializeKeyMapsLayoutEditors(Settings.AppSettings s)
         {
             Settings.KeyMapsLayoutSettings layout = s.KeyMaps.Layout;
             _suppressKeyMapsLiveApply = true;
-            foreach (KeyValuePair<string, ComboBox> pair in _keyMapsActionCombos)
-            {
-                string value = typeof(Settings.KeyMapsSettings).GetProperty(pair.Key)
-                    ?.GetValue(s.KeyMaps) as string ?? "";
-                pair.Value.SelectedItem = value;
-            }
             foreach (KeyValuePair<string, Slider> pair in _keyMapsSliders)
             {
                 double value = typeof(Settings.KeyMapsLayoutSettings).GetProperty(pair.Key)!.GetValue(layout) as double? ?? 0.0;
@@ -501,12 +443,6 @@ namespace GamepadKeyboard.UI
 
         private void BackupKeyMapsLayout(Settings.KeyMapsLayoutSettings layout)
         {
-            _keyMapsActionBackup.Clear();
-            foreach (KeyValuePair<string, ComboBox> pair in _keyMapsActionCombos)
-            {
-                _keyMapsActionBackup[pair.Key] = typeof(Settings.KeyMapsSettings).GetProperty(pair.Key)
-                    ?.GetValue(Settings.AppSettings.Instance.KeyMaps) as string ?? "";
-            }
             _keyMapsLayoutBackup.Clear();
             foreach (System.Reflection.PropertyInfo property in typeof(Settings.KeyMapsLayoutSettings).GetProperties())
             {
@@ -537,16 +473,6 @@ namespace GamepadKeyboard.UI
                 if (_keyMapsSliders.TryGetValue(pair.Key, out Slider? slider))
                 {
                     slider.Value = value;
-                }
-            }
-            _suppressKeyMapsLiveApply = true;
-            foreach (KeyValuePair<string, string> pair in _keyMapsActionBackup)
-            {
-                typeof(Settings.KeyMapsSettings).GetProperty(pair.Key)!
-                    .SetValue(Settings.AppSettings.Instance.KeyMaps, pair.Value);
-                if (_keyMapsActionCombos.TryGetValue(pair.Key, out ComboBox? combo))
-                {
-                    combo.SelectedItem = pair.Value;
                 }
             }
             _suppressKeyMapsLiveApply = false;

@@ -95,8 +95,6 @@ namespace GamepadKeyboard
             _keyboard.Hide();
             _legend.Hide();
             _keyMapsOverlay.ResetView();
-            _keyMapsOverlay.FollowCursor =
-                Settings.AppSettings.Instance.AlwaysShowKeyboardAtCursorPosition;
             _keyMapsOverlay.Update(_mapper);
             _mapper.Mode = Settings.AppSettings.Instance.StartInMouseMode
                 ? ControllerMapper.MapperMode.Mouse

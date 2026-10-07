@@ -110,6 +110,17 @@ namespace GamepadKeyboard.UI
             AddSystemActionRow(grid, ref row, "Left bumper (L1) action", _mapsSettings.LeftBumperAction, value => _mapsSettings.LeftBumperAction = value);
             AddSystemActionRow(grid, ref row, "Right bumper (R1) action", _mapsSettings.RightBumperAction, value => _mapsSettings.RightBumperAction = value);
 
+            AddHeader(grid, ref row, "Mitigate lock (use the action while the maps key is held)");
+            AddMitigateLockRow(grid, ref row, "Left trigger (L2) mitigates lock",
+                () => _mapsSettings.LeftTriggerMitigateLock, value => _mapsSettings.LeftTriggerMitigateLock = value,
+                () => _mapsSettings.LeftTriggerAction);
+            AddMitigateLockRow(grid, ref row, "Left bumper (L1) mitigates lock",
+                () => _mapsSettings.LeftBumperMitigateLock, value => _mapsSettings.LeftBumperMitigateLock = value,
+                () => _mapsSettings.LeftBumperAction);
+            AddMitigateLockRow(grid, ref row, "Right bumper (R1) mitigates lock",
+                () => _mapsSettings.RightBumperMitigateLock, value => _mapsSettings.RightBumperMitigateLock = value,
+                () => _mapsSettings.RightBumperAction);
+
             AddHeader(grid, ref row, "Map open combinations (held with the maps key)");
             TextBlock hint = new()
             {
@@ -180,7 +191,23 @@ namespace GamepadKeyboard.UI
                 if (!string.IsNullOrEmpty(chosen))
                 {
                     write(chosen);
+                    // A button becoming the maps key loses combo membership:
+                    // strip it from every map's OpenWith so chords stay valid.
+                    if (chosen is "MapsModifierHold" or "MapsModifierToggle")
+                    {
+                        string mapsModifierButton = MapsModifierButton();
+                        foreach (KeyMapDefinition comboMap in _mapsSettings.Maps)
+                        {
+                            HashSet<string> parsed = ParseOpenCombo(comboMap.OpenWith);
+                            if (parsed.Remove(mapsModifierButton))
+                            {
+                                comboMap.OpenWith = string.Join("+",
+                                    parsed.OrderBy(ChordOrder));
+                            }
+                        }
+                    }
                     Persist();
+                    RefreshMitigateLockRows();
                 }
             };
             Grid.SetRow(combo, row);
@@ -188,6 +215,61 @@ namespace GamepadKeyboard.UI
             grid.Children.Add(combo);
             row++;
         }
+
+        /// <summary>"Mitigate lock" checkbox row: allows the button's action
+        /// to be used while the maps key is held (see the settings property
+        /// doc). DISABLED + unchecked when the button's action is a maps-modifier
+        /// action — the maps key has no locked state to mitigate.</summary>
+        private void AddMitigateLockRow(
+            Grid grid, ref int row, string label,
+            Func<bool> read, Action<bool> write, Func<string> readAction)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            CheckBox check = new()
+            {
+                Content = label,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 2, 10, 2),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            Grid.SetColumnSpan(check, 2);
+            Grid.SetRow(check, row);
+            grid.Children.Add(check);
+            row++;
+
+            void Refresh()
+            {
+                bool isMapsModifier = readAction() is "MapsModifierHold" or "MapsModifierToggle";
+                check.IsEnabled = !isMapsModifier;
+                check.IsChecked = isMapsModifier ? false : read();
+                check.ToolTip = isMapsModifier
+                    ? "Unavailable: this button currently carries a maps-modifier action."
+                    : null;
+            }
+            Refresh();
+            _mitigateRefreshers.Add(Refresh);
+            check.Click += (_, __) =>
+            {
+                if (_suppress)
+                {
+                    return;
+                }
+                write(check.IsChecked == true);
+                Persist();
+            };
+        }
+
+        /// <summary>Re-runs the gray-out evaluation of every mitigate-lock
+        /// checkbox (called after any action dropdown changes).</summary>
+        private void RefreshMitigateLockRows()
+        {
+            foreach (Action refresh in _mitigateRefreshers)
+            {
+                refresh();
+            }
+        }
+
+        private readonly List<Action> _mitigateRefreshers = new();
 
         /// <summary>One "open with" row: five checkboxes (L2, L1, R1, L3, R3)
         /// reflecting the map's OpenWith combination; each change rewrites the
@@ -212,6 +294,14 @@ namespace GamepadKeyboard.UI
             {
                 CheckBox check = new() { Content = label, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center, Tag = button };
                 check.IsChecked = selected.Contains(button);
+                // A button that IS the maps key (maps-modifier action) cannot
+                // be a combo member: gray it out and drop it from this combo.
+                if (MapsModifierButton() == button)
+                {
+                    check.IsEnabled = false;
+                    check.IsChecked = false;
+                    check.ToolTip = "This button is the maps key (its action is a maps-modifier)";
+                }
                 rowChecks.Add(check);
                 picker.Children.Add(check);
             }
@@ -261,6 +351,22 @@ namespace GamepadKeyboard.UI
                 }
             }
             return parsed;
+        }
+
+        private static int ChordOrder(string button) => button switch
+        {
+            "L2" => 0, "L1" => 1, "R1" => 2, "L3" => 3, "R3" => 4, _ => 5,
+        };
+
+        /// <summary>The button currently acting as the maps key (its action is
+        /// a maps-modifier action): "L2", "L1", "R1" — or "" (none; the
+        /// physical right trigger stays the maps key).</summary>
+        private string MapsModifierButton()
+        {
+            if (_mapsSettings.LeftTriggerAction is "MapsModifierHold" or "MapsModifierToggle") return "L2";
+            if (_mapsSettings.LeftBumperAction is "MapsModifierHold" or "MapsModifierToggle") return "L1";
+            if (_mapsSettings.RightBumperAction is "MapsModifierHold" or "MapsModifierToggle") return "R1";
+            return "";
         }
 
         /// <summary>Rebuilds the map's OpenWith value from the row's checked

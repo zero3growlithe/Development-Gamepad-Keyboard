@@ -381,6 +381,19 @@ namespace GamepadKeyboard.Settings
         /// <summary>Action the RIGHT BUMPER (R1) runs outside map chords.</summary>
         public string RightBumperAction { get; set; } = "HoldAlt";
 
+        /// <summary>"Mitigate lock" toggles: allow the button's action to be
+        /// USED while the maps key is held, even when the button is part of an
+        /// open combination. With mitigation ON the action behaves like the
+        /// pre-held Shift case: whatever modifier state the button had when the
+        /// maps key went down STAYS in that state ("sticks") until the button
+        /// is pressed again (which frees it to track the physical control,
+        /// exactly as the Shift exception always did). With mitigation OFF
+        /// (default) a chord member is simply frozen while the maps key is
+        /// held — its state at the maps-key edge is held until release.</summary>
+        public bool LeftTriggerMitigateLock { get; set; }
+        public bool LeftBumperMitigateLock { get; set; }
+        public bool RightBumperMitigateLock { get; set; }
+
         public KeyMapsLayoutSettings Layout { get; set; } = new();
         public List<KeyMapDefinition> Maps { get; set; } = new()
         {
@@ -507,11 +520,6 @@ namespace GamepadKeyboard.Settings
         /// variants) appear beside it. Off = no quarks, no amber center
         /// highlight — center just reads the active map's binding.</summary>
         public bool ShowShadowMaps { get; set; } = true;
-
-        /// <summary>When true, R2 (maps key) works as a TOGGLE: one press
-        /// engages maps mode, the next press leaves it — instead of being
-        /// held down the whole time.</summary>
-        public bool MapsKeyToggle { get; set; } = false;
 
         /// <summary>Projected-keyboard view: instead of the atom wheels, Maps
         /// Mode draws a full US keyboard (no sticks/rays/points) and floats the

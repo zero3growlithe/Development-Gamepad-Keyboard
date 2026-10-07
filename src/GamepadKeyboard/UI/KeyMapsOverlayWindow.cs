@@ -71,12 +71,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         private int _lastRenderedMapIndex;
         private bool _bindingsDirty = true;
         private bool _shown;
-        private bool _followCursor;
         private double _lastLayoutFingerprint = double.NaN;
 
         /// <summary>Mirrors the keyboard window's "always show at cursor
         /// position" behavior (set by AppOrchestrator from AppSettings).</summary>
-        public bool FollowCursor { get; set; }
 
         public KeyMapsOverlayWindow()
         {
@@ -135,7 +133,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 _bindingsDirty = true;
                 _lastRenderedMapIndex = -1;
                 _lastLayoutFingerprint = double.NaN;
-                if (FollowCursor)
+                if (AppSettings.Instance.AlwaysShowKeyboardAtCursorPosition)
                 {
                     PositionAtCursor();
                 }
@@ -225,7 +223,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             double maxTop = Math.Max(workTop, workBottom - BoardHeight);
             Left = Math.Clamp(cursor.X * scaleX, workLeft, maxLeft);
             Top = Math.Clamp(cursor.Y * scaleY, workTop, maxTop);
-            _followCursor = true;
         }
 
         // ── Build ───────────────────────────────────────────────────────────────
@@ -1451,7 +1448,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             double screenHeight = SystemParameters.WorkArea.Height;
             Left = (screenWidth - Width) / 2.0;
             Top = screenHeight - Height - 24.0;
-            _followCursor = false;
         }
 
         /// <summary>Reuses the last gamepad-moved position when available
@@ -1470,7 +1466,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             double screenHeight = SystemParameters.WorkArea.Height;
             Left = Math.Clamp(storedLeft, -Width + 80.0, Math.Max(screenWidth - 40.0, 80.0 - Width));
             Top = Math.Clamp(storedTop, 0.0, Math.Max(screenHeight - 40.0, 0.0));
-            _followCursor = false;
         }
     }
 }

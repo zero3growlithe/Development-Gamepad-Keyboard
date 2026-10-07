@@ -345,31 +345,122 @@ namespace GamepadKeyboard
             List<ProfileBinding> bindings = AppSettings.Instance.MouseProfile.Bindings;
             foreach (ProfileBinding binding in bindings)
             {
-                if (binding.Buttons.Count != 1 || binding.Modifier
-                    || !IsAppLevelAction(binding.Action))
+                if (binding.Modifier || !IsAppLevelAction(binding.Action))
                 {
                     continue;
                 }
-                BindingRuntimeState state = GetBindingState(binding.Id);
-                if (state.Action != binding.Action)
+                if (binding.Buttons.Count == 1)
                 {
-                    ReleaseBindingState(state);
-                    state.Action = binding.Action;
-                    state.Previous = false;
-                }
-                bool held = InputValue(s, binding.Buttons[0]) >= 0.5;
-                if (ControllerMapper.KeyMapsMoveModeActive
-                    && !string.Equals(binding.Action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal))
-                {
-                    // Board owns the input: only the move toggle passes.
-                    if (held || state.Previous)
+                    BindingRuntimeState state = GetBindingState(binding.Id);
+                    if (state.Action != binding.Action)
                     {
-                        state.Previous = held;
+                        ReleaseBindingState(state);
+                        state.Action = binding.Action;
+                        state.Previous = false;
                     }
+                    bool held = InputValue(s, binding.Buttons[0]) >= 0.5;
+                    if (ControllerMapper.KeyMapsMoveModeActive
+                        && !string.Equals(binding.Action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal))
+                    {
+                        // Board owns the input: only the move toggle passes.
+                        if (held || state.Previous)
+                        {
+                            state.Previous = held;
+                        }
+                        continue;
+                    }
+                    DispatchButton(binding.Action, held, ref state.Previous);
                     continue;
                 }
-                DispatchButton(binding.Action, held, ref state.Previous);
+                if (binding.Buttons.Count < 2)
+                {
+                    // Degenerate 0-button binding: matches EvaluateCombos'
+                    // recipe, which never treats such a list as a combo.
+                    continue;
+                }
+                // Combo binding (2+ buttons): same prefix/last recipe as
+                // EvaluateCombos, restricted to app-level actions so Key
+                // Maps mode can trigger e.g. ToggleKeyMapsMoveMode from a
+                // chord without dispatching the combo's keys/clicks.
+                DispatchKeyMapsAppCombo(s, binding, GetComboState(binding.Id));
             }
+        }
+
+        private void DispatchKeyMapsAppCombo(
+            in GamepadSnapshot s, ProfileBinding binding, ComboRuntimeState state)
+        {
+            List<string> parts = binding.Buttons;
+            bool prefixHeld = true;
+            for (int index = 0; index < parts.Count - 1; index++)
+            {
+                if (InputValue(s, parts[index]) < 0.5)
+                {
+                    prefixHeld = false;
+                    break;
+                }
+            }
+            string last = parts[^1];
+            bool lastHeld = InputValue(s, last) >= 0.5;
+
+            bool moveMutes = ControllerMapper.KeyMapsMoveModeActive
+                && !string.Equals(binding.Action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+            if (moveMutes)
+            {
+                // Silence the combo — but an active HoldLast hold must be
+                // RELEASED first (DispatchButton with held=false), exactly as
+                // the !prefixHeld branch does: dropping the state flags alone
+                // strands the held key (a maps-modifier hold would latch the
+                // maps key until ReleaseAll).
+                if (state.ActionHeld)
+                {
+                    DispatchButton(state.Action, false, ref state.ActionPrevious);
+                    state.ActionHeld = false;
+                }
+                if (state.Active)
+                {
+                    ReleaseComboModifiers(state);
+                    state.Active = false;
+                }
+                state.LastButtonHeld = false;
+                return;
+            }
+            if (state.ActionHeld && !lastHeld)
+            {
+                // The held "last" button was released while the prefix stays
+                // held — release the hold NOW (EvaluateCombos' first block);
+                // waiting for the prefix release would strand the held key.
+                DispatchButton(state.Action, false, ref state.ActionPrevious);
+                state.ActionHeld = false;
+            }
+            if (state.Active && !prefixHeld)
+            {
+                if (state.ActionHeld)
+                {
+                    DispatchButton(state.Action, false, ref state.ActionPrevious);
+                    state.ActionHeld = false;
+                }
+                ReleaseComboModifiers(state);
+                state.Active = false;
+            }
+            if (prefixHeld && lastHeld && !state.LastButtonHeld)
+            {
+                if (!state.Active)
+                {
+                    AcquireComboModifiers(binding, state);
+                    state.Active = true;
+                }
+                if (binding.HoldLast)
+                {
+                    state.Action = binding.Action;
+                    DispatchButton(binding.Action, true, ref state.ActionPrevious);
+                    state.ActionHeld = true;
+                }
+                else
+                {
+                    RunActionOnce(binding.Action);
+                }
+            }
+            state.LastButtonHeld = lastHeld;
         }
 
         private string? _pendingKeyMapsAction;
@@ -1010,6 +1101,30 @@ namespace GamepadKeyboard
                 }
             }
 
+            // Maps-modifier relays must see BOTH levels: the hold's release
+            // arrives as held=false, which the `!edge` gate below never
+            // reaches — a level relayed from behind that gate would latch on
+            // forever. So these cases live ABOVE the gate.
+            switch (action)
+            {
+                case "MapsModifierHold":
+                    // Hold semantics via DispatchButton: held=true on the press
+                    // "edge", the release comes as held=false (prev tracked by
+                    // the caller) — relay as a level to the Key Maps mapper.
+                    // Bound outside Key Maps mode → no-op (no mapper to feed).
+                    if (KeyMaps != null)
+                    {
+                        KeyMaps.MapsModifierRequested = held;
+                    }
+                    return;
+                case "MapsModifierToggle":
+                    if (edge && KeyMaps != null)
+                    {
+                        KeyMaps.MapsModifierToggleRequested = true;
+                    }
+                    return;
+            }
+
             if (!edge) return;
 
             switch (action)
@@ -1413,7 +1528,8 @@ namespace GamepadKeyboard
             or "ToggleKeyboardMouseMode" or "EnableInput" or "DisableInput" or "ToggleInput"
             or "SwitchKeyboardProfile" or "SwitchMouseProfile" or "SwitchStickPointsProfile"
             or "ToggleOverlay" or "ToggleKeyboard" or "ToggleLegend"
-            or "ToggleKeyMapsMoveMode" or "ToggleMoveScaleKeyboard";
+            or "ToggleKeyMapsMoveMode" or "ToggleMoveScaleKeyboard"
+            or "MapsModifierHold" or "MapsModifierToggle";
 
         private void SwitchProfile(int dir)
         {
