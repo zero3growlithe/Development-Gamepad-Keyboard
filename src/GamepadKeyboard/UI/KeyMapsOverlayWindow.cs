@@ -145,9 +145,14 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             }
 
             // The Key Maps overlay only runs while the Key Maps mapper exists;
-            // the guard keeps the compiler happy without null-chasing.
-            Input.KeyMapsMapper keyMaps = mapper.KeyMaps
-                ?? throw new InvalidOperationException("Key Maps overlay opened without a Key Maps mapper");
+            // the guard keeps the compiler happy without null-chasing. Hoisted
+            // through a nullable local so the flow analysis is explicit.
+            Input.KeyMapsMapper? keyMapsMaybe = mapper.KeyMaps;
+            if (keyMapsMaybe is null)
+            {
+                throw new InvalidOperationException("Key Maps overlay opened without a Key Maps mapper");
+            }
+            Input.KeyMapsMapper keyMaps = keyMapsMaybe;
             _projectedPreview = ControllerMapper.HoldPreviewMapsActive || keyMaps.PreviewMapsOn;
             double fingerprint = LayoutFingerprint();
             if (_bindingsDirty || !ReferenceEquals(_maps, AppSettings.Instance.KeyMaps.Maps)
