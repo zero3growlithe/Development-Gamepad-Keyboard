@@ -26,8 +26,8 @@ Two operating **modes**:
 | Purpose | Type on the virtual keyboard with stick rays | Control the mouse cursor with the sticks |
 | Keyboard overlay | Visible | Hidden |
 | Sticks | Aim selection rays | Move cursor (X/Y), right stick scrolls (D-pad also scrolls) |
-| Default buttons | A=Space, B=Backspace, X=Tab, LB/RB=Left/RightClick (hold), LT/RT=Hold Shift/Ctrl | A=LeftClick, B=RightClick, X=MiddleClick, LB/RB=Left/RightClick (hold), LT/RT=MiddleClick, Y=Toggle keyboard |
-| Speed boost | — | Hold mapped SpeedBoost button for multiplier |
+| Default buttons | A=Space, B=Backspace, X=Tab, LB/RB=Left/Right Mouse Click (hold), LT/RT=Hold Shift/Ctrl | A=Left Mouse Click, B=Right Mouse Click, X=Middle Mouse Click, LB/RB=Left/Right Mouse Click (hold), LT/RT=Middle Mouse Click, Y=Open keyboard |
+| Speed boost | — | Hold mapped Cursor Speed Up button for multiplier |
 
 ### Session lifecycle
 
@@ -50,12 +50,12 @@ Every mappable button accepts any of these actions:
 
 - **Hold modifiers**: HoldShift / HoldCtrl / HoldAlt / HoldWin — key held while the button is held (tint on the affected key)
 - **Toggle modifiers**: ToggleShift / ToggleCtrl / ToggleAlt / ToggleWin — persistent until toggled off
-- **Mouse**: LeftClick / RightClick / MiddleClick / XButton1 / XButton2 — all **hold-to-click** (press-and-hold = button held; supports drag & drop)
-- **Mouse wheel**: ScrollUp / ScrollDown / ScrollLeft / ScrollRight; **SpeedBoost** (cursor speed multiplier while held)
+- **Mouse**: Left Mouse Click / Right Mouse Click / Middle Mouse Click / XButton1 / XButton2 — all **hold-to-click** (press-and-hold = button held; supports drag & drop)
+- **Mouse wheel**: ScrollUp / ScrollDown / ScrollLeft / ScrollRight; **Cursor Speed Up** (cursor speed multiplier while held)
 - **Keys**: Space, Backspace, Tab, Enter, Escape, Delete, Insert, arrows, PageUp/PageDown, Home/End, CapsLock, NumLock, F1–F12 — sent as taps (edge-triggered)
 - **Media/volume**: VolumeUp / VolumeDown / VolumeMute, MediaPlayPause / MediaNext / MediaPrev
-- **Keyboard-overlay actions**: CommitLeft / CommitRight (commit the highlighted key on the left/right ray)
-- **App control**: DisableInput (free the gamepad for games), ToggleKeyboardMouseMode (switch keyboard/mouse), KeyboardMode / MouseMode, **DirectInputMode / KeyMapsMode / CycleInputMode** (DirectInput/Key Maps mode = gamepad-as-keyboard via 5 switchable maps, see below; CycleInputMode steps Keyboard→Mouse→DirectInput→Keyboard for one-button mode cycling), ToggleOverlay / ToggleKeyboard (show-hide keyboard), ToggleLegend, SwitchKeyboardProfile / SwitchMouseProfile (cycle profiles)
+- **Keyboard-overlay actions**: Keyboard Submit Left / Keyboard Submit Right (commit the highlighted key on the left/right ray)
+- **App control**: DisableInput (free the gamepad for games), SwitchBetweenKeyboardMouse (switch keyboard/mouse), SwitchToKeyboardMode / SwitchToMouseMode / SwitchToKeyMapsMode (Key Maps mode = gamepad-as-keyboard via 5 switchable maps, see below), SwitchBetweenKeyMapMouseMode, ToggleMoveScale (adjust-position mode for whichever board is active: keyboard overlay or Key Maps board), ToggleOverlay (show-hide keyboard), ToggleLegend, SwitchKeyboardProfile / SwitchMouseProfile (cycle profiles)
 - **Any keyboard key**: `Key:<name>` — arbitrary single key press (set via the bindings editor's "Pool for keyboard key…")
 - **None** — unbound
 
@@ -182,7 +182,7 @@ Keys held or toggled through Hold*/Toggle* bindings get a **semi-transparent gre
 
 Newer versions changed defaults; **saved old values are not overwritten**. If the app behaves oddly after an update, check these in `%APPDATA%\DevelopmentGamepadKeyboard\settings.json`:
 
-- `"Y": "ToggleLegend"` → change to `"ToggleKeyboard"` (or delete the file) — mouse-mode Y opens the keyboard
+- `"Y": "ToggleLegend"` → change to `"SwitchToKeyboardMode"` (or delete the file) — mouse-mode Y opens the keyboard
 - `"StickDeadzone": 0.12` → change to `0.005`
 - `"StartInMouseMode": false` → change to `true` — launch in mouse mode with input disabled
 - Old ray-scale keys (`LeftRayScale`, `RightRayScale`, per-profile `RayScale`) are ignored; use the new per-profile `LeftRayLength`/`RightRayLength` (0–1) in the stick points editor

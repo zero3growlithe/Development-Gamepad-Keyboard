@@ -98,6 +98,21 @@ live in `README.md` / `DOCS.md`.
   keys are safely ignored by System.Text.Json — removing a property is a
   non-breaking change.
 
+## Action renames (2026-10, do not regress)
+
+- Canonical ids live in `ControllerMapper.NormalizeAction`; legacy saved ids
+  (`LeftClick`, `SpeedBoost`, `SubmitLeft`, `CommitLeft`, `PointerMode`,
+  `ToggleKeyboardMouseMode`, `KeyboardMode`, `MouseMode`, `KeyMapsMode`,
+  `DirectInputMode`, `ToggleKeyMapsMoveMode`, `ToggleMoveScaleKeyboard`,
+  `ToggleMoveMode`, `ToggleScaleMode`) normalize at dispatch boundaries
+  (`DispatchButton` entry, `KeyMapsMapper.ResolveSlotKeyName`, editor value
+  reads). Editors list ONLY canonical ids — preselect legacy values via
+  `NormalizeAction`.
+- Removed actions (`CycleInputMode`, `TogglePreviewMaps`,
+  `HoldPreviewMaps`, `ToggleKeyboard`) dispatch as safe no-ops; the Preview
+  Maps feature itself was deleted (mapper property + projected overlay
+  plumbing).
+
 ## Key Maps semantics (do not regress)
 
 - Maps key = chord root; combos = subset of {L2, L1, R1, L3, R3} per map,
@@ -106,7 +121,9 @@ live in `README.md` / `DOCS.md`.
   action's current state (pre-held → latched down; re-press while held frees
   it) unless `MitigateLock` is on for that button, then it may be used
   freely; non-member buttons work normally.
-- Move/scale mode (`ToggleKeyMapsMoveMode`): right stick moves the overlay
+- Move/scale mode (`ToggleMoveScale`, context-aware: Key Maps board vs
+  keyboard overlay; legacy ids `ToggleKeyMapsMoveMode` /
+  `ToggleMoveScaleKeyboard` normalize to it): right stick moves the overlay
   window, left stick scales via `KeySize` quantized 0.05 (0.6–2.0); the
   toggle's own binding stays dispatchable so the mode can be exited.
 - Atom view: 18 atoms (D-Pad 4, Face 4, sticks 5+5); atom = center prompt +

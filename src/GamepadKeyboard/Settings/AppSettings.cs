@@ -262,7 +262,7 @@ namespace GamepadKeyboard.Settings
         private static List<ProfileBinding> CommonDigital(
             string a, string b, string x, string y,
             string lb, string rb, string lt, string rt,
-            string ls = "ToggleMoveScaleKeyboard", string rs = "None",
+            string ls = "ToggleMoveScale", string rs = "None",
             string dUp = "ArrowUp", string dDown = "ArrowDown",
             string dLeft = "ArrowLeft", string dRight = "ArrowRight") => new()
         {
@@ -277,7 +277,7 @@ namespace GamepadKeyboard.Settings
             B("LS", ls),
             B("RS", rs),
             B("View", "DisableInput"),
-            B("Menu", "ToggleKeyboardMouseMode"),
+            B("Menu", "SwitchBetweenKeyboardMouse"),
             B("Home", "None"),
             B("DUp", dUp),
             B("DDown", dDown),
@@ -289,11 +289,11 @@ namespace GamepadKeyboard.Settings
         {
             var bindings = CommonDigital(
                 "Space",
-                "MouseMode",
+                "SwitchToMouseMode",
                 "Tab",
                 "None",
-                "SubmitLeft",
-                "SubmitRight",
+                "Keyboard Submit Left",
+                "Keyboard Submit Right",
                 "HoldShift",
                 "HoldCtrl"
             );
@@ -315,14 +315,14 @@ namespace GamepadKeyboard.Settings
         public static List<ProfileBinding> Mouse()
         {
             var bindings = CommonDigital(
-                "LeftClick",
-                "RightClick",
-                "MiddleClick",
-                "KeyboardMode",
-                "LeftClick",
-                "RightClick",
-                "MiddleClick",
-                "SpeedBoost",
+                "Left Mouse Click",
+                "Right Mouse Click",
+                "Middle Mouse Click",
+                "SwitchToKeyboardMode",
+                "Left Mouse Click",
+                "Right Mouse Click",
+                "Middle Mouse Click",
+                "Cursor Speed Up",
                 ls: "None",
                 dUp: "ScrollUp",
                 dDown: "ScrollDown",
@@ -658,7 +658,7 @@ namespace GamepadKeyboard.Settings
             RightStickRight = "Tab";
             RightStickPress = "Windows";
             Select = "";
-            Start = "MouseMode";
+            Start = "SwitchToMouseMode";
             if (name == "Symbols 1")
             {
                 DPadUp = "W"; DPadDown = "S"; DPadLeft = "A"; DPadRight = "D";

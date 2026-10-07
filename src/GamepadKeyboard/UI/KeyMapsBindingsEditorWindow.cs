@@ -455,18 +455,21 @@ namespace GamepadKeyboard.UI
             }
             combo.Items.Add(PoolItem);
             string current = ReadSlot(map, slot);
+            string canonicalCurrent = current.Length == 0
+                ? current
+                : ControllerMapper.NormalizeAction(current);
             if (current.Length == 0)
             {
                 combo.SelectedItem = NoneItem;
             }
-            else if (combo.Items.Contains(ActionCatalog.DisplayLabel(current)))
+            else if (combo.Items.Contains(ActionCatalog.DisplayLabel(canonicalCurrent)))
             {
-                combo.SelectedItem = ActionCatalog.DisplayLabel(current);
+                combo.SelectedItem = ActionCatalog.DisplayLabel(canonicalCurrent);
             }
             else
             {
-                combo.Items.Add(current);
-                combo.SelectedItem = current;
+                combo.Items.Add(canonicalCurrent);
+                combo.SelectedItem = canonicalCurrent;
             }
             string capturedSlot = slot;
             int capturedIndex = mapIndex;
@@ -483,7 +486,7 @@ namespace GamepadKeyboard.UI
                     if (captured == null)
                     {
                         _suppress = true;
-                        combo.SelectedItem = ActionCatalog.DisplayLabel(ReadSlot(map, capturedSlot));
+                        combo.SelectedItem = ActionCatalog.DisplayLabel(ControllerMapper.NormalizeAction(ReadSlot(map, capturedSlot)));
                         _suppress = false;
                         return;
                     }

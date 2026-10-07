@@ -126,10 +126,6 @@ namespace GamepadKeyboard.Input
             return state.Held && (state.VirtualKey == primaryVk || state.VirtualKey == alternateVk);
         }
 
-    /// <summary>Preview Maps latched by TogglePreviewMaps — the projected
-    /// overlay shows prompts from ALL maps while true (poll-thread write).</summary>
-    public bool PreviewMapsOn { get; set; }
-
     /// <summary>LEVEL input for the "Maps modifier hold" binding action
     /// (poll-thread write each tick; DispatchButton relays hold state). The
     /// maps key = this HOLD, or the sticky TOGGLE below, or the physical
@@ -262,7 +258,6 @@ namespace GamepadKeyboard.Input
             _windowsHeld = false;
             _windowsLocked = false;
             ControllerMapper.HoldShadowMapsActive = false;
-            ControllerMapper.HoldPreviewMapsActive = false;
             _latchedWindowsVk = Vk.None;
             _toggledModifierVks.Clear();
             _heldModifierVks.Clear();
@@ -579,12 +574,12 @@ namespace GamepadKeyboard.Input
                     if (physical && !state.PreviousPhysical)
                     {
                         SendSlotDown(ResolveSlotKeyName(action), ControllerMapper.KeyMapsMoveModeActive
-                            && !string.Equals(action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal));
+                            && string.Equals(ResolveSlotKeyName(action), ResolveMappedToggleMoveScale(), StringComparison.Ordinal));
                     }
                     else if (!physical && state.PreviousPhysical)
                     {
                         SendSlotUp(ResolveSlotKeyName(action), ControllerMapper.KeyMapsMoveModeActive
-                            && !string.Equals(action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal));
+                            && string.Equals(ResolveSlotKeyName(action), ResolveMappedToggleMoveScale(), StringComparison.Ordinal));
                     }
                     return;
             }
@@ -827,7 +822,7 @@ namespace GamepadKeyboard.Input
             if (ControllerMapper.IsAppLevelAction(slot))
             {
                 bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
-                    && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                    && string.Equals(ControllerMapper.NormalizeAction(slot), ResolveMappedToggleMoveScale(), StringComparison.Ordinal);
                 if (physical && !_previousRightStickPress && !_seedRun && !boardOwnsInput)
                 {
                     ActionRequested?.Invoke(slot);
@@ -842,7 +837,7 @@ namespace GamepadKeyboard.Input
                 // Mouse side buttons: true hold (down on press, up on release);
                 // while the board owns the input the mapping stays silent.
                 bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
-                    && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                    && string.Equals(ControllerMapper.NormalizeAction(slot), ResolveMappedToggleMoveScale(), StringComparison.Ordinal);
                 if (!boardOwnsInput)
                 {
                     if (physical && !_previousRightStickPress && !_seedRun)
@@ -866,7 +861,7 @@ namespace GamepadKeyboard.Input
                 return;
             }
             if (ControllerMapper.KeyMapsMoveModeActive
-                && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal))
+                && string.Equals(ControllerMapper.NormalizeAction(slot), ResolveMappedToggleMoveScale(), StringComparison.Ordinal))
             {
                 // Board owns the input: hold the key-down state frozen (no
                 // edges) so the Windows latch cannot fire under the sticks.
@@ -908,13 +903,13 @@ namespace GamepadKeyboard.Input
                 if (held && !previous)
                 {
                     bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
-                        && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                        && string.Equals(ControllerMapper.NormalizeAction(slot), ResolveMappedToggleMoveScale(), StringComparison.Ordinal);
                     SendSlotDown(slot, boardOwnsInput);
                 }
                 else if (!held && previous)
                 {
                     SendSlotUp(slot, ControllerMapper.KeyMapsMoveModeActive
-                        && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal));
+                        && string.Equals(ControllerMapper.NormalizeAction(slot), ResolveMappedToggleMoveScale(), StringComparison.Ordinal));
                 }
             }
             previous = held;
@@ -938,12 +933,7 @@ namespace GamepadKeyboard.Input
                 ControllerMapper.HoldShadowMapsActive = true;
                 return;
             }
-            if (string.Equals(slot, "HoldPreviewMaps", StringComparison.Ordinal))
-            {
-                ControllerMapper.HoldPreviewMapsActive = true;
-                return;
-            }
-            if (slot is "ToggleShadowMaps" or "TogglePreviewMaps")
+            if (string.Equals(slot, "ToggleShadowMaps", StringComparison.Ordinal))
             {
                 // Tap-edge toggles once on press; release does nothing.
                 ActionRequested?.Invoke(slot);
@@ -980,7 +970,7 @@ namespace GamepadKeyboard.Input
                 return;
             }
             if (suppressSlot
-                && slot is not ("ToggleShadowMaps" or "TogglePreviewMaps" or "ToggleKeyMapsMoveMode"))
+                && slot is not ("ToggleShadowMaps" or "ToggleMoveScale"))
             {
                 return;
             }
@@ -989,12 +979,7 @@ namespace GamepadKeyboard.Input
                 ControllerMapper.HoldShadowMapsActive = false;
                 return;
             }
-            if (string.Equals(slot, "HoldPreviewMaps", StringComparison.Ordinal))
-            {
-                ControllerMapper.HoldPreviewMapsActive = false;
-                return;
-            }
-            if (slot is "ToggleShadowMaps" or "TogglePreviewMaps")
+            if (string.Equals(slot, "ToggleShadowMaps", StringComparison.Ordinal))
             {
                 return;
             }
@@ -1131,10 +1116,20 @@ namespace GamepadKeyboard.Input
 
 
         /// <summary>Pool-captured slot values arrive as "Key:<Name>"; strip
-        /// the prefix before VK resolution.</summary>
+        /// the prefix before VK resolution. Renamed/legacy action identifiers
+        /// normalize so saved profiles keep dispatching.</summary>
         private static string ResolveSlotKeyName(string slot)
         {
-            return slot.StartsWith("Key:", StringComparison.Ordinal) ? slot[4..] : slot;
+            slot = slot.StartsWith("Key:", StringComparison.Ordinal) ? slot[4..] : slot;
+            return ControllerMapper.NormalizeAction(slot);
+        }
+
+        /// <summary>The canonical ToggleMoveScale identifier a mapped slot must
+        /// carry for the board-ownership gate to exempt it (legacy saved ids
+        /// normalize to the same string, so the exemption holds for them too).</summary>
+        private static string ResolveMappedToggleMoveScale()
+        {
+            return "ToggleMoveScale";
         }
 
         private void DispatchStartSlot(ref bool previous, bool held, string slot)
@@ -1142,7 +1137,7 @@ namespace GamepadKeyboard.Input
             if (held && !previous && !_seedRun && ControllerMapper.IsAppLevelAction(slot))
             {
                 bool boardOwnsInput = ControllerMapper.KeyMapsMoveModeActive
-                    && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                    && string.Equals(ControllerMapper.NormalizeAction(slot), ResolveMappedToggleMoveScale(), StringComparison.Ordinal);
                 if (!boardOwnsInput)
                 {
                     ActionRequested?.Invoke(slot);

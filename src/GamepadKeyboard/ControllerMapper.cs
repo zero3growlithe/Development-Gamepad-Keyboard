@@ -113,7 +113,6 @@ namespace GamepadKeyboard
 
         /// <summary>Hold Preview Maps action state (poll-thread write, UI
         /// read): while true the projected keyboard shows ALL maps' prompts.</summary>
-        public static volatile bool HoldPreviewMapsActive;
         public double KeyMapsMoveDX { get; private set; }
         public double KeyMapsMoveDY { get; private set; }
 
@@ -345,22 +344,23 @@ namespace GamepadKeyboard
             List<ProfileBinding> bindings = AppSettings.Instance.MouseProfile.Bindings;
             foreach (ProfileBinding binding in bindings)
             {
-                if (binding.Modifier || !IsAppLevelAction(binding.Action))
+                string action = NormalizeAction(binding.Action);
+                if (binding.Modifier || !IsAppLevelAction(action))
                 {
                     continue;
                 }
                 if (binding.Buttons.Count == 1)
                 {
                     BindingRuntimeState state = GetBindingState(binding.Id);
-                    if (state.Action != binding.Action)
+                    if (state.Action != action)
                     {
                         ReleaseBindingState(state);
-                        state.Action = binding.Action;
+                        state.Action = action;
                         state.Previous = false;
                     }
                     bool held = InputValue(s, binding.Buttons[0]) >= 0.5;
                     if (ControllerMapper.KeyMapsMoveModeActive
-                        && !string.Equals(binding.Action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal))
+                        && !string.Equals(NormalizeAction(binding.Action), "ToggleMoveScale", StringComparison.Ordinal))
                     {
                         // Board owns the input: only the move toggle passes.
                         if (held || state.Previous)
@@ -403,7 +403,7 @@ namespace GamepadKeyboard
             bool lastHeld = InputValue(s, last) >= 0.5;
 
             bool moveMutes = ControllerMapper.KeyMapsMoveModeActive
-                && !string.Equals(binding.Action, "ToggleKeyMapsMoveMode", StringComparison.Ordinal);
+                && !string.Equals(NormalizeAction(binding.Action), "ToggleMoveScale", StringComparison.Ordinal);
             if (moveMutes)
             {
                 // Silence the combo — but an active HoldLast hold must be
@@ -937,9 +937,9 @@ namespace GamepadKeyboard
         {
             (uint down, uint up, uint data) = action switch
             {
-                "LeftClick" => (NativeMethods.MOUSEEVENTF_LEFTDOWN, NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
-                "RightClick" => (NativeMethods.MOUSEEVENTF_RIGHTDOWN, NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
-                "MiddleClick" => (NativeMethods.MOUSEEVENTF_MIDDLEDOWN, NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
+                "Left Mouse Click" => (NativeMethods.MOUSEEVENTF_LEFTDOWN, NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
+                "Right Mouse Click" => (NativeMethods.MOUSEEVENTF_RIGHTDOWN, NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
+                "Middle Mouse Click" => (NativeMethods.MOUSEEVENTF_MIDDLEDOWN, NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
                 "XButton1" => (NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 1u),
                 "XButton2" => (NativeMethods.MOUSEEVENTF_XDOWN, NativeMethods.MOUSEEVENTF_XUP, 2u),
                 _ => (0u, 0u, 0u)
@@ -971,9 +971,9 @@ namespace GamepadKeyboard
 
         private static (uint up, uint data) ClickRelease(string action) => action switch
         {
-            "LeftClick" => (NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
-            "RightClick" => (NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
-            "MiddleClick" => (NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
+            "Left Mouse Click" => (NativeMethods.MOUSEEVENTF_LEFTUP, 0u),
+            "Right Mouse Click" => (NativeMethods.MOUSEEVENTF_RIGHTUP, 0u),
+            "Middle Mouse Click" => (NativeMethods.MOUSEEVENTF_MIDDLEUP, 0u),
             "XButton1" => (NativeMethods.MOUSEEVENTF_XUP, 1u),
             "XButton2" => (NativeMethods.MOUSEEVENTF_XUP, 2u),
             _ => (0u, 0u)
@@ -1038,6 +1038,7 @@ namespace GamepadKeyboard
 
         private void DispatchButton(string action, bool held, ref bool prev)
         {
+            action = NormalizeAction(action);
             bool previous = prev;
             bool edge = held && !previous;
             prev = held;
@@ -1062,12 +1063,14 @@ namespace GamepadKeyboard
             // hold-to-type: commit buttons hold the ray-highlighted key down (LB/R1 style)
             switch (action)
             {
-                case "SubmitLeft":
-                case "CommitLeft": // legacy saved profiles
+                case "Keyboard Submit Left":
+                case "SubmitLeft":   // legacy saved profiles
+                case "CommitLeft":   // pre-rename legacy
                     UpdateHeldRayKey(ref _heldRayKeyL, ref _leftModifierSubmit, held, previous, LeftHit);
                     return;
-                case "SubmitRight":
-                case "CommitRight": // legacy saved profiles
+                case "Keyboard Submit Right":
+                case "SubmitRight":   // legacy saved profiles
+                case "CommitRight":   // pre-rename legacy
                     UpdateHeldRayKey(ref _heldRayKeyR, ref _rightModifierSubmit, held, previous, RightHit);
                     return;
             }
@@ -1075,9 +1078,9 @@ namespace GamepadKeyboard
             // mouse buttons support HOLD (drag & drop): down on press, up on release
             switch (action)
             {
-                case "LeftClick":
-                case "RightClick":
-                case "MiddleClick":
+                case "Left Mouse Click":
+                case "Right Mouse Click":
+                case "Middle Mouse Click":
                 case "XButton1":
                 case "XButton2":
                     HandleClickHold(action, held, previous);
@@ -1142,34 +1145,39 @@ namespace GamepadKeyboard
                     SetInputEnabled(!InputEnabled);
                     break;
 
-                case "ToggleKeyboardMouseMode":
+                case "SwitchBetweenKeyboardMouse":   // renamed ToggleKeyboardMouseMode
+                case "ToggleKeyboardMouseMode":      // legacy saved profiles
                     ReleaseAllModifiers();
                     Mode = Mode == MapperMode.Keyboard ? MapperMode.Mouse : MapperMode.Keyboard;
                     StateChanged?.Invoke();
                     break;
-                case "CycleInputMode":
-                    ReleaseAllModifiers();
-                    Mode = (MapperMode)(((int)Mode + 1) % 3);
-                    StateChanged?.Invoke();
-                    Notification?.Invoke("mode: " + Mode);
-                    break;
-                case "KeyboardMode":
+                case "SwitchToKeyboardMode":         // renamed KeyboardMode
+                case "KeyboardMode":                 // legacy saved profiles
                     if (Mode != MapperMode.Keyboard) ReleaseAllModifiers();
                     Mode = MapperMode.Keyboard;
                     StateChanged?.Invoke();
                     break;
-                case "MouseMode":
+                case "SwitchToMouseMode":            // renamed MouseMode
+                case "MouseMode":                    // legacy saved profiles
                     if (Mode == MapperMode.Keyboard) ReleaseAllModifiers();
                     Mode = MapperMode.Mouse;
                     StateChanged?.Invoke();
                     break;
-                case "DirectInputMode":
-                case "KeyMapsMode":
+                case "SwitchToKeyMapsMode":          // renamed KeyMapsMode
+                case "KeyMapsMode":                  // legacy saved profiles
+                case "DirectInputMode":              // pre-rename legacy
                     if (Mode == MapperMode.Keyboard) ReleaseAllModifiers();
                     Mode = MapperMode.DirectInput;
                     StateChanged?.Invoke();
                     App.Log("key maps mode: entered");
                     Notification?.Invoke("mode: Key Maps");
+                    break;
+                case "SwitchBetweenKeyMapMouseMode":
+                    ReleaseAllModifiers();
+                    Mode = Mode == MapperMode.DirectInput ? MapperMode.Mouse : MapperMode.DirectInput;
+                    StateChanged?.Invoke();
+                    Notification?.Invoke("mode: "
+                        + (Mode == MapperMode.DirectInput ? "Key Maps" : "Mouse"));
                     break;
 
                 case "ToggleShadowMaps":
@@ -1183,45 +1191,33 @@ namespace GamepadKeyboard
                     HoldShadowMapsActive = held;
                     break;
 
-                case "TogglePreviewMaps":
-                    if (KeyMaps != null)
+                case "ToggleMoveScale":
+                    // Context switch: Keyboard Mode adjusts the keyboard board;
+                    // Key Maps mode adjusts the maps board (atoms or projected).
+                    if (Mode == MapperMode.DirectInput)
                     {
-                        KeyMaps.PreviewMapsOn = !KeyMaps.PreviewMapsOn;
-                        Notification?.Invoke("Preview maps: "
-                            + (KeyMaps.PreviewMapsOn ? "ON" : "OFF"));
+                        AdjustKeyMapsPosition = !AdjustKeyMapsPosition;
+                        KeyMapsMoveModeActive = AdjustKeyMapsPosition;
+                        KeyMapsMoveDX = KeyMapsMoveDY = 0;
+                        Notification?.Invoke(AdjustKeyMapsPosition
+                            ? "Key Maps move/scale ON — right stick moves, left stick scales the board"
+                            : "Key Maps move/scale OFF");
                     }
-                    break;
-                case "HoldPreviewMaps":
-                    if (KeyMaps != null)
+                    else
                     {
-                        HoldPreviewMapsActive = held;
+                        AdjustMoveScaleKeyboard = !AdjustMoveScaleKeyboard;
+                        MoveDX = MoveDY = 0;
+                        ScaleDelta = 0;
+                        if (AdjustMoveScaleKeyboard)
+                        {
+                            LeftCursorActive = RightCursorActive = false;
+                            LeftHit = RightHit = null;
+                            ReleaseHeldRayKeys();
+                        }
+                        Notification?.Invoke(AdjustMoveScaleKeyboard
+                            ? "Keyboard move/scale ON — right stick moves, left stick scales"
+                            : "Keyboard move/scale OFF");
                     }
-                    break;
-
-                case "ToggleKeyMapsMoveMode":
-                    AdjustKeyMapsPosition = !AdjustKeyMapsPosition;
-                    KeyMapsMoveModeActive = AdjustKeyMapsPosition;
-                    KeyMapsMoveDX = KeyMapsMoveDY = 0;
-                    Notification?.Invoke(AdjustKeyMapsPosition
-                        ? "Key Maps move ON — right stick moves the board"
-                        : "Key Maps move OFF");
-                    break;
-
-                case "ToggleMoveScaleKeyboard":
-                case "ToggleMoveMode": // legacy saved profile
-                case "ToggleScaleMode": // legacy saved profile
-                    AdjustMoveScaleKeyboard = !AdjustMoveScaleKeyboard;
-                    MoveDX = MoveDY = 0;
-                    ScaleDelta = 0;
-                    if (AdjustMoveScaleKeyboard)
-                    {
-                        LeftCursorActive = RightCursorActive = false;
-                        LeftHit = RightHit = null;
-                        ReleaseHeldRayKeys();
-                    }
-                    Notification?.Invoke(AdjustMoveScaleKeyboard
-                        ? "Keyboard move/scale ON — right stick moves, left stick scales"
-                        : "Keyboard move/scale OFF");
                     break;
 
                 case "SwitchKeyboardProfile":
@@ -1241,15 +1237,15 @@ namespace GamepadKeyboard
                     break;
 
                 case "ToggleOverlay":
-                case "ToggleKeyboard":
                     var ovs = AppSettings.Instance;
                     ovs.ShowOverlay = !ovs.ShowOverlay;
                     AppSettings.Save();
                     StateChanged?.Invoke();
                     break;
 
-                case "SpeedBoost":
-                case "PointerMode":
+                case "Cursor Speed Up":
+                case "SpeedBoost":     // legacy saved profiles
+                case "PointerMode":    // pre-rename legacy
                 case "MouseMoveUp":
                 case "MouseMoveDown":
                 case "MouseMoveLeft":
@@ -1526,16 +1522,38 @@ namespace GamepadKeyboard
             };
         }
 
+        /// <summary>Renames (2026-10): canonical action identifiers shown in the
+        /// editors; legacy saved-profile identifiers normalize at dispatch.</summary>
+        internal static string NormalizeAction(string action) => action switch
+        {
+            "LeftClick" => "Left Mouse Click",              // legacy saved profiles
+            "RightClick" => "Right Mouse Click",
+            "MiddleClick" => "Middle Mouse Click",
+            "SpeedBoost" or "PointerMode" => "Cursor Speed Up",
+            "CommitLeft" or "SubmitLeft" => "Keyboard Submit Left",   // Commit*: pre-rename
+            "CommitRight" or "SubmitRight" => "Keyboard Submit Right",
+            "ToggleKeyboardMouseMode" => "SwitchBetweenKeyboardMouse",
+            "KeyboardMode" => "SwitchToKeyboardMode",
+            "MouseMode" => "SwitchToMouseMode",
+            "KeyMapsMode" or "DirectInputMode" => "SwitchToKeyMapsMode",
+            // Removed actions keep dispatching to their closest surviving behavior:
+            "ToggleKeyMapsMoveMode" or "ToggleMoveScaleKeyboard"
+                or "ToggleMoveMode" or "ToggleScaleMode" => "ToggleMoveScale",
+            _ => action
+        };
+
         /// <summary>True for actions that are app-level commands, not key taps or
         /// mouse buttons — a Key Maps slot can request them (Mode switch,
         /// profiles), and every consumer treats them as tap edges.</summary>
-        internal static bool IsAppLevelAction(string action) => action is
-            "KeyboardMode" or "MouseMode" or "DirectInputMode" or "CycleInputMode"
-            or "ToggleKeyboardMouseMode" or "EnableInput" or "DisableInput" or "ToggleInput"
+        internal static bool IsAppLevelAction(string action) => NormalizeAction(action) is
+            "SwitchToKeyboardMode" or "SwitchToMouseMode" or "SwitchToKeyMapsMode"
+            or "SwitchBetweenKeyboardMouse" or "SwitchBetweenKeyMapMouseMode"
+            or "EnableInput" or "DisableInput" or "ToggleInput"
             or "SwitchKeyboardProfile" or "SwitchMouseProfile" or "SwitchStickPointsProfile"
-            or "ToggleOverlay" or "ToggleKeyboard" or "ToggleLegend"
-            or "ToggleKeyMapsMoveMode" or "ToggleMoveScaleKeyboard"
-            or "MapsModifierHold" or "MapsModifierToggle";
+            or "ToggleOverlay" or "ToggleLegend" or "ToggleMoveScale"
+            or "MapsModifierHold" or "MapsModifierToggle"
+            // legacy saved-profile identifiers (normalize covers them, keep the set honest)
+            or "CycleInputMode";   // removed actions: legacy ids stay dispatch-safe no-ops
 
         private void SwitchProfile(int dir)
         {

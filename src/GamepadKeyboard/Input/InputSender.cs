@@ -45,8 +45,44 @@ namespace GamepadKeyboard.Input
 
         public void MouseMove(int dx, int dy)
         {
-            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
-            inputs[0] = new NativeMethods.INPUT
+            // Absolute injection: remote-capture tools (Parsec) track the cursor
+            // position reliably from MOUSEEVENTF_ABSOLUTE|VIRTUALDESK events, while
+            // plain relative moves can leave the streamed cursor stuck at its last
+            // drawn spot (the local cursor shape still changes, so apps move fine —
+            // only the capture misses it). Resolved per call from the real cursor
+            // position; GetCursorPos failure falls back to a relative move.
+            if (NativeMethods.TryGetCursorPos(out NativeMethods.POINT point))
+            {
+                (int virtualX, int virtualY, int virtualWidth, int virtualHeight) =
+                    NativeMethods.VirtualDesktopBounds();
+                if (virtualWidth > 0 && virtualHeight > 0)
+                {
+                    long absoluteX = ((long)(point.X + dx - virtualX) << 16) / virtualWidth;
+                    long absoluteY = ((long)(point.Y + dy - virtualY) << 16) / virtualHeight;
+                    absoluteX = Math.Clamp(absoluteX, 0, 65535);
+                    absoluteY = Math.Clamp(absoluteY, 0, 65535);
+                    Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
+                    inputs[0] = new NativeMethods.INPUT
+                    {
+                        type = NativeMethods.INPUT_MOUSE,
+                        U = new NativeMethods.InputUnion
+                        {
+                            mi = new NativeMethods.MOUSEINPUT
+                            {
+                                dx = (int)absoluteX,
+                                dy = (int)absoluteY,
+                                dwFlags = NativeMethods.MOUSEEVENTF_MOVE
+                                    | NativeMethods.MOUSEEVENTF_ABSOLUTE
+                                    | NativeMethods.MOUSEEVENTF_VIRTUALDESK,
+                            }
+                        }
+                    };
+                    Dispatch(inputs);
+                    return;
+                }
+            }
+            Span<NativeMethods.INPUT> relativeInputs = stackalloc NativeMethods.INPUT[1];
+            relativeInputs[0] = new NativeMethods.INPUT
             {
                 type = NativeMethods.INPUT_MOUSE,
                 U = new NativeMethods.InputUnion
@@ -54,7 +90,7 @@ namespace GamepadKeyboard.Input
                     mi = new NativeMethods.MOUSEINPUT { dx = dx, dy = dy, dwFlags = NativeMethods.MOUSEEVENTF_MOVE }
                 }
             };
-            Dispatch(inputs);
+            Dispatch(relativeInputs);
         }
 
         public void MouseButton(uint downFlag, uint upFlag, uint mouseData = 0)

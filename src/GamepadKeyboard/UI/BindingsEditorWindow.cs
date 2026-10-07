@@ -460,8 +460,8 @@ namespace GamepadKeyboard.UI
 
         private static string FormatActionForList(string action) =>
             action.StartsWith("Key:", StringComparison.Ordinal)
-                ? ActionCatalog.DisplayLabel(action[4..]) + " (key)"
-                : ActionCatalog.DisplayLabel(action);
+                ? ActionCatalog.DisplayLabel(ControllerMapper.NormalizeAction(action[4..])) + " (key)"
+                : ActionCatalog.DisplayLabel(ControllerMapper.NormalizeAction(action));
 
         private static string FormatBinding(ProfileBinding entry)
         {
@@ -540,7 +540,9 @@ namespace GamepadKeyboard.UI
             if (existingAction.Length > 0 && !actionBox.Items.Contains(ActionCatalog.DisplayLabel(existingAction)))
                 actionBox.Items.Add(existingAction);
             actionBox.Items.Add(PoolItem);
-            actionBox.SelectedItem = existingAction.Length > 0 ? ActionCatalog.DisplayLabel(existingAction) : ActionCatalog.All[0];
+            actionBox.SelectedItem = existingAction.Length > 0
+                ? ActionCatalog.DisplayLabel(ControllerMapper.NormalizeAction(existingAction))
+                : ActionCatalog.All[0];
             root.Children.Add(actionBox);
 
             var options = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
@@ -753,23 +755,22 @@ namespace GamepadKeyboard.UI
             "NumPad0", "NumPad1", "NumPad2", "NumPad3", "NumPad4",
             "NumPad5", "NumPad6", "NumPad7", "NumPad8", "NumPad9",
             // mouse
-            "LeftClick", "RightClick", "MiddleClick", "XButton1", "XButton2",
-            "ScrollUp", "ScrollDown", "ScrollLeft", "ScrollRight", "SpeedBoost",
+            "Left Mouse Click", "Right Mouse Click", "Middle Mouse Click", "XButton1", "XButton2",
+            "ScrollUp", "ScrollDown", "ScrollLeft", "ScrollRight", "Cursor Speed Up",
             "MouseMoveUp", "MouseMoveDown", "MouseMoveLeft", "MouseMoveRight",
             "AnalogScrollUp", "AnalogScrollDown", "AnalogScrollLeft", "AnalogScrollRight",
             // virtual keyboard control
-            "SubmitLeft", "SubmitRight",
+            "Keyboard Submit Left", "Keyboard Submit Right",
             "MoveLeftCursorUp", "MoveLeftCursorDown", "MoveLeftCursorLeft", "MoveLeftCursorRight",
             "MoveRightCursorUp", "MoveRightCursorDown", "MoveRightCursorLeft", "MoveRightCursorRight",
             // app control
             "EnableInput", "DisableInput", "ToggleInput",
-            "ToggleKeyboardMouseMode", "KeyboardMode", "MouseMode", "DirectInputMode", "KeyMapsMode", "CycleInputMode",
-            "ToggleMoveScaleKeyboard",
-            "ToggleKeyMapsMoveMode",
+            "SwitchBetweenKeyboardMouse", "SwitchToKeyboardMode", "SwitchToMouseMode",
+            "SwitchToKeyMapsMode", "SwitchBetweenKeyMapMouseMode",
+            "ToggleMoveScale",
             "ToggleShadowMaps", "HoldShadowMaps",
-            "TogglePreviewMaps", "HoldPreviewMaps",
             "MapsModifierHold", "MapsModifierToggle",
-            "ToggleKeyboard", "ToggleLegend",
+            "ToggleLegend",
             "SwitchKeyboardProfile", "SwitchMouseProfile", "SwitchStickPointsProfile",
             // media
             "VolumeUp", "VolumeDown", "VolumeMute",

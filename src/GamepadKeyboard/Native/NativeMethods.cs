@@ -57,6 +57,8 @@ namespace GamepadKeyboard.Native
         public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
         public const uint KEYEVENTF_UNICODE = 0x0004;
         public const uint MOUSEEVENTF_MOVE = 0x0001;
+        public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+        public const uint MOUSEEVENTF_VIRTUALDESK = 0x4000;
         public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         public const uint MOUSEEVENTF_LEFTUP = 0x0004;
         public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
@@ -137,6 +139,29 @@ namespace GamepadKeyboard.Native
 
         [DllImport("winmm.dll")]
         public static extern uint TimeEndPeriod(uint ms);
+
+        // ── Cursor position (absolute mouse-move injection) ────────────────────
+        [DllImport("user32.dll", EntryPoint = "GetCursorPos", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool TryGetCursorPos(out POINT point);
+
+        [DllImport("user32.dll", EntryPoint = "GetSystemMetrics")]
+        private static extern int GetSystemMetrics(int index);
+
+        internal const int SmXVirtualScreen = 76;
+        internal const int SmYVirtualScreen = 77;
+        internal const int SmCxVirtualScreen = 78;
+        internal const int SmCyVirtualScreen = 79;
+
+        /// <summary>(x, y, width, height) of the virtual desktop in pixels.</summary>
+        public static (int X, int Y, int Width, int Height) VirtualDesktopBounds()
+        {
+            return (
+                GetSystemMetrics(SmXVirtualScreen),
+                GetSystemMetrics(SmYVirtualScreen),
+                GetSystemMetrics(SmCxVirtualScreen),
+                GetSystemMetrics(SmCyVirtualScreen));
+        }
 
         // ── Window focus (WGI is OS-gated on our window's focus) ───────────────
         [DllImport("user32.dll")]
