@@ -446,7 +446,8 @@ namespace GamepadKeyboard.UI
             _keyMapsLayoutBackup.Clear();
             foreach (System.Reflection.PropertyInfo property in typeof(Settings.KeyMapsLayoutSettings).GetProperties())
             {
-                _keyMapsLayoutBackup[property.Name] = property.GetValue(layout);
+                _keyMapsLayoutBackup[property.Name] = property.GetValue(layout)
+                    ?? throw new InvalidOperationException("Key Maps layout property read returned null: " + property.Name);
             }
         }
 

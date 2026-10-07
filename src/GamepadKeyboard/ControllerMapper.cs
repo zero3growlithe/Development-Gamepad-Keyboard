@@ -1184,12 +1184,18 @@ namespace GamepadKeyboard
                     break;
 
                 case "TogglePreviewMaps":
-                    KeyMaps.PreviewMapsOn = !KeyMaps.PreviewMapsOn;
-                    Notification?.Invoke("Preview maps: "
-                        + (KeyMaps.PreviewMapsOn ? "ON" : "OFF"));
+                    if (KeyMaps != null)
+                    {
+                        KeyMaps.PreviewMapsOn = !KeyMaps.PreviewMapsOn;
+                        Notification?.Invoke("Preview maps: "
+                            + (KeyMaps.PreviewMapsOn ? "ON" : "OFF"));
+                    }
                     break;
                 case "HoldPreviewMaps":
-                    HoldPreviewMapsActive = held;
+                    if (KeyMaps != null)
+                    {
+                        HoldPreviewMapsActive = held;
+                    }
                     break;
 
                 case "ToggleKeyMapsMoveMode":

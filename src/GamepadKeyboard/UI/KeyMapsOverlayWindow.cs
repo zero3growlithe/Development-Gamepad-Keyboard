@@ -144,7 +144,10 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 Visibility = Visibility.Visible;
             }
 
-            Input.KeyMapsMapper keyMaps = mapper.KeyMaps!;
+            // The Key Maps overlay only runs while the Key Maps mapper exists;
+            // the guard keeps the compiler happy without null-chasing.
+            Input.KeyMapsMapper keyMaps = mapper.KeyMaps
+                ?? throw new InvalidOperationException("Key Maps overlay opened without a Key Maps mapper");
             _projectedPreview = ControllerMapper.HoldPreviewMapsActive || keyMaps.PreviewMapsOn;
             double fingerprint = LayoutFingerprint();
             if (_bindingsDirty || !ReferenceEquals(_maps, AppSettings.Instance.KeyMaps.Maps)
@@ -436,7 +439,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             _comboChips[0] = MakeComboChip(ComboChipLabel(0, "L1"), 12, chipY, boardScale, 0);
             _comboChips[1] = MakeComboChip(ComboChipLabel(1, "R1"), BoardWidth - 12 - 46 * boardScale, chipY, boardScale, 1);
             _comboChips[2] = MakeComboChip(ComboChipLabel(2, "L1 + R1"), (BoardWidth - 74 * boardScale) / 2.0, bottomY, boardScale, 2);
-            _lastRenderedComboHeld = false;
             foreach (Border? chip in _comboChips)
             {
                 if (chip != null)
@@ -533,7 +535,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         /// once per rebuild, opacity-driven per tick.</summary>
         private readonly Border?[] _comboChips = new Border?[3];
         private readonly TextBlock?[] _comboChipTexts = new TextBlock?[3];
-        private bool _lastRenderedComboHeld;
         private bool _lastRenderedShiftHeld;
 
         private Border MakeComboChip(string label, double x, double y, double boardScale, int chipIndex)
@@ -1091,8 +1092,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             }
 
             _lastProjectedFingerprint = PromptFingerprint();
-            _lastProjectedShift = _shiftSeed;
-            ApplyProjectedKeyLabels(_shiftSeed);
+            _lastProjectedShift = false;
+            ApplyProjectedKeyLabels(false);
         }
 
         private ushort[] UsedCatalogVks(List<ushort> used)
@@ -1250,7 +1251,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         }
 
         private double _lastPromptOpacity = double.NaN;
-        private bool _shiftSeed;
         private readonly HashSet<KeyboardLayout.KeyDef> _projectedCoveredPending = new();
 
         /// <summary>Preview Maps: show prompts from ALL maps at once

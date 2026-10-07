@@ -591,26 +591,26 @@ namespace GamepadKeyboard.Settings
     {
         public string Name { get; set; } = "";
 
-        public string Select { get; set; }
-        public string Start { get; set; }
-        public string DPadUp { get; set; }
-        public string DPadDown { get; set; }
-        public string DPadLeft { get; set; }
-        public string DPadRight { get; set; }
-        public string FaceY { get; set; }
-        public string FaceA { get; set; }
-        public string FaceX { get; set; }
-        public string FaceB { get; set; }
-        public string LeftStickUp { get; set; }
-        public string LeftStickDown { get; set; }
-        public string LeftStickLeft { get; set; }
-        public string LeftStickRight { get; set; }
-        public string LeftStickPress { get; set; }
-        public string RightStickUp { get; set; }
-        public string RightStickDown { get; set; }
-        public string RightStickLeft { get; set; }
-        public string RightStickRight { get; set; }
-        public string RightStickPress { get; set; }
+        public string Select { get; set; } = "";
+        public string Start { get; set; } = "";
+        public string DPadUp { get; set; } = "";
+        public string DPadDown { get; set; } = "";
+        public string DPadLeft { get; set; } = "";
+        public string DPadRight { get; set; } = "";
+        public string FaceY { get; set; } = "";
+        public string FaceA { get; set; } = "";
+        public string FaceX { get; set; } = "";
+        public string FaceB { get; set; } = "";
+        public string LeftStickUp { get; set; } = "";
+        public string LeftStickDown { get; set; } = "";
+        public string LeftStickLeft { get; set; } = "";
+        public string LeftStickRight { get; set; } = "";
+        public string LeftStickPress { get; set; } = "";
+        public string RightStickUp { get; set; } = "";
+        public string RightStickDown { get; set; } = "";
+        public string RightStickLeft { get; set; } = "";
+        public string RightStickRight { get; set; } = "";
+        public string RightStickPress { get; set; } = "";
 
         /// <summary>Gamepad buttons (subset of L2, L1, R1, L3, R3) that must be
         /// held together with the maps key to open this map while it is held.

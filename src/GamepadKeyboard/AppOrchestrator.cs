@@ -184,7 +184,7 @@ namespace GamepadKeyboard
         {
             try
             {
-                string directory = System.IO.Path.GetDirectoryName(Settings.AppSettings.FilePath);
+                string directory = System.IO.Path.GetDirectoryName(Settings.AppSettings.FilePath) ?? "";
                 if (string.IsNullOrEmpty(directory) || !System.IO.Directory.Exists(directory))
                 {
                     directory = System.IO.Path.Combine(

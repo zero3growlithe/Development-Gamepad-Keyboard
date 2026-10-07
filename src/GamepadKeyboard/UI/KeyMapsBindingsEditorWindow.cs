@@ -187,7 +187,7 @@ namespace GamepadKeyboard.UI
                 {
                     return;
                 }
-                string chosen = combo.SelectedItem as string;
+                string chosen = combo.SelectedItem as string ?? "";
                 if (!string.IsNullOrEmpty(chosen))
                 {
                     write(chosen);
