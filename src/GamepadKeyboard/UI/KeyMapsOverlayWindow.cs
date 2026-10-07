@@ -415,6 +415,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
 
         private void BuildModifierRow(double boardScale)
         {
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             for (int index = 0; index < ModifierNames.Length; index++)
             {
                 Border chipBorder = MakeChip(ModifierNames[index], boardScale);
@@ -425,7 +426,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 Canvas? badgeIcon = AttachChipPadBadge(chipBorder, ModifierChipVks(index), boardScale);
                 if (badgeIcon != null)
                 {
-                    KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
                     double iconSpan = ChipPadBadgeIconSpan(boardScale);
                     Canvas.SetLeft(badgeIcon, ChipColumnX(index, boardScale) + ChipWidth * boardScale
                         - iconSpan / 2.0 + layout.PromptOffsetX * boardScale);
@@ -434,7 +434,6 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     _root.Children.Add(badgeIcon);
                 }
             }
-            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             _mapNameLabel.Width = BoardWidth;
             _mapNameLabel.TextAlignment = TextAlignment.Center;
             _mapNameLabel.FontSize = 17 * boardScale * layout.FontScale;
