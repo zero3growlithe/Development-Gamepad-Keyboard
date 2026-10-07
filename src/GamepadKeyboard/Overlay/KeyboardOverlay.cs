@@ -39,6 +39,7 @@ namespace GamepadKeyboard.Overlay
         private double _lastLeftPointX = double.NaN, _lastLeftPointY = double.NaN;
         private double _lastRightPointX = double.NaN, _lastRightPointY = double.NaN;
         private bool? _lastCentersVisible;
+        private readonly System.Collections.Generic.Dictionary<KeyboardLayout.KeyDef, Border> _modifierBadges = new();
 
         public double Scale => _scale;
 
@@ -79,6 +80,8 @@ namespace GamepadKeyboard.Overlay
         {
             foreach (var b in _keyBorders.Values) _canvas.Children.Remove(b);
             _keyBorders.Clear();
+            foreach (var b in _modifierBadges.Values) _canvas.Children.Remove(b);
+            _modifierBadges.Clear();
 
             foreach (var k in Layout.Keys)
             {
@@ -105,6 +108,7 @@ namespace GamepadKeyboard.Overlay
                 Canvas.SetTop(border, r.Y);
                 _canvas.Children.Add(border);
                 _keyBorders[k] = border;
+                AttachModifierBadge(k, r);
 
                 if (k.Vk != 0 && _toggledVks.Contains(k.Vk))
                     border.Background = ToggledBrush;
@@ -402,6 +406,73 @@ namespace GamepadKeyboard.Overlay
                 border.BorderThickness = new Thickness(1);
             }
             _highlighted.Clear();
+        }
+
+        // ── Pad-button badges on modifier keys ─────────────────────────────────
+        // A small rounded tag ("L2", "R1"…) pinned to the key's top-right corner
+        // shows which gamepad control drives that modifier in Key Maps mode
+        // (resolved from the configured system-button actions). No driver →
+        // no badge, so the keyboard never lies.
+
+        private static readonly Brush badgeFill = new SolidColorBrush(Color.FromArgb(0xC8, 0x22, 0x22, 0x2C));
+        private static readonly Brush badgeBorder = new SolidColorBrush(Color.FromArgb(0xB0, 0x9E, 0x9E, 0xAE));
+        private static readonly Brush badgeText = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xF2));
+
+        /// <summary>Attach (or leave off) the pad-button badge for one key;
+        /// badges live on the same canvas and scale with the window.</summary>
+        private void AttachModifierBadge(KeyboardLayout.KeyDef key, Rect keyRect)
+        {
+            string driver = key.Vk is (ushort)0xA0 or (ushort)0xA1   // Shift
+                ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LShift, Vk.RShift)
+                : key.Vk is (ushort)0xA2 or (ushort)0xA3   // Ctrl
+                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LControl, Vk.RControl)
+                : key.Vk is (ushort)0xA4 or (ushort)0xA5   // Alt
+                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LMenu, Vk.RMenu)
+                : key.Vk is (ushort)0x5B or (ushort)0x5C   // Windows
+                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LWin, Vk.RWin)
+                : "";
+            if (string.IsNullOrEmpty(driver))
+            {
+                return;
+            }
+            double badgeSize = Math.Max(10, keyRect.Width * 0.34);
+            Border badge = MakePadBadge(driver, badgeSize);
+            Canvas.SetLeft(badge, keyRect.X + keyRect.Width - badgeSize - 1.5);
+            Canvas.SetTop(badge, keyRect.Y - badgeSize * 0.35);
+            _canvas.Children.Add(badge);
+            _modifierBadges[key] = badge;
+        }
+
+        private static Border MakePadBadge(string label, double size)
+        {
+            TextBlock text = new()
+            {
+                Text = label,
+                Foreground = badgeText,
+                FontSize = size * 0.66,
+                FontWeight = FontWeights.Bold,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            return new Border
+            {
+                Width = size,
+                Height = size,
+                CornerRadius = new CornerRadius(size * 0.28),
+                Background = badgeFill,
+                BorderBrush = badgeBorder,
+                BorderThickness = new Thickness(1),
+                Child = text,
+                IsHitTestVisible = false,
+            };
+        }
+
+        /// <summary>Re-resolves every modifier badge after the system-button
+        /// bindings change (badges rebuild with the next RebuildKeys).</summary>
+        public void RefreshModifierBadges()
+        {
+            RebuildKeys();
         }
 
         protected override void OnSourceInitialized(EventArgs e)

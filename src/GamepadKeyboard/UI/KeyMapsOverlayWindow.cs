@@ -415,6 +415,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             for (int index = 0; index < ModifierNames.Length; index++)
             {
                 Border chipBorder = MakeChip(ModifierNames[index], boardScale);
+                AttachChipPadBadge(chipBorder, ModifierChipVks(index), boardScale);
                 Canvas.SetLeft(chipBorder, ChipColumnX(index, boardScale));
                 Canvas.SetTop(chipBorder, 14 * boardScale);
                 _root.Children.Add(chipBorder);
@@ -641,6 +642,67 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     : new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
             }
         }
+
+        // ── Pad-button badges on the modifier chips ───────────────────────────
+        // Same graphics as the keyboard overlay's key badges: which gamepad
+        // control drives [Ctrl]/[Shift]/[Alt]/[Win] in the current config
+        // (resolved from the system-button actions + Utility RS-press).
+
+        private const string badgeNone = "";
+
+        /// <summary>Modifier chip index → (primary, alternate) VKs.</summary>
+        private static (ushort Primary, ushort Alternate) ModifierChipVks(int index) => index switch
+        {
+            0 => (Vk.LControl, Vk.RControl),
+            1 => (Vk.LShift, Vk.RShift),
+            2 => (Vk.LMenu, Vk.RMenu),
+            3 => (Vk.LWin, Vk.RWin),
+            _ => (Vk.None, Vk.None),
+        };
+
+        private void AttachChipPadBadge(Border chip, (ushort Primary, ushort Alternate) vks, double boardScale)
+        {
+            string driver = Input.KeyMapsMapper.ModifierDriverButton(vks.Primary, vks.Alternate);
+            if (string.IsNullOrEmpty(driver))
+            {
+                return;
+            }
+            double size = 16 * boardScale;
+            Border badge = new()
+            {
+                Width = size,
+                Height = size,
+                CornerRadius = new CornerRadius(size * 0.3),
+                Background = chipBadgeFill,
+                BorderBrush = chipBadgeBorder,
+                BorderThickness = new Thickness(1),
+                Child = new TextBlock
+                {
+                    Text = driver,
+                    Foreground = chipBadgeText,
+                    FontSize = size * 0.62,
+                    FontWeight = FontWeights.Bold,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+                IsHitTestVisible = false,
+                Margin = new Thickness(2),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+            };
+            if (chip.Child is TextBlock label)
+            {
+                Grid panel = new();
+                panel.Children.Add(label);
+                panel.Children.Add(badge);
+                chip.Child = panel;
+            }
+        }
+
+        private static readonly Brush chipBadgeFill = new SolidColorBrush(Color.FromArgb(0xC8, 0x22, 0x22, 0x2C));
+        private static readonly Brush chipBadgeBorder = new SolidColorBrush(Color.FromArgb(0xB0, 0x9E, 0x9E, 0xAE));
+        private static readonly Brush chipBadgeText = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xF2));
 
         private void ApplyChipStates(Input.KeyMapsMapper keyMaps, bool includeComboChips)
         {
@@ -1162,7 +1224,50 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            border.Child = label;
+            string badgeDriver = key.Vk is (ushort)0xA0 or (ushort)0xA1   // Shift
+                ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LShift, Vk.RShift)
+                : key.Vk is (ushort)0xA2 or (ushort)0xA3   // Ctrl
+                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LControl, Vk.RControl)
+                : key.Vk is (ushort)0xA4 or (ushort)0xA5   // Alt
+                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LMenu, Vk.RMenu)
+                : key.Vk is (ushort)0x5B or (ushort)0x5C   // Windows
+                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LWin, Vk.RWin)
+                : "";
+            if (!string.IsNullOrEmpty(badgeDriver))
+            {
+                double badgeSize = Math.Max(9, rect.Width * 0.38);
+                Border badge = new()
+                {
+                    Width = badgeSize,
+                    Height = badgeSize,
+                    CornerRadius = new CornerRadius(badgeSize * 0.3),
+                    Background = chipBadgeFill,
+                    BorderBrush = chipBadgeBorder,
+                    BorderThickness = new Thickness(1),
+                    Child = new TextBlock
+                    {
+                        Text = badgeDriver,
+                        Foreground = chipBadgeText,
+                        FontSize = badgeSize * 0.6,
+                        FontWeight = FontWeights.Bold,
+                        TextAlignment = TextAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    },
+                    IsHitTestVisible = false,
+                    Margin = new Thickness(1),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Top,
+                };
+                Grid panel = new();
+                panel.Children.Add(label);
+                panel.Children.Add(badge);
+                border.Child = panel;
+            }
+            else
+            {
+                border.Child = label;
+            }
             Canvas.SetLeft(border, originX + rect.X);
             Canvas.SetTop(border, originY + rect.Y);
             _root.Children.Add(border);

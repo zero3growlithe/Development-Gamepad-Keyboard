@@ -109,6 +109,7 @@ namespace GamepadKeyboard.UI
             AddSystemActionRow(grid, ref row, "Left trigger (L2) action", _mapsSettings.LeftTriggerAction, value => _mapsSettings.LeftTriggerAction = value);
             AddSystemActionRow(grid, ref row, "Left bumper (L1) action", _mapsSettings.LeftBumperAction, value => _mapsSettings.LeftBumperAction = value);
             AddSystemActionRow(grid, ref row, "Right bumper (R1) action", _mapsSettings.RightBumperAction, value => _mapsSettings.RightBumperAction = value);
+            AddSystemActionRow(grid, ref row, "Right trigger (R2) action", _mapsSettings.RightTriggerAction, value => _mapsSettings.RightTriggerAction = value);
 
             AddHeader(grid, ref row, "Mitigate lock (use the action while the maps key is held)");
             AddMitigateLockRow(grid, ref row, "Left trigger (L2) mitigates lock",
@@ -355,17 +356,18 @@ namespace GamepadKeyboard.UI
 
         private static int ChordOrder(string button) => button switch
         {
-            "L2" => 0, "L1" => 1, "R1" => 2, "L3" => 3, "R3" => 4, _ => 5,
+            "L2" => 0, "L1" => 1, "R1" => 2, "R2" => 3, "L3" => 4, "R3" => 5, _ => 6,
         };
 
         /// <summary>The button currently acting as the maps key (its action is
-        /// a maps-modifier action): "L2", "L1", "R1" — or "" (none; the
-        /// physical right trigger stays the maps key).</summary>
+        /// a maps-modifier action): "L2", "L1", "R1", "R2" — or "" (none;
+        /// no button carries the maps modifier).</summary>
         private string MapsModifierButton()
         {
             if (_mapsSettings.LeftTriggerAction is "MapsModifierHold" or "MapsModifierToggle") return "L2";
             if (_mapsSettings.LeftBumperAction is "MapsModifierHold" or "MapsModifierToggle") return "L1";
             if (_mapsSettings.RightBumperAction is "MapsModifierHold" or "MapsModifierToggle") return "R1";
+            if (_mapsSettings.RightTriggerAction is "MapsModifierHold" or "MapsModifierToggle") return "R2";
             return "";
         }
 

@@ -390,9 +390,17 @@ namespace GamepadKeyboard.Settings
         /// exactly as the Shift exception always did). With mitigation OFF
         /// (default) a chord member is simply frozen while the maps key is
         /// held — its state at the maps-key edge is held until release.</summary>
+        /// <summary>Action the RIGHT TRIGGER (R2) runs — the maps key itself.
+        /// "MapsModifierHold"/"MapsModifierToggle" pick HOW R2 engages the maps
+        /// layer (hold = maps key down while held; toggle = one press flips it);
+        /// any other action demotes R2 to a normal system button and the maps
+        /// key falls back to the hold-through-binding path.</summary>
+        public string RightTriggerAction { get; set; } = "MapsModifierHold";
+
         public bool LeftTriggerMitigateLock { get; set; }
         public bool LeftBumperMitigateLock { get; set; }
         public bool RightBumperMitigateLock { get; set; }
+        public bool RightTriggerMitigateLock { get; set; }
 
         public KeyMapsLayoutSettings Layout { get; set; } = new();
         public List<KeyMapDefinition> Maps { get; set; } = new()

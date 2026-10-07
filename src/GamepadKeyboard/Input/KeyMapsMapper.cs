@@ -63,6 +63,50 @@ namespace GamepadKeyboard.Input
         public bool AltHeld => IsModifierFamilyDown(Vk.LMenu, Vk.RMenu);
         public bool WindowsHeld => IsModifierFamilyDown(Vk.LWin, Vk.RWin) || _windowsHeld;
 
+        /// <summary>Which gamepad control (L2/L1/R1/R2/R3, "" = none) currently
+        /// drives a modifier family — resolved from the configured system-button
+        /// actions plus the Utility map's right-stick-press slot. The keyboard
+        /// overlay uses this to draw the pad-button badge on the matching key
+        /// (Shift/Ctrl/Alt/Windows).</summary>
+        public static string ModifierDriverButton(ushort primaryVk, ushort alternateVk)
+        {
+            KeyMapsSettings settings = AppSettings.Instance.KeyMaps;
+            string result = DriverIfAction(settings.RightTriggerAction, primaryVk, alternateVk, "R2")
+                ?? DriverIfAction(settings.LeftTriggerAction, primaryVk, alternateVk, "L2")
+                ?? DriverIfAction(settings.LeftBumperAction, primaryVk, alternateVk, "L1")
+                ?? DriverIfAction(settings.RightBumperAction, primaryVk, alternateVk, "R1");
+            if (result != null)
+            {
+                return result;
+            }
+            System.Collections.Generic.IReadOnlyList<KeyMapDefinition> maps = settings.Maps;
+            if (maps.Count > 0 && maps[0].RightStickPress == "Windows"
+                && (primaryVk == Vk.LWin || alternateVk == Vk.RWin))
+            {
+                return "R3";
+            }
+            return "";
+        }
+
+        /// <summary>The pad-button name when the action targets the modifier
+        /// family (hold or toggle); null when it does not.</summary>
+        private static string? DriverIfAction(string action, ushort primaryVk, ushort alternateVk, string button)
+        {
+            ushort actionVk = action switch
+            {
+                "HoldShift" or "ToggleShift" => Vk.LShift,
+                "HoldCtrl" or "ToggleCtrl" => Vk.LControl,
+                "HoldAlt" or "ToggleAlt" => Vk.LMenu,
+                "HoldWin" or "ToggleWin" => Vk.LWin,
+                _ => Vk.None,
+            };
+            if (actionVk == Vk.None)
+            {
+                return null;
+            }
+            return actionVk == primaryVk || actionVk == alternateVk ? button : null;
+        }
+
         private bool IsModifierFamilyDown(ushort primaryVk, ushort alternateVk)
         {
             if (_heldModifierVks.Contains(primaryVk) || _heldModifierVks.Contains(alternateVk)
@@ -111,7 +155,6 @@ namespace GamepadKeyboard.Input
         private bool _seedRun;
         private bool _seeded;
         private bool _mapsKeyToggledOn;
-        private bool _previousPhysicalMapsKey;
         private bool _previousMapsKey;
         // ── Locks logic: per-button state of the three configurable system
         // buttons (L2/L1/R1). While the maps key is held a chord member is
@@ -123,6 +166,11 @@ namespace GamepadKeyboard.Input
         private readonly SystemButtonState _leftTrigger = new();
         private readonly SystemButtonState _leftBumper = new();
         private readonly SystemButtonState _rightBumper = new();
+        private readonly SystemButtonState _rightTrigger = new();
+        private bool _previousSystemToggleL2;
+        private bool _previousSystemToggleL1;
+        private bool _previousSystemToggleR1;
+        private bool _previousSystemToggleR2;
         private bool _windowsHeld;
         private bool _windowsLocked;
         private ushort _latchedWindowsVk;
@@ -205,6 +253,7 @@ namespace GamepadKeyboard.Input
             ReleaseSystemButton(_leftTrigger);
             ReleaseSystemButton(_leftBumper);
             ReleaseSystemButton(_rightBumper);
+            ReleaseSystemButton(_rightTrigger);
             if (_windowsHeld && _latchedWindowsVk != Vk.None)
             {
                 _sender.KeyUp(_latchedWindowsVk, _latchedWindowsExtended);
@@ -217,8 +266,11 @@ namespace GamepadKeyboard.Input
             _toggledModifierVks.Clear();
             _heldModifierVks.Clear();
             _previousMapsKey = false;
-            _previousPhysicalMapsKey = false;
             _mapsKeyToggledOn = false;
+            _previousSystemToggleL2 = false;
+            _previousSystemToggleL1 = false;
+            _previousSystemToggleR1 = false;
+            _previousSystemToggleR2 = false;
             _previousRightStickPress = false;
             _previousStart = false;
             MapsKeyHeld = false;
@@ -249,21 +301,44 @@ namespace GamepadKeyboard.Input
             bool mapsKeyIsL2 = mapsSettings.LeftTriggerAction is "MapsModifierHold" or "MapsModifierToggle";
             bool mapsKeyIsL1 = mapsSettings.LeftBumperAction is "MapsModifierHold" or "MapsModifierToggle";
             bool mapsKeyIsR1 = mapsSettings.RightBumperAction is "MapsModifierHold" or "MapsModifierToggle";
+            bool mapsKeyIsR2 = mapsSettings.RightTriggerAction is "MapsModifierHold" or "MapsModifierToggle";
+            // System buttons mapped to a maps-modifier TOGGLE flip the latch on
+            // their press edge (not level-follow); HOLD buttons follow level.
+            bool l2Toggle = mapsKeyIsL2 && mapsSettings.LeftTriggerAction == "MapsModifierToggle";
+            bool l1Toggle = mapsKeyIsL1 && mapsSettings.LeftBumperAction == "MapsModifierToggle";
+            bool r1Toggle = mapsKeyIsR1 && mapsSettings.RightBumperAction == "MapsModifierToggle";
+            bool r2Toggle = mapsKeyIsR2 && mapsSettings.RightTriggerAction == "MapsModifierToggle";
+            bool l2Held = mapsKeyIsL2 && snapshot.LeftTrigger >= 0.5 && mapsSettings.LeftTriggerAction == "MapsModifierHold";
+            bool l1Held = mapsKeyIsL1 && snapshot.LB && mapsSettings.LeftBumperAction == "MapsModifierHold";
+            bool r1Held = mapsKeyIsR1 && snapshot.RB && mapsSettings.RightBumperAction == "MapsModifierHold";
+            bool r2Held = mapsKeyIsR2 && snapshot.RightTrigger >= 0.5 && mapsSettings.RightTriggerAction == "MapsModifierHold";
+            bool systemToggleEdge = (l2Toggle && snapshot.LeftTrigger >= 0.5 && !_previousSystemToggleL2)
+                || (l1Toggle && snapshot.LB && !_previousSystemToggleL1)
+                || (r1Toggle && snapshot.RB && !_previousSystemToggleR1)
+                || (r2Toggle && snapshot.RightTrigger >= 0.5 && !_previousSystemToggleR2);
+            _previousSystemToggleL2 = l2Toggle && snapshot.LeftTrigger >= 0.5;
+            _previousSystemToggleL1 = l1Toggle && snapshot.LB;
+            _previousSystemToggleR1 = r1Toggle && snapshot.RB;
+            _previousSystemToggleR2 = r2Toggle && snapshot.RightTrigger >= 0.5;
+            if (systemToggleEdge)
+            {
+                _mapsKeyToggledOn = !_mapsKeyToggledOn;
+            }
             bool heldFromBinding = MapsModifierRequested
-                // A system button mapped to "Maps modifier hold" acts as the
+                // A system button mapped to a maps-modifier HOLD acts as the
                 // maps key too — any trigger/bumper can open the maps.
-                || (mapsKeyIsL2 && snapshot.LeftTrigger >= 0.5)
-                || (mapsKeyIsL1 && snapshot.LB)
-                || (mapsKeyIsR1 && snapshot.RB);
-            bool physicalMapsKey = snapshot.RightTrigger >= 0.5;
-            bool physicalEdge = physicalMapsKey && !_previousPhysicalMapsKey;
-            bool mapsKey = _mapsKeyToggledOn || heldFromBinding || physicalMapsKey;
+                || l2Held || l1Held || r1Held || r2Held;
+            bool mapsKey = _mapsKeyToggledOn || heldFromBinding;
             CurrentChordMask = ChordMask(
                 snapshot.LeftTrigger >= 0.5 && !mapsKeyIsL2, snapshot.LB && !mapsKeyIsL1,
-                snapshot.RB && !mapsKeyIsR1, snapshot.LS, snapshot.RS);
+                snapshot.RB && !mapsKeyIsR1, snapshot.LS, snapshot.RS)
+                + (mapsKeyIsR2 ? "" : snapshot.RightTrigger >= 0.5 ? "+R2" : "");
+            if (CurrentChordMask.StartsWith('+'))
+            {
+                CurrentChordMask = CurrentChordMask[1..];
+            }
             bool mapsKeyEdge = mapsKey && !_previousMapsKey;
             _previousMapsKey = mapsKey;
-            _previousPhysicalMapsKey = physicalMapsKey;
             int mapIndex = SelectMapForChord(mapsSettings, mapsKey);
             MapsKeyHeld = mapsKey;
             ActiveMapIndex = mapIndex;
@@ -286,6 +361,9 @@ namespace GamepadKeyboard.Input
             UpdateSystemButton(_rightBumper, snapshot.RB,
                 mapsSettings.RightBumperAction, mapsKey && !mapsKeyIsR1, mapsKeyEdge && !mapsKeyIsR1,
                 ChordUses(mapsSettings, "R1"), mapsSettings.RightBumperMitigateLock);
+            UpdateSystemButton(_rightTrigger, snapshot.RightTrigger >= 0.5,
+                mapsSettings.RightTriggerAction, mapsKey && !mapsKeyIsR2, mapsKeyEdge && !mapsKeyIsR2,
+                ChordUses(mapsSettings, "R2"), mapsSettings.RightTriggerMitigateLock);
             UpdateWindowsHold(snapshot.RS, mapsKey, mapsKeyEdge, map,
                 ChordUses(mapsSettings, "R3"));
 
@@ -361,7 +439,7 @@ namespace GamepadKeyboard.Input
         ///   press frees the modifier so Hold Ctrl/Shift/Alt/Windows actions
         ///   work through the locks logic exactly as without the maps key.
         /// </summary>
-        private void UpdateSystemButton(
+                private void UpdateSystemButton(
             SystemButtonState state,
             bool physical,
             string action,
@@ -378,54 +456,48 @@ namespace GamepadKeyboard.Input
                 state.PreviousPhysical = physical;
                 return;
             }
-            // "Mitigate lock": a button NOT in any open combination gets the
-            // same locks semantics as chord members (its current state sticks
-            // at the maps-key edge and survives the whole hold; a re-press
-            // unlocks + frees). Default (off): the button keeps working.
-            if (!isChordMember && !mitigateLock)
+            // The maps key is held. How this button's action behaves:
+            // • Pre-held (physically down at the maps-key edge): the key LATCHES
+            //   in its current state ("sticks") — Locked — regardless of
+            //   membership or mitigation.
+            // • Chord members (part of some map-open combination) stay locked
+            //   until the maps key is released; a re-press frees them ONLY when
+            //   the button's action is a hold modifier AND mitigation is on.
+            // • Non-members with mitigation ON behave like the classic Shift
+            //   exception: pre-held sticks, re-press unlocks + frees.
+            // • Non-members with mitigation OFF (default): fresh presses run
+            //   normally (the modifier was not part of the chord), but a
+            //   LATCHED pre-held state never unlocks by re-pressing — it stays
+            //   until the maps key is released.
+            if (mapsKeyEdge)
             {
-                if (mapsKeyEdge)
+                state.Locked = physical && state.Held;
+                state.Freed = false;
+            }
+            bool canRepressUnlock = mitigateLock && IsHoldModifierAction(action);
+            if (state.Locked && !state.Freed)
+            {
+                // Latched: keep the virtual key down; a re-press only frees the
+                // modifier when mitigation allows it.
+                if (canRepressUnlock && physical && !state.PreviousPhysical)
                 {
-                    // Held BEFORE the maps key went down: latched for the hold.
-                    state.Locked = physical && state.Held;
-                }
-                else if (physical && !state.PreviousPhysical && !state.Freed)
-                {
-                    // Fresh press: unlock + free — the modifier follows the
-                    // physical control as if the maps key were not held.
-                    // (Also unlocks a latched pre-held hold: the key is
-                    // already down, it just resumes tracking the physical.)
                     state.Locked = false;
                     state.Freed = true;
-                }
-                if (!state.Locked || state.Freed)
-                {
-                    RunAction(state, physical, action);
                 }
                 state.PreviousPhysical = physical;
                 return;
             }
-            if (mapsKeyEdge)
+            if (isChordMember && !canRepressUnlock)
             {
-                // Chord member held before the maps key edge: latched down.
-                state.Locked = physical && state.Held;
+                // Chord member without mitigation: frozen for this maps hold.
+                state.PreviousPhysical = physical;
+                return;
             }
-            else if (physical && !state.PreviousPhysical && IsHoldModifierAction(action))
-            {
-                // Re-press of the chord button while maps is held: unlock +
-                // free so the modifier tracks the physical control.
-                state.Locked = false;
-                state.Freed = true;
-                RunAction(state, physical, action);
-            }
-            else if (state.Freed)
-            {
-                RunAction(state, physical, action);
-            }
+            RunAction(state, physical, action);
             state.PreviousPhysical = physical;
         }
 
-        private static bool IsHoldModifierAction(string action) => action is
+private static bool IsHoldModifierAction(string action) => action is
             "HoldShift" or "HoldCtrl" or "HoldAlt" or "HoldWin"
             or "ToggleShift" or "ToggleCtrl" or "ToggleAlt" or "ToggleWin"
             or "MapsModifierHold" or "MapsModifierToggle";
@@ -596,7 +668,7 @@ namespace GamepadKeyboard.Input
             }
             foreach (string part in combo.Split('+'))
             {
-                if (part is not ("L2" or "L1" or "R1" or "L3" or "R3"))
+                if (part is not ("L2" or "L1" or "R1" or "R2" or "L3" or "R3"))
                 {
                     return false;
                 }
