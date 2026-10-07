@@ -9,10 +9,11 @@ namespace GamepadKeyboard.Input
 {
     /// <summary>
     /// Key Maps mode: the gamepad as a chord keyboard via maps of key
-    /// assignments. L2/L1/R1 run their configured actions (hold/toggle a
-    /// modifier, tap a key, fire an app action); holding R2 (the maps key)
+    /// assignments. L2/L1/R1/R2 run their configured actions (hold/toggle a
+    /// modifier, tap a key, fire an app action); the maps key (default: R2 —
+    /// any trigger/bumper via its maps-modifier action)
     /// selects the map while it is held — the map whose OpenWith combination
-    /// (subset of L2/L1/R1/L3/R3) best matches the currently held buttons —
+    /// (subset of L2/L1/R1/R2/L3/R3) best matches the currently held buttons —
     /// and releasing the maps key returns to the Utility map. Every other physical slot
     /// (d-pad, face, stick deflections, stick presses, Select/Start) sends one
     /// edge-triggered tap of its mapped key, so a held stick never repeats.
@@ -439,7 +440,7 @@ namespace GamepadKeyboard.Input
         ///   press frees the modifier so Hold Ctrl/Shift/Alt/Windows actions
         ///   work through the locks logic exactly as without the maps key.
         /// </summary>
-                private void UpdateSystemButton(
+        private void UpdateSystemButton(
             SystemButtonState state,
             bool physical,
             string action,
@@ -497,7 +498,7 @@ namespace GamepadKeyboard.Input
             state.PreviousPhysical = physical;
         }
 
-private static bool IsHoldModifierAction(string action) => action is
+        private static bool IsHoldModifierAction(string action) => action is
             "HoldShift" or "HoldCtrl" or "HoldAlt" or "HoldWin"
             or "ToggleShift" or "ToggleCtrl" or "ToggleAlt" or "ToggleWin"
             or "MapsModifierHold" or "MapsModifierToggle";

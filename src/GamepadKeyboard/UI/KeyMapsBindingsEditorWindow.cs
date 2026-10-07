@@ -96,7 +96,7 @@ namespace GamepadKeyboard.UI
 
         /// <summary>The system tab: what the triggers/bumpers run (actions
         /// from the shared catalog) and the button combination that opens each
-        /// map while the maps key is held (subset of L2, L1, R1, L3, R3;
+        /// map while the maps key is held (subset of L2, L1, R1, R2, L3, R3;
         /// empty = the maps key alone).</summary>
         private FrameworkElement BuildSystemTab()
         {
@@ -121,12 +121,15 @@ namespace GamepadKeyboard.UI
             AddMitigateLockRow(grid, ref row, "Right bumper (R1) mitigates lock",
                 () => _mapsSettings.RightBumperMitigateLock, value => _mapsSettings.RightBumperMitigateLock = value,
                 () => _mapsSettings.RightBumperAction);
+            AddMitigateLockRow(grid, ref row, "Right trigger (R2) mitigates lock",
+                () => _mapsSettings.RightTriggerMitigateLock, value => _mapsSettings.RightTriggerMitigateLock = value,
+                () => _mapsSettings.RightTriggerAction);
 
             AddHeader(grid, ref row, "Map open combinations (held with the maps key)");
             TextBlock hint = new()
             {
                 Text = "Buttons held together with the maps key (R2 by default). " +
-                       "Available: L2, L1, R1, L3, R3. Leave empty for the maps key alone. " +
+                       "Available: L2, L1, R1, R2, L3, R3. Leave empty for the maps key alone. " +
                        "The best-matching map wins; releasing the maps key returns to Utility.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 6),
@@ -272,7 +275,7 @@ namespace GamepadKeyboard.UI
 
         private readonly List<Action> _mitigateRefreshers = new();
 
-        /// <summary>One "open with" row: five checkboxes (L2, L1, R1, L3, R3)
+        /// <summary>One "open with" row: six checkboxes (L2, L1, R1, R2, L3, R3)
         /// reflecting the map's OpenWith combination; each change rewrites the
         /// canonical "L2+L1+R1"-style value and persists.</summary>
         private void AddOpenComboRow(Grid grid, ref int row, KeyMapDefinition map, string mapName)
@@ -329,7 +332,7 @@ namespace GamepadKeyboard.UI
 
         private static readonly (string Button, string Label)[] ChordButtonChoices =
         {
-            ("L2", "L2"), ("L1", "L1"), ("R1", "R1"), ("L3", "L3"), ("R3", "R3"),
+            ("L2", "L2"), ("L1", "L1"), ("R1", "R1"), ("R2", "R2"), ("L3", "L3"), ("R3", "R3"),
         };
 
         /// <summary>Parses "L2+R1" into a set; unknown tokens are dropped.</summary>
