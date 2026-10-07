@@ -669,6 +669,13 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         /// down (drives the "pressing the button highlights" rule).</summary>
         private static bool IsSlotPressed(ControllerMapper mapper, string slot)
         {
+            // While the move/scale adjust mode owns the pad, slot keys cannot
+            // activate — the press highlight must not imply otherwise.
+            if (ControllerMapper.KeyMapsMoveModeActive
+                && !string.Equals(slot, "ToggleKeyMapsMoveMode", StringComparison.Ordinal))
+            {
+                return false;
+            }
             Input.GamepadSnapshot snapshot = mapper.LatestSnapshot;
             double threshold = Math.Clamp(AppSettings.Instance.KeyMaps.StickTapThreshold, 0.05, 1.0);
             return slot switch
@@ -1311,6 +1318,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         /// atom view (Select/Start map to the pad's menu buttons).</summary>
         private static bool IsSlotPressedProjected(ControllerMapper mapper, string slot)
         {
+            // Move/scale mode owns the pad: Select/Start highlight nothing either.
+            if (ControllerMapper.KeyMapsMoveModeActive)
+            {
+                return false;
+            }
             if (slot == "Select") return mapper.LatestSnapshot.View;
             if (slot == "Start") return mapper.LatestSnapshot.Menu;
             return IsSlotPressed(mapper, slot);

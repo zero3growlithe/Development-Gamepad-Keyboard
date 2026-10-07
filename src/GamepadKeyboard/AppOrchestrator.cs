@@ -385,6 +385,7 @@ namespace GamepadKeyboard
                 _keyboard.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     System.Threading.Interlocked.Exchange(ref _keyMapsUiQueued, 0);
+                    ApplyKeyMapsAdjust();
                     _keyMapsOverlay.Update(_mapper);
                 }));
             }
@@ -465,6 +466,64 @@ namespace GamepadKeyboard
                     permanent: false)));
         }
 
+        /// <summary>Stick-driven Key Maps board adjust — consumes the per-tick
+        /// move/scale deltas the mapper computed while AdjustKeyMapsPosition is on.
+        /// Runs on the UI thread from the DirectInput overlay tick (maps mode never
+        /// flows through RefreshUiCore, which owns the keyboard adjust).</summary>
+        private void ApplyKeyMapsAdjust()
+        {
+            if (_mapper.Mode != ControllerMapper.MapperMode.DirectInput || !_mapper.AdjustKeyMapsPosition)
+            {
+                _keyMapsScaleRemainder = 0;
+                return;
+            }
+
+            // Left stick scales the board. Quantized to the settings-slider step
+            // so the live rebuild cadence matches dragging the "Key size" slider.
+            if (Math.Abs(_mapper.KeyMapsScaleDelta) > 0.01)
+            {
+                _keyMapsScaleRemainder += _mapper.KeyMapsScaleDelta * 0.02;
+                double step = 0.05;
+                if (_keyMapsScaleRemainder >= step)
+                {
+                    _keyMapsScaleRemainder = 0;
+                    Settings.KeyMapsLayoutSettings keyMapsLayout = Settings.AppSettings.Instance.KeyMaps.Layout;
+                    keyMapsLayout.KeySize = Math.Min(2.0, Math.Round((keyMapsLayout.KeySize + step) * 100) / 100);
+                    // Debounced: _saveTimer flushes the dirty settings; no disk
+                    // write per scale step while the stick is held.
+                    _settingsDirty = true;
+                    AppOrchestrator.NotifyKeyMapsLayoutChanged();
+                }
+                else if (_keyMapsScaleRemainder <= -step)
+                {
+                    _keyMapsScaleRemainder = 0;
+                    Settings.KeyMapsLayoutSettings keyMapsLayout = Settings.AppSettings.Instance.KeyMaps.Layout;
+                    keyMapsLayout.KeySize = Math.Max(0.6, Math.Round((keyMapsLayout.KeySize - step) * 100) / 100);
+                    _settingsDirty = true;
+                    AppOrchestrator.NotifyKeyMapsLayoutChanged();
+                }
+            }
+            else
+            {
+                _keyMapsScaleRemainder = 0;
+            }
+
+            // Right stick moves the window.
+            if (Math.Abs(_mapper.KeyMapsMoveDX) > 0.01 || Math.Abs(_mapper.KeyMapsMoveDY) > 0.01)
+            {
+                double keyMapsMoveSpeed = Settings.AppSettings.Instance.OverlayMoveSpeed;
+                _keyMapsOverlay.Left = Math.Clamp(
+                    _keyMapsOverlay.Left + _mapper.KeyMapsMoveDX * keyMapsMoveSpeed,
+                    -_keyMapsOverlay.Width + 80, System.Windows.SystemParameters.WorkArea.Width - 40);
+                _keyMapsOverlay.Top = Math.Clamp(
+                    _keyMapsOverlay.Top - _mapper.KeyMapsMoveDY * keyMapsMoveSpeed,
+                    0, System.Windows.SystemParameters.WorkArea.Height - 40);
+                Settings.AppSettings.Instance.KeyMapsOverlayLeft = _keyMapsOverlay.Left;
+                Settings.AppSettings.Instance.KeyMapsOverlayTop = _keyMapsOverlay.Top;
+                _settingsDirty = true;
+            }
+        }
+
         private void RefreshUi()
         {
             var dispatcher = _keyboard.Dispatcher;
@@ -509,52 +568,6 @@ namespace GamepadKeyboard
                 }
             }
 
-            // Key Maps board repositioning (gamepad-driven move mode + persisted window pos)
-            if (_mapper.Mode == ControllerMapper.MapperMode.DirectInput && _mapper.AdjustKeyMapsPosition
-                && Math.Abs(_mapper.KeyMapsScaleDelta) > 0.01)
-            {
-                // Same roles as the keyboard adjust mode: left stick scales.
-                // Quantized to the settings-slider step so the live rebuild
-                // cadence matches dragging the "Key size" slider.
-                _keyMapsScaleRemainder += _mapper.KeyMapsScaleDelta * 0.02;
-                double step = 0.05;
-                if (_keyMapsScaleRemainder >= step)
-                {
-                    _keyMapsScaleRemainder = 0;
-                    Settings.KeyMapsLayoutSettings keyMapsLayout = Settings.AppSettings.Instance.KeyMaps.Layout;
-                    keyMapsLayout.KeySize = Math.Min(2.0, Math.Round((keyMapsLayout.KeySize + step) * 100) / 100);
-                    Settings.AppSettings.Save();
-                    AppOrchestrator.NotifyKeyMapsLayoutChanged();
-                }
-                else if (_keyMapsScaleRemainder <= -step)
-                {
-                    _keyMapsScaleRemainder = 0;
-                    Settings.KeyMapsLayoutSettings keyMapsLayout = Settings.AppSettings.Instance.KeyMaps.Layout;
-                    keyMapsLayout.KeySize = Math.Max(0.6, Math.Round((keyMapsLayout.KeySize - step) * 100) / 100);
-                    Settings.AppSettings.Save();
-                    AppOrchestrator.NotifyKeyMapsLayoutChanged();
-                }
-            }
-            else
-            {
-                _keyMapsScaleRemainder = 0;
-            }
-
-            // Key Maps board repositioning (gamepad-driven move mode + persisted window pos)
-            if (_mapper.Mode == ControllerMapper.MapperMode.DirectInput && _mapper.AdjustKeyMapsPosition
-                && (Math.Abs(_mapper.KeyMapsMoveDX) > 0.01 || Math.Abs(_mapper.KeyMapsMoveDY) > 0.01))
-            {
-                double keyMapsMoveSpeed = Settings.AppSettings.Instance.OverlayMoveSpeed;
-                _keyMapsOverlay.Left = Math.Clamp(
-                    _keyMapsOverlay.Left + _mapper.KeyMapsMoveDX * keyMapsMoveSpeed,
-                    -_keyMapsOverlay.Width + 80, System.Windows.SystemParameters.WorkArea.Width - 40);
-                _keyMapsOverlay.Top = Math.Clamp(
-                    _keyMapsOverlay.Top - _mapper.KeyMapsMoveDY * keyMapsMoveSpeed,
-                    0, System.Windows.SystemParameters.WorkArea.Height - 40);
-                Settings.AppSettings.Instance.KeyMapsOverlayLeft = _keyMapsOverlay.Left;
-                Settings.AppSettings.Instance.KeyMapsOverlayTop = _keyMapsOverlay.Top;
-                _settingsDirty = true;
-            }
 
             // overlay visibility follows the setting (ToggleOverlay action / tray);
             // hidden while input disabled (gamepad free for games) AND in mouse mode
