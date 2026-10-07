@@ -459,7 +459,9 @@ namespace GamepadKeyboard.UI
         };
 
         private static string FormatActionForList(string action) =>
-            action.StartsWith("Key:", StringComparison.Ordinal) ? action[4..] + " (key)" : action;
+            action.StartsWith("Key:", StringComparison.Ordinal)
+                ? ActionCatalog.DisplayLabel(action[4..]) + " (key)"
+                : ActionCatalog.DisplayLabel(action);
 
         private static string FormatBinding(ProfileBinding entry)
         {
@@ -534,11 +536,11 @@ namespace GamepadKeyboard.UI
 
             root.Children.Add(new TextBlock { Text = "↓ action triggered by the last button:", Margin = new Thickness(0, 10, 0, 4) });
             var actionBox = new ComboBox { MinWidth = 300, HorizontalAlignment = HorizontalAlignment.Center };
-            foreach (var a in ActionCatalog.All) actionBox.Items.Add(a);
-            if (existingAction.Length > 0 && !actionBox.Items.Contains(existingAction))
+            foreach (var a in ActionCatalog.All) actionBox.Items.Add(ActionCatalog.DisplayLabel(a));
+            if (existingAction.Length > 0 && !actionBox.Items.Contains(ActionCatalog.DisplayLabel(existingAction)))
                 actionBox.Items.Add(existingAction);
             actionBox.Items.Add(PoolItem);
-            actionBox.SelectedItem = existingAction.Length > 0 ? existingAction : ActionCatalog.All[0];
+            actionBox.SelectedItem = existingAction.Length > 0 ? ActionCatalog.DisplayLabel(existingAction) : ActionCatalog.All[0];
             root.Children.Add(actionBox);
 
             var options = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
@@ -582,7 +584,7 @@ namespace GamepadKeyboard.UI
 
             confirm.Click += (_, __) =>
             {
-                string action = actionBox.SelectedItem as string ?? "";
+                string action = ActionCatalog.ValueOf(actionBox.SelectedItem as string ?? "");
                 if (action == PoolItem)
                 {
                     var cap = KeyCaptureDialog.Capture("Press a keyboard key for the binding...");
@@ -639,10 +641,19 @@ namespace GamepadKeyboard.UI
                     if (cap != null)
                     {
                         // Captured "Key:<name>": select the matching catalog action when
-                        // the key exists as one (base form); unknown keys fall back to None.
+                        // the key exists as one (base form, letters uppercase); unknown
+                        // keys fall back to None.
                         string actionName = cap.StartsWith("Key:", StringComparison.Ordinal) ? cap[4..] : cap;
-                        if (actionBox.Items.Contains(actionName)) actionBox.SelectedItem = actionName;
-                        else actionBox.SelectedIndex = 0;
+                        if (Array.IndexOf(ActionCatalog.All, actionName) >= 0)
+                        {
+                            // catalog hits are stored as their VALUE (lowercase letters);
+                            // the dropdown shows DisplayLabel, so nothing re-added here.
+                            actionBox.SelectedItem = ActionCatalog.DisplayLabel(actionName);
+                        }
+                        else
+                        {
+                            actionBox.SelectedIndex = 0;
+                        }
                     }
                     else actionBox.SelectedIndex = 0;
                     _suppress--;
@@ -703,6 +714,23 @@ namespace GamepadKeyboard.UI
     internal static class ActionCatalog
     {
         public static readonly string[] All = Build();
+
+        /// <summary>Dropdown label for an action: single letters display uppercase,
+        /// while the stored action value stays lowercase (shifted with Shift).</summary>
+        public static string DisplayLabel(string action)
+        {
+            return action.Length == 1 && action[0] >= 'a' && action[0] <= 'z'
+                ? action.ToUpperInvariant()
+                : action;
+        }
+
+        /// <summary>Inverse of DisplayLabel for values read back from a dropdown.</summary>
+        public static string ValueOf(string label)
+        {
+            return label.Length == 1 && label[0] >= 'A' && label[0] <= 'Z'
+                ? label.ToLowerInvariant()
+                : label;
+        }
 
         private static string[] Build() => new[]
         {

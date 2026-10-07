@@ -182,16 +182,16 @@ namespace GamepadKeyboard.UI
             ComboBox combo = new() { MinWidth = 260 };
             foreach (string action in ActionCatalog.All)
             {
-                combo.Items.Add(action);
+                combo.Items.Add(ActionCatalog.DisplayLabel(action));
             }
-            combo.SelectedItem = current;
+            combo.SelectedItem = ActionCatalog.DisplayLabel(current);
             combo.SelectionChanged += (_, __) =>
             {
                 if (_suppress)
                 {
                     return;
                 }
-                string chosen = combo.SelectedItem as string ?? "";
+                string chosen = ActionCatalog.ValueOf(combo.SelectedItem as string ?? "");
                 if (!string.IsNullOrEmpty(chosen))
                 {
                     write(chosen);
@@ -451,13 +451,17 @@ namespace GamepadKeyboard.UI
             ComboBox combo = new() { MinWidth = 260 };
             foreach (string action in ActionCatalog.All)
             {
-                combo.Items.Add(action);
+                combo.Items.Add(ActionCatalog.DisplayLabel(action));
             }
             combo.Items.Add(PoolItem);
             string current = ReadSlot(map, slot);
             if (current.Length == 0)
             {
                 combo.SelectedItem = NoneItem;
+            }
+            else if (combo.Items.Contains(ActionCatalog.DisplayLabel(current)))
+            {
+                combo.SelectedItem = ActionCatalog.DisplayLabel(current);
             }
             else
             {
@@ -479,7 +483,7 @@ namespace GamepadKeyboard.UI
                     if (captured == null)
                     {
                         _suppress = true;
-                        combo.SelectedItem = ReadSlot(map, capturedSlot).Length == 0 ? NoneItem : ReadSlot(map, capturedSlot);
+                        combo.SelectedItem = ActionCatalog.DisplayLabel(ReadSlot(map, capturedSlot));
                         _suppress = false;
                         return;
                     }
@@ -489,7 +493,7 @@ namespace GamepadKeyboard.UI
                     if (ActionCatalog.All.Contains(actionName, StringComparer.Ordinal))
                     {
                         _suppress = true;
-                        combo.SelectedItem = actionName;
+                        combo.SelectedItem = ActionCatalog.DisplayLabel(actionName);
                         _suppress = false;
                         WriteSlot(map, capturedSlot, actionName);
                     }
@@ -508,7 +512,7 @@ namespace GamepadKeyboard.UI
                 }
                 else
                 {
-                    WriteSlot(map, capturedSlot, chosen);
+                    WriteSlot(map, capturedSlot, ActionCatalog.ValueOf(chosen));
                 }
             };
             Grid.SetRow(combo, row);

@@ -1241,6 +1241,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 : key.Vk is (ushort)0x5B or (ushort)0x5C   // Windows
                     ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LWin, Vk.RWin)
                 : "";
+            border.Child = label;
             Canvas.SetLeft(border, originX + rect.X);
             Canvas.SetTop(border, originY + rect.Y);
             _root.Children.Add(border);
