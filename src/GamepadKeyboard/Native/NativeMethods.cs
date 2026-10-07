@@ -74,6 +74,21 @@ namespace GamepadKeyboard.Native
         [DllImport("user32.dll", SetLastError = true, EntryPoint = "SendInput")]
         public static extern unsafe uint SendInputUnsafe(uint nInputs, INPUT* pInputs, int cbSize);
 
+        // ── Toggle-key state ───────────────────────────────────────────────────
+        public const ushort VkCapital = 0x14;
+
+        public const ushort KeyStateToggled = 0x0001;
+
+        [DllImport("user32.dll", EntryPoint = "GetKeyState")]
+        public static extern short GetKeyState(ushort virtualKey);
+
+        /// <summary>True when the OS-level CapsLock toggle is ON (no polling
+        /// cost — read on relabel only).</summary>
+        public static bool CapsLockActive
+        {
+            get { return (GetKeyState(VkCapital) & KeyStateToggled) != 0; }
+        }
+
         // ── Window styles for the overlay ─────────────────────────────────────
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_LAYERED = 0x00080000;

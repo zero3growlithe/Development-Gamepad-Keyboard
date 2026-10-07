@@ -289,6 +289,24 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                 case "FaceB":
                     AddShape(canvas, MakeGlyph("B", 0xD8, 0x48, 0x54), 3, 3);
                     break;
+                case "L2":
+                    AddShape(canvas, MakeGlyph("L2", 0xB8, 0xB8, 0xC8), 3, 3);
+                    break;
+                case "R2":
+                    AddShape(canvas, MakeGlyph("R2", 0xB8, 0xB8, 0xC8), 3, 3);
+                    break;
+                case "L1":
+                    AddShape(canvas, MakeGlyph("L1", 0xB8, 0xB8, 0xC8), 3, 3);
+                    break;
+                case "R1":
+                    AddShape(canvas, MakeGlyph("R1", 0xB8, 0xB8, 0xC8), 3, 3);
+                    break;
+                case "L3":
+                    AddShape(canvas, MakeGlyph("L3", 0xB8, 0xB8, 0xC8), 3, 3);
+                    break;
+                case "R3":
+                    AddShape(canvas, MakeGlyph("R3", 0xB8, 0xB8, 0xC8), 3, 3);
+                    break;
                 case "DPadUp":
                     AddArrow(canvas, mid, 0.0);
                     break;
@@ -351,7 +369,7 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
             {
                 Text = letter,
                 Foreground = new SolidColorBrush(Color.FromRgb(r, g, b)),
-                FontSize = 11,
+                FontSize = letter.Length > 1 ? 8 : 11,
                 FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,

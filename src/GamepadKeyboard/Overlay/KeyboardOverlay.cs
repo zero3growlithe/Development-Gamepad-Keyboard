@@ -9,6 +9,7 @@ using System.Windows.Shapes;
 using GamepadKeyboard.Keyboard;
 using GamepadKeyboard.Native;
 using GamepadKeyboard.Settings;
+using GamepadKeyboard.UI;
 
 namespace GamepadKeyboard.Overlay
 {
@@ -36,10 +37,12 @@ namespace GamepadKeyboard.Overlay
         private double _scale = 1.0;
         private string _profileText = "";
         private bool _shiftActive;
+
+        private bool _capsLockActive;
         private double _lastLeftPointX = double.NaN, _lastLeftPointY = double.NaN;
         private double _lastRightPointX = double.NaN, _lastRightPointY = double.NaN;
         private bool? _lastCentersVisible;
-        private readonly System.Collections.Generic.Dictionary<KeyboardLayout.KeyDef, Border> _modifierBadges = new();
+        private readonly System.Collections.Generic.Dictionary<KeyboardLayout.KeyDef, Canvas> _modifierBadges = new();
 
         public double Scale => _scale;
 
@@ -329,19 +332,29 @@ namespace GamepadKeyboard.Overlay
 
         public void SetShiftActive(bool active)
         {
-            if (_shiftActive == active) return;
+            bool capsLockActive = NativeMethods.CapsLockActive;
+            if (_shiftActive == active && _capsLockActive == capsLockActive) return;
             _shiftActive = active;
+            _capsLockActive = capsLockActive;
             foreach (var pair in _keyBorders)
             {
                 if (pair.Value.Child is TextBlock label)
-                    label.Text = VisibleKeyLabel(pair.Key, active);
+                    label.Text = VisibleKeyLabel(pair.Key, active, capsLockActive);
             }
         }
 
         internal static string VisibleKeyLabel(KeyboardLayout.KeyDef key, bool shiftActive)
         {
+            return VisibleKeyLabel(key, shiftActive, NativeMethods.CapsLockActive);
+        }
+
+        internal static string VisibleKeyLabel(KeyboardLayout.KeyDef key, bool shiftActive, bool capsLockActive)
+        {
+            // Windows semantics: CapsLock uppercases letters; Shift while CapsLock
+            // gives lowercase. Symbols follow Shift only.
+            bool lettersUppercase = shiftActive ^ capsLockActive;
             if (key.Vk >= 'A' && key.Vk <= 'Z')
-                return shiftActive ? key.Label.ToUpperInvariant() : key.Label.ToLowerInvariant();
+                return lettersUppercase ? key.Label.ToUpperInvariant() : key.Label.ToLowerInvariant();
             if (!shiftActive) return key.Label;
             return key.Vk switch
             {
@@ -414,10 +427,6 @@ namespace GamepadKeyboard.Overlay
         // (resolved from the configured system-button actions). No driver →
         // no badge, so the keyboard never lies.
 
-        private static readonly Brush badgeFill = new SolidColorBrush(Color.FromArgb(0xC8, 0x22, 0x22, 0x2C));
-        private static readonly Brush badgeBorder = new SolidColorBrush(Color.FromArgb(0xB0, 0x9E, 0x9E, 0xAE));
-        private static readonly Brush badgeText = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xF2));
-
         /// <summary>Attach (or leave off) the pad-button badge for one key;
         /// badges live on the same canvas and scale with the window.</summary>
         private void AttachModifierBadge(KeyboardLayout.KeyDef key, Rect keyRect)
@@ -435,37 +444,25 @@ namespace GamepadKeyboard.Overlay
             {
                 return;
             }
-            double badgeSize = Math.Max(10, keyRect.Width * 0.34);
-            Border badge = MakePadBadge(driver, badgeSize);
-            Canvas.SetLeft(badge, keyRect.X + keyRect.Width - badgeSize - 1.5);
-            Canvas.SetTop(badge, keyRect.Y - badgeSize * 0.35);
-            _canvas.Children.Add(badge);
-            _modifierBadges[key] = badge;
-        }
 
-        private static Border MakePadBadge(string label, double size)
-        {
-            TextBlock text = new()
+            // Same prompt-icon system as the Key Maps board prompts: the vector
+            // button glyph scales with "Buttons icons scale" and shifts with
+            // "Prompt offset" (sliders live in Keyboard Maps layout settings).
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double promptScale = KeyMapsOverlayWindow.PromptIconScale * Math.Max(0.05, layout.IconScale);
+            Canvas icon = KeyMapsAtom.MakeIcon(driver);
+            icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
+            double iconSpan = KeyMapsAtom.IconSpan * promptScale;
+            Canvas.SetLeft(icon, keyRect.X + keyRect.Width - iconSpan / 2.0 + layout.PromptOffsetX);
+            Canvas.SetTop(icon, keyRect.Y - iconSpan / 2.0 + layout.PromptOffsetY);
+            icon.IsHitTestVisible = false;
+            _canvas.Children.Add(icon);
+            if (_modifierBadges.TryGetValue(key, out Canvas? previous))
             {
-                Text = label,
-                Foreground = badgeText,
-                FontSize = size * 0.66,
-                FontWeight = FontWeights.Bold,
-                TextAlignment = TextAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            return new Border
-            {
-                Width = size,
-                Height = size,
-                CornerRadius = new CornerRadius(size * 0.28),
-                Background = badgeFill,
-                BorderBrush = badgeBorder,
-                BorderThickness = new Thickness(1),
-                Child = text,
-                IsHitTestVisible = false,
-            };
+                _canvas.Children.Remove(previous);
+            }
+
+            _modifierBadges[key] = icon;
         }
 
         /// <summary>Re-resolves every modifier badge after the system-button

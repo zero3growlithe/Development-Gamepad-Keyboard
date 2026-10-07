@@ -62,10 +62,13 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         private readonly HashSet<Border> _projectedExtraBorders = new();
         private readonly Dictionary<KeyboardLayout.KeyDef, bool> _projectedPressed = new();
         private readonly List<UIElement> _projectedPrompts = new();
+        private readonly List<Canvas> _projectedModifierBadges = new();
         private readonly Dictionary<string, (KeyboardLayout.KeyDef Key, string Label)> _promptTargets = new();
         private KeyboardLayout? _projectedLayout;
         private double _lastProjectedFingerprint = double.NaN;
         private bool _lastProjectedShift;
+
+        private bool _lastProjectedCapsLock;
 
         private List<KeyMapDefinition> _maps = new();
         private int _lastRenderedMapIndex;
@@ -415,11 +418,21 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             for (int index = 0; index < ModifierNames.Length; index++)
             {
                 Border chipBorder = MakeChip(ModifierNames[index], boardScale);
-                AttachChipPadBadge(chipBorder, ModifierChipVks(index), boardScale);
                 Canvas.SetLeft(chipBorder, ChipColumnX(index, boardScale));
                 Canvas.SetTop(chipBorder, 14 * boardScale);
                 _root.Children.Add(chipBorder);
                 _chips.Add(new ChipView { Border = chipBorder, ModIndex = index });
+                Canvas? badgeIcon = AttachChipPadBadge(chipBorder, ModifierChipVks(index), boardScale);
+                if (badgeIcon != null)
+                {
+                    KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+                    double iconSpan = ChipPadBadgeIconSpan(boardScale);
+                    Canvas.SetLeft(badgeIcon, ChipColumnX(index, boardScale) + ChipWidth * boardScale
+                        - iconSpan / 2.0 + layout.PromptOffsetX * boardScale);
+                    Canvas.SetTop(badgeIcon, 14 * boardScale - iconSpan / 2.0
+                        + layout.PromptOffsetY * boardScale);
+                    _root.Children.Add(badgeIcon);
+                }
             }
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             _mapNameLabel.Width = BoardWidth;
@@ -660,49 +673,32 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             _ => (Vk.None, Vk.None),
         };
 
-        private void AttachChipPadBadge(Border chip, (ushort Primary, ushort Alternate) vks, double boardScale)
+        private Canvas? AttachChipPadBadge(Border chip, (ushort Primary, ushort Alternate) vks, double boardScale)
         {
             string driver = Input.KeyMapsMapper.ModifierDriverButton(vks.Primary, vks.Alternate);
             if (string.IsNullOrEmpty(driver))
             {
-                return;
+                return null;
             }
-            double size = 16 * boardScale;
-            Border badge = new()
-            {
-                Width = size,
-                Height = size,
-                CornerRadius = new CornerRadius(size * 0.3),
-                Background = chipBadgeFill,
-                BorderBrush = chipBadgeBorder,
-                BorderThickness = new Thickness(1),
-                Child = new TextBlock
-                {
-                    Text = driver,
-                    Foreground = chipBadgeText,
-                    FontSize = size * 0.62,
-                    FontWeight = FontWeights.Bold,
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-                IsHitTestVisible = false,
-                Margin = new Thickness(2),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Top,
-            };
-            if (chip.Child is TextBlock label)
-            {
-                Grid panel = new();
-                panel.Children.Add(label);
-                panel.Children.Add(badge);
-                chip.Child = panel;
-            }
+
+            // Same prompt-icon system as the projected-key button hints: scaled by
+            // "Buttons icons scale" (IconScale), nudged by "Prompt offset". The icon
+            // is returned so the caller positions it on the board canvas (Canvas
+            // attached properties do not position children inside a Grid).
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double promptScale = PromptIconScale * Math.Max(0.05, layout.IconScale) * boardScale;
+            double iconSpan = KeyMapsAtom.IconSpan * promptScale;
+            Canvas icon = KeyMapsAtom.MakeIcon(driver);
+            icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
+            icon.IsHitTestVisible = false;
+            return icon;
         }
 
-        private static readonly Brush chipBadgeFill = new SolidColorBrush(Color.FromArgb(0xC8, 0x22, 0x22, 0x2C));
-        private static readonly Brush chipBadgeBorder = new SolidColorBrush(Color.FromArgb(0xB0, 0x9E, 0x9E, 0xAE));
-        private static readonly Brush chipBadgeText = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xF2));
+        private double ChipPadBadgeIconSpan(double boardScale)
+        {
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            return KeyMapsAtom.IconSpan * PromptIconScale * Math.Max(0.05, layout.IconScale) * boardScale;
+        }
 
         private void ApplyChipStates(Input.KeyMapsMapper keyMaps, bool includeComboChips)
         {
@@ -921,7 +917,9 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             ("■", Vk.MediaStop),
         };
 
-        private const double PromptIconScale = 1.55;
+        /// <summary>Prompt-icon scale shared with the classic keyboard overlay's
+        /// pad-button badges (both follow the "Buttons icons scale" system).</summary>
+        internal const double PromptIconScale = 1.55;
         private const double ProjectedPromptIdleOpacity = 0.8;
 
         private static readonly string[] ProjectedSlots =
@@ -957,6 +955,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 _root.Children.Remove(prompt);
             }
             _projectedPrompts.Clear();
+            foreach (UIElement badge in _projectedModifierBadges)
+            {
+                _root.Children.Remove(badge);
+            }
+            _projectedModifierBadges.Clear();
             _promptTargets.Clear();
             _lastProjectedShift = false;
             _lastPromptOpacity = double.NaN;
@@ -1004,6 +1007,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 _root.Children.Remove(prompt);
             }
             _projectedPrompts.Clear();
+            foreach (UIElement badge in _projectedModifierBadges)
+            {
+                _root.Children.Remove(badge);
+            }
+            _projectedModifierBadges.Clear();
             _promptTargets.Clear();
             _lastPromptOpacity = double.NaN;
             foreach (Border extraBorder in _projectedExtraBorders)
@@ -1203,6 +1211,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             KeyboardLayout.KeyDef key, double originX, double originY, double pitch, double boardScale,
             bool isExtraKey = false)
         {
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             double gap = 6.0 * boardScale;
             Rect rect = new(key.X * pitch, key.Y * pitch, key.W * pitch - gap, pitch - gap);
             double keyOpacity = Math.Clamp(AppSettings.Instance.KeyboardKeyOpacity, 0.2, 1.0);
@@ -1233,45 +1242,28 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 : key.Vk is (ushort)0x5B or (ushort)0x5C   // Windows
                     ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LWin, Vk.RWin)
                 : "";
-            if (!string.IsNullOrEmpty(badgeDriver))
-            {
-                double badgeSize = Math.Max(9, rect.Width * 0.38);
-                Border badge = new()
-                {
-                    Width = badgeSize,
-                    Height = badgeSize,
-                    CornerRadius = new CornerRadius(badgeSize * 0.3),
-                    Background = chipBadgeFill,
-                    BorderBrush = chipBadgeBorder,
-                    BorderThickness = new Thickness(1),
-                    Child = new TextBlock
-                    {
-                        Text = badgeDriver,
-                        Foreground = chipBadgeText,
-                        FontSize = badgeSize * 0.6,
-                        FontWeight = FontWeights.Bold,
-                        TextAlignment = TextAlignment.Center,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center,
-                    },
-                    IsHitTestVisible = false,
-                    Margin = new Thickness(1),
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    VerticalAlignment = VerticalAlignment.Top,
-                };
-                Grid panel = new();
-                panel.Children.Add(label);
-                panel.Children.Add(badge);
-                border.Child = panel;
-            }
-            else
-            {
-                border.Child = label;
-            }
             Canvas.SetLeft(border, originX + rect.X);
             Canvas.SetTop(border, originY + rect.Y);
             _root.Children.Add(border);
             _projectedKeys[key] = border;
+            if (!string.IsNullOrEmpty(badgeDriver))
+            {
+                // Same prompt-icon system as the button hints above keys — sibling
+                // element on the board canvas so Prompt offset shifts it exactly
+                // like the hints.
+                double promptScale = PromptIconScale * Math.Max(0.05, layout.IconScale) * boardScale;
+                double iconSpan = KeyMapsAtom.IconSpan * promptScale;
+                Canvas icon = KeyMapsAtom.MakeIcon(badgeDriver);
+                icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
+                Canvas.SetLeft(icon, originX + rect.X + rect.Width - iconSpan / 2.0
+                    + layout.PromptOffsetX * boardScale);
+                Canvas.SetTop(icon, originY + rect.Y - iconSpan / 2.0
+                    + layout.PromptOffsetY * boardScale);
+                icon.IsHitTestVisible = false;
+                Canvas.SetZIndex(icon, 22);
+                _root.Children.Add(icon);
+                _projectedModifierBadges.Add(icon);
+            }
             _projectedPressed[key] = false;
             if (isExtraKey)
             {
@@ -1301,10 +1293,12 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             UpdateProjectedPresses(mapper);
             UpdateProjectedModifiers(keyMaps);
 
-            if (shiftHeld != _lastProjectedShift)
+            bool capsLockActive = Native.NativeMethods.CapsLockActive;
+            if (shiftHeld != _lastProjectedShift || capsLockActive != _lastProjectedCapsLock)
             {
                 _lastProjectedShift = shiftHeld;
-                ApplyProjectedKeyLabels(shiftHeld);
+                _lastProjectedCapsLock = capsLockActive;
+                ApplyProjectedKeyLabels(shiftHeld, capsLockActive);
             }
         }
 
@@ -1399,6 +1393,11 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
 
         private void ApplyProjectedKeyLabels(bool shiftActive)
         {
+            ApplyProjectedKeyLabels(shiftActive, Native.NativeMethods.CapsLockActive);
+        }
+
+        private void ApplyProjectedKeyLabels(bool shiftActive, bool capsLockActive)
+        {
             if (_projectedLayout == null)
             {
                 return;
@@ -1407,7 +1406,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             {
                 if (pair.Value.Child is TextBlock text && pair.Key.X >= 0)
                 {
-                    text.Text = Overlay.KeyboardOverlay.VisibleKeyLabel(pair.Key, shiftActive);
+                    text.Text = Overlay.KeyboardOverlay.VisibleKeyLabel(pair.Key, shiftActive, capsLockActive);
                 }
             }
         }
