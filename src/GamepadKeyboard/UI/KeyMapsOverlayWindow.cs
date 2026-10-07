@@ -406,6 +406,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                    layout.SelectStartOffsetX * 4.7 + layout.SelectStartOffsetY * 4.8 +
                    layout.SelectStartScale * 4.9 + layout.SelectStartSpreadX * 5.0 +
                    (layout.ShowShadowMaps ? 1.0 : 0.0) * 5.08 +
+                   (layout.ShowMapNameLabel ? 1.0 : 0.0) * 5.09 +
                    (layout.StickUniformSpread ? 1.0 : 0.0) * 5.1 +
                    layout.LeftStickCenterOffsetY * 5.2 + layout.LeftStickBottomOffsetY * 5.3 +
                    layout.RightStickCenterOffsetY * 5.4 + layout.RightStickBottomOffsetY * 5.5 +
@@ -427,8 +428,9 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 if (badgeIcon != null)
                 {
                     double iconSpan = ChipPadBadgeIconSpan(boardScale);
-                    Canvas.SetLeft(badgeIcon, ChipColumnX(index, boardScale) + ChipWidth * boardScale
-                        - iconSpan / 2.0 + layout.PromptOffsetX * boardScale);
+                    Canvas.SetLeft(badgeIcon, ChipColumnX(index, boardScale)
+                        + ChipWidth * boardScale / 2.0 - iconSpan / 2.0
+                        + layout.PromptOffsetX * boardScale);
                     Canvas.SetTop(badgeIcon, 14 * boardScale - iconSpan / 2.0
                         + layout.PromptOffsetY * boardScale);
                     _root.Children.Add(badgeIcon);
@@ -439,7 +441,12 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             _mapNameLabel.FontSize = 17 * boardScale * layout.FontScale;
             Canvas.SetLeft(_mapNameLabel, 0);
             Canvas.SetTop(_mapNameLabel, (14 + ChipHeight + 6) * boardScale);
-            _root.Children.Add(_mapNameLabel);
+            _mapNameLabel.Visibility = layout.ShowMapNameLabel
+                ? Visibility.Visible : Visibility.Collapsed;
+            if (!_root.Children.Contains(_mapNameLabel))
+            {
+                _root.Children.Add(_mapNameLabel);
+            }
             BuildComboChips(boardScale);
         }
 
@@ -994,6 +1001,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 Canvas.SetTop(_mapNameLabel, 6 * boardScale);
                 _root.Children.Add(_mapNameLabel);
             }
+            _mapNameLabel.Visibility = AppSettings.Instance.KeyMaps.Layout.ShowMapNameLabel
+                ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>(Re)creates ONLY the prompt icons + covered outlines for
@@ -1078,7 +1087,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                     W = 0.9,
                 };
                 AddProjectedKey(extra, originX, originY, pitch, boardScale,
-                    badgeSink: _projectedExtraModifierBadges);
+                    isExtraKey: true, badgeSink: _projectedExtraModifierBadges);
             }
 
             // Prompts: one vector gamepad-button icon per bound slot, over its
@@ -1255,7 +1264,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 double iconSpan = KeyMapsAtom.IconSpan * promptScale;
                 Canvas icon = KeyMapsAtom.MakeIcon(badgeDriver);
                 icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
-                Canvas.SetLeft(icon, originX + rect.X + rect.Width - iconSpan / 2.0
+                Canvas.SetLeft(icon, originX + rect.X + rect.Width / 2.0 - iconSpan / 2.0
                     + layout.PromptOffsetX * boardScale);
                 Canvas.SetTop(icon, originY + rect.Y - iconSpan / 2.0
                     + layout.PromptOffsetY * boardScale);

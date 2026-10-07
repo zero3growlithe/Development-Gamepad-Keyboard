@@ -511,6 +511,10 @@ namespace GamepadKeyboard.Settings
         /// Maps board (0.2–3; 1 = default).</summary>
         public double FontScale { get; set; } = 1.0;
 
+        /// <summary>Show the map-name label above the atoms/keyboard board.
+        /// False hides it in both the atom view and the projected keyboard.</summary>
+        public bool ShowMapNameLabel { get; set; } = true;
+
         /// <summary>Select/Start pair placement: base position, tile scale and
         /// the X spread between the two tiles.</summary>
         public double SelectStartOffsetX { get; set; } = 0.0;

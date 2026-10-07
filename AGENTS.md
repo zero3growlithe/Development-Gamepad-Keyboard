@@ -130,6 +130,11 @@ live in `README.md` / `DOCS.md`.
   3 quarks + physical-button icon; green = physical press, amber = active
   for use; R2 held reveals quarks.
 - Face colors: A=green, Y=yellow, X=blue, B=red.
+- Icon system: L1/L2/R1/R2 use RECTANGLE-ring glyphs
+  (`MakeShoulderGlyph`); L3/R3 + faces keep circle rings (`MakeGlyph`);
+  Select/Start show word glyphs (`MakeWordGlyph`) — never bespoke elements,
+  always `KeyMapsAtom.MakeIcon` so scaling/offset settings apply. Prompt
+  icons center on their key/chip (badge X = center − iconSpan/2).
 
 ## Known pitfalls (learned the hard way)
 

@@ -290,16 +290,16 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                     AddShape(canvas, MakeGlyph("B", 0xD8, 0x48, 0x54), 3, 3);
                     break;
                 case "L2":
-                    AddShape(canvas, MakeGlyph("L2", 0xB8, 0xB8, 0xC8), 3, 3);
+                    AddShape(canvas, MakeShoulderGlyph("L2", 0xB8, 0xB8, 0xC8), 2, 7);
                     break;
                 case "R2":
-                    AddShape(canvas, MakeGlyph("R2", 0xB8, 0xB8, 0xC8), 3, 3);
+                    AddShape(canvas, MakeShoulderGlyph("R2", 0xB8, 0xB8, 0xC8), 2, 7);
                     break;
                 case "L1":
-                    AddShape(canvas, MakeGlyph("L1", 0xB8, 0xB8, 0xC8), 3, 3);
+                    AddShape(canvas, MakeShoulderGlyph("L1", 0xB8, 0xB8, 0xC8), 2, 7);
                     break;
                 case "R1":
-                    AddShape(canvas, MakeGlyph("R1", 0xB8, 0xB8, 0xC8), 3, 3);
+                    AddShape(canvas, MakeShoulderGlyph("R1", 0xB8, 0xB8, 0xC8), 2, 7);
                     break;
                 case "L3":
                     AddShape(canvas, MakeGlyph("L3", 0xB8, 0xB8, 0xC8), 3, 3);
@@ -332,6 +332,12 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                 case "RightStickRight":
                 case "RightStickPress":
                     AddStick(canvas, mid, 0xE0, 0x64, 0xA8, StickArrowDegrees(slot), "R");
+                    break;
+                case "Select":
+                    AddShape(canvas, MakeWordGlyph("Select", 0xB8, 0xB8, 0xC8), 3, 3);
+                    break;
+                case "Start":
+                    AddShape(canvas, MakeWordGlyph("Start", 0xB8, 0xB8, 0xC8), 3, 3);
                     break;
                 default:
                     AddShape(canvas, new System.Windows.Shapes.Rectangle
@@ -371,6 +377,62 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                 Foreground = new SolidColorBrush(Color.FromRgb(r, g, b)),
                 FontSize = letter.Length > 1 ? 8 : 11,
                 FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            System.Windows.Controls.Grid grid = new();
+            grid.Children.Add(ring);
+            grid.Children.Add(text);
+            return grid;
+        }
+
+        /// <summary>Shoulder/trigger icon: rounded RECTANGLE ring (matches the
+        /// physical key shape) with the label centered inside — same palette as
+        /// MakeGlyph but rectangular, per the shoulder-button look.</summary>
+        private static System.Windows.Controls.Grid MakeShoulderGlyph(string label, byte r, byte g, byte b)
+        {
+            System.Windows.Shapes.Rectangle ring = new()
+            {
+                Width = IconSpan - 4,
+                Height = IconSpan - 12,
+                RadiusX = 5,
+                RadiusY = 5,
+                Stroke = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                StrokeThickness = 2.2,
+            };
+            System.Windows.Controls.TextBlock text = new()
+            {
+                Text = label,
+                Foreground = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                FontSize = 8,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            System.Windows.Controls.Grid grid = new();
+            grid.Children.Add(ring);
+            grid.Children.Add(text);
+            return grid;
+        }
+
+        /// <summary>Select/Start icon: the button's name as text inside the
+        /// standard circle plate — the two buttons have no letter glyph.</summary>
+        private static System.Windows.Controls.Grid MakeWordGlyph(string word, byte r, byte g, byte b)
+        {
+            System.Windows.Shapes.Ellipse ring = new()
+            {
+                Width = IconSpan - 6,
+                Height = IconSpan - 6,
+                Stroke = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                StrokeThickness = 1.8,
+            };
+            System.Windows.Controls.TextBlock text = new()
+            {
+                Text = word,
+                Foreground = new SolidColorBrush(Color.FromRgb(r, g, b)),
+                FontSize = 6,
+                TextAlignment = TextAlignment.Center,
+                FontWeight = FontWeights.SemiBold,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };

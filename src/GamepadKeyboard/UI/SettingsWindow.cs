@@ -335,6 +335,7 @@ namespace GamepadKeyboard.UI
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset X", "IconOffsetX", -200, 200, 5));
             rows.Add(MakeKeyMapsSliderRow("Button-icon offset Y", "IconOffsetY", -200, 200, 5));
             rows.Add(MakeKeyMapsToggleRow("Show shadow maps", "ShowShadowMaps"));
+            rows.Add(MakeKeyMapsToggleRow("Show map name label", "ShowMapNameLabel"));
             rows.Add(MakeKeyMapsToggleRow("Project onto a keyboard", "ProjectKeyboard"));
             rows.Add(MakeKeyMapsSliderRow("Prompt offset X", "PromptOffsetX", -200.0, 200.0, 1.0));
             rows.Add(MakeKeyMapsSliderRow("Prompt offset Y", "PromptOffsetY", -200.0, 200.0, 1.0));
