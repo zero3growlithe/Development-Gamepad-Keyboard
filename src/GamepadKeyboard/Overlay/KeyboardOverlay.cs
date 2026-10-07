@@ -319,8 +319,15 @@ namespace GamepadKeyboard.Overlay
         /// <summary>Tints the background of keys whose virtual modifiers are toggled on.</summary>
         public void SetToggledKeys(System.Collections.Generic.IEnumerable<ushort> vks)
         {
-            // modifier VKs only — never tint regular keys
-            var next = new HashSet<ushort>(vks.Where(IsModifierVk));
+            // modifier VKs only — never tint regular keys. CapsLock lights from
+            // the OS toggle state (a mapped CapsLock tap flips that state, so the
+            // overlay follows both physical and mapped activation).
+            HashSet<ushort> next = new HashSet<ushort>(vks.Where(IsModifierVk));
+            if (NativeMethods.CapsLockActive)
+            {
+                next.Add((ushort)0x14);
+            }
+
             if (_toggledVks.SetEquals(next)) return;
             _toggledVks = next;
             foreach (var pair in _keyBorders)
@@ -387,7 +394,8 @@ namespace GamepadKeyboard.Overlay
             (ushort)0xA0 or (ushort)0xA1 or   // LShift / RShift
             (ushort)0xA2 or (ushort)0xA3 or   // LControl / RControl
             (ushort)0xA4 or (ushort)0xA5 or   // LMenu / RMenu (Alt)
-            (ushort)0x5B or (ushort)0x5C;     // LWin / RWin
+            (ushort)0x5B or (ushort)0x5C or   // LWin / RWin
+            (ushort)0x14;                     // CapsLock (OS toggle)
 
         private void ApplyToggleTint(Border border, bool on)
         {

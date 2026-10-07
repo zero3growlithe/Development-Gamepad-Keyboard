@@ -1358,6 +1358,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             ApplyProjectedModifier(Vk.RMenu, keyMaps.AltHeld);
             ApplyProjectedModifier(Vk.LWin, keyMaps.WindowsHeld);
 
+            // CapsLock lights from the OS toggle state (lights like Shift while ON).
+            ApplyProjectedModifier(Vk.Capital, Native.NativeMethods.CapsLockActive);
         }
 
         private double _lastPromptOpacity = double.NaN;
