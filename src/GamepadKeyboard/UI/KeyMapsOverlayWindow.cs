@@ -113,8 +113,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 return;
             }
 
-            bool wantVisible = mapper != null
-                && mapper.InputEnabled
+            bool wantVisible = mapper.InputEnabled
                 && mapper.Mode == ControllerMapper.MapperMode.DirectInput
                 && AppSettings.Instance.KeyMaps.ShowOverlay;
             if (!wantVisible)
