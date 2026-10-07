@@ -483,11 +483,24 @@ namespace GamepadKeyboard.UI
                         _suppress = false;
                         return;
                     }
-                    if (!combo.Items.Contains(captured))
+                    // Captured "Key:<name>": select the matching catalog action when
+                    // the key exists as one; unknown keys fall back to None.
+                    string actionName = captured.StartsWith("Key:", StringComparison.Ordinal) ? captured[4..] : captured;
+                    if (ActionCatalog.All.Contains(actionName, StringComparer.Ordinal))
                     {
-                        combo.Items.Add(captured);
+                        _suppress = true;
+                        combo.SelectedItem = actionName;
+                        _suppress = false;
+                        WriteSlot(map, capturedSlot, actionName);
                     }
-                    WriteSlot(map, capturedSlot, captured);
+                    else
+                    {
+                        // Unknown key: nothing dispatchable → fall back to None.
+                        _suppress = true;
+                        combo.SelectedItem = NoneItem;
+                        _suppress = false;
+                        WriteSlot(map, capturedSlot, "");
+                    }
                 }
                 else if (chosen == NoneItem || chosen == EmptyItem)
                 {

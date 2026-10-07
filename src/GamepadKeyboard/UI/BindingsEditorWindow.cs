@@ -587,7 +587,9 @@ namespace GamepadKeyboard.UI
                 {
                     var cap = KeyCaptureDialog.Capture("Press a keyboard key for the binding...");
                     if (cap == null) return;
-                    action = cap;
+                    // Unknown captured key → store None (nothing dispatchable).
+                    string actionName = cap.StartsWith("Key:", StringComparison.Ordinal) ? cap[4..] : cap;
+                    action = ActionCatalog.All.Contains(actionName, StringComparer.Ordinal) ? actionName : "None";
                 }
                 if (action == "") return;
 
@@ -634,7 +636,14 @@ namespace GamepadKeyboard.UI
                 {
                     var cap = KeyCaptureDialog.Capture("Press a keyboard key for the binding...");
                     _suppress++;
-                    if (cap != null) { actionBox.Items[^1] = cap; actionBox.SelectedItem = cap; }
+                    if (cap != null)
+                    {
+                        // Captured "Key:<name>": select the matching catalog action when
+                        // the key exists as one (base form); unknown keys fall back to None.
+                        string actionName = cap.StartsWith("Key:", StringComparison.Ordinal) ? cap[4..] : cap;
+                        if (actionBox.Items.Contains(actionName)) actionBox.SelectedItem = actionName;
+                        else actionBox.SelectedIndex = 0;
+                    }
                     else actionBox.SelectedIndex = 0;
                     _suppress--;
                 }
@@ -703,10 +712,18 @@ namespace GamepadKeyboard.UI
             "ToggleShift", "ToggleCtrl", "ToggleAlt", "ToggleWin",
             // keyboard keys
             "Space", "Enter", "Backspace", "Tab", "Escape", "Delete", "Insert",
-            "CapsLock", "NumLock",
+            "CapsLock", "NumLock", "ScrollLock", "PauseBreak", "PrintScreen",
             "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
             "PageUp", "PageDown", "Home", "End",
             "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+            // letters, digits and base-form punctuation (shifted variants are typed
+            // by holding the matching modifier binding; only the unshifted form is listed)
+            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+            "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+            ";", "=", ",", "-", ".", "/", "`", "[", "\\", "]", "'",
+            "NumPad0", "NumPad1", "NumPad2", "NumPad3", "NumPad4",
+            "NumPad5", "NumPad6", "NumPad7", "NumPad8", "NumPad9",
             // mouse
             "LeftClick", "RightClick", "MiddleClick", "XButton1", "XButton2",
             "ScrollUp", "ScrollDown", "ScrollLeft", "ScrollRight", "SpeedBoost",
@@ -794,6 +811,7 @@ namespace GamepadKeyboard.UI
                 0x08 => "Backspace",
                 0x09 => "Tab",
                 0x0D => "Enter",
+                0x13 => "PauseBreak",
                 0x14 => "CapsLock",
                 0x1B => "Escape",
                 0x20 => "Space",
@@ -801,6 +819,9 @@ namespace GamepadKeyboard.UI
                 0x22 => "PageDown",
                 0x23 => "End",
                 0x24 => "Home",
+                0x2C => "PrintScreen",
+                0x90 => "NumLock",
+                0x91 => "ScrollLock",
                 0x25 => "ArrowLeft",
                 0x26 => "ArrowUp",
                 0x27 => "ArrowRight",
