@@ -45,12 +45,16 @@ namespace GamepadKeyboard.Input
 
         public void MouseMove(int dx, int dy)
         {
-            // Absolute injection: remote-capture tools (Parsec) track the cursor
-            // position reliably from MOUSEEVENTF_ABSOLUTE|VIRTUALDESK events, while
-            // plain relative moves can leave the streamed cursor stuck at its last
-            // drawn spot (the local cursor shape still changes, so apps move fine —
-            // only the capture misses it). Resolved per call from the real cursor
-            // position; GetCursorPos failure falls back to a relative move.
+            // Hybrid relative + absolute injection. Remote capture tools (Parsec)
+            // track the cursor position reliably from MOUSEEVENTF_ABSOLUTE|VIRTUALDESK
+            // events, while plain relative moves can leave the streamed cursor stuck
+            // at its last drawn spot. Pure absolute injection on the other hand
+            // streams only position teleports — remote clients smooth/blend them
+            // with momentum so fast movement followed by a held direction showed a
+            // brief diagonal wobble before settling. The pair fixes both: the
+            // RELATIVE move carries the per-tick motion exactly like a physical
+            // mouse (clean deltas for smoothing, no teleports), and the absolute
+            // event re-anchors the exact intended position for capture tools.
             if (NativeMethods.TryGetCursorPos(out NativeMethods.POINT point))
             {
                 (int virtualX, int virtualY, int virtualWidth, int virtualHeight) =
@@ -61,8 +65,21 @@ namespace GamepadKeyboard.Input
                     long absoluteY = ((long)(point.Y + dy - virtualY) << 16) / virtualHeight;
                     absoluteX = Math.Clamp(absoluteX, 0, 65535);
                     absoluteY = Math.Clamp(absoluteY, 0, 65535);
-                    Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
+                    Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[2];
                     inputs[0] = new NativeMethods.INPUT
+                    {
+                        type = NativeMethods.INPUT_MOUSE,
+                        U = new NativeMethods.InputUnion
+                        {
+                            mi = new NativeMethods.MOUSEINPUT
+                            {
+                                dx = dx,
+                                dy = dy,
+                                dwFlags = NativeMethods.MOUSEEVENTF_MOVE,
+                            }
+                        }
+                    };
+                    inputs[1] = new NativeMethods.INPUT
                     {
                         type = NativeMethods.INPUT_MOUSE,
                         U = new NativeMethods.InputUnion
@@ -81,6 +98,8 @@ namespace GamepadKeyboard.Input
                     return;
                 }
             }
+            // No cursor position (GetCursorPos failed / empty virtual desktop):
+            // fall back to the plain relative move.
             Span<NativeMethods.INPUT> relativeInputs = stackalloc NativeMethods.INPUT[1];
             relativeInputs[0] = new NativeMethods.INPUT
             {

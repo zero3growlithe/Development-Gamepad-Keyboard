@@ -150,6 +150,11 @@ live in `README.md` / `DOCS.md`.
   new slot properties in `ApplyDefaults` AND the repair probe.
 - GitHub Actions artifact download: 302 → signed URL rejects Bearer →
   follow Location manually.
+- `InputSender.MouseMove` must inject a RELATIVE move FIRST, then an
+  ABSOLUTE|VIRTUALDESK re-anchor in the SAME `SendInput` call. Pure relative
+  = Parsec doesn't track the cursor; pure absolute = remote clients smooth
+  the teleports into momentum (brief diagonal wobble after fast movement).
+  Both events must keep `MOUSEEVENTF_MOVE`.
 - Rate limits: GitHub API 403s come fast with tight polling; watchers use
   ≥120 s backoff.
 
