@@ -170,6 +170,10 @@ live in `README.md` / `DOCS.md`.
   through HeldWithHysteresis (enter ≥0.55, exit <0.45). Raw 0.5-threshold checks
   flap around the line while a user holds an analog input lightly → key
   down/up spam at poll rate that looks like instant hyper "key repeat".
+- Discrete scroll actions (ScrollUp/Down/Left/Right, DPad) go through
+  HeldScroll throttle: 25 notches/s max, first hold-tick fires once
+  immediately; raw per-tick dispatch = 250 WM_MOUSEWHEEL events/s. Analog
+  scroll (AnalogScroll*) stays smooth per-tick by design.
 - Rate limits: GitHub API 403s come fast with tight polling; watchers use
   ≥120 s backoff.
 

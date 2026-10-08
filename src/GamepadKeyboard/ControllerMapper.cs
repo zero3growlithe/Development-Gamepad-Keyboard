@@ -531,6 +531,54 @@ namespace GamepadKeyboard
             y /= magnitude;
         }
 
+        // ── Held-scroll throttle (DPad scroll taps, 25 notches/s) ───────────────
+
+        private const double HeldScrollIntervalSeconds = 0.04;
+        private readonly double[] _heldScrollDueTimes = new double[4];
+        private readonly bool[] _heldScrollActive = new bool[4];
+
+        /// <summary>Sends wheel notches for a held scroll action, throttled
+        /// to 25 notches/second. The first tick of the hold fires once
+        /// immediately (a real wheel push feels instant), then re-arms with
+        /// the interval. Alloc-free: no closures, fixed 4-slot arrays reused
+        /// across ticks; the `held=false` tick clears its slot so the next
+        /// hold starts fresh.</summary>
+        private void HeldScroll(HeldScrollKind kind, bool held)
+        {
+            int slot = (int)kind;
+            if (!held)
+            {
+                _heldScrollActive[slot] = false;
+                return;
+            }
+            double now = _cursorClock.Elapsed.TotalSeconds;
+            if (!_heldScrollActive[slot])
+            {
+                _heldScrollActive[slot] = true;
+                _heldScrollDueTimes[slot] = now + HeldScrollIntervalSeconds;
+                SendNotch(kind);
+                return;
+            }
+            if (now < _heldScrollDueTimes[slot])
+            {
+                return;
+            }
+            _heldScrollDueTimes[slot] = now + HeldScrollIntervalSeconds;
+            SendNotch(kind);
+        }
+
+        private void SendNotch(HeldScrollKind kind)
+        {
+            switch (kind)
+            {
+                case HeldScrollKind.Up: SendVerticalScroll(120); break;
+                case HeldScrollKind.Down: SendVerticalScroll(-120); break;
+                case HeldScrollKind.Left: SendHorizontalScroll(-120); break;
+                case HeldScrollKind.Right: SendHorizontalScroll(120); break;
+            }
+        }
+
+
         private void SendVerticalScroll(int delta) => _sender.MouseWheel(delta);
 
         private void SendHorizontalScroll(int delta) => _sender.MouseHWheel(delta);
@@ -1104,15 +1152,24 @@ namespace GamepadKeyboard
                 return;
             }
 
-            if (held)
+            // Held scroll taps fire at poll rate otherwise — one notch
+            // per 40 ms (25/s) feels like a briskly spun physical wheel
+            // instead of 250 WM_MOUSEWHEEL events per second. The released
+            // tick also passes through (HeldScroll clears its slot then).
+            switch (action)
             {
-                switch (action)
-                {
-                    case "ScrollUp": SendVerticalScroll(120); return;
-                    case "ScrollDown": SendVerticalScroll(-120); return;
-                    case "ScrollLeft": SendHorizontalScroll(-120); return;
-                    case "ScrollRight": SendHorizontalScroll(120); return;
-                }
+                case "ScrollUp":
+                    HeldScroll(HeldScrollKind.Up, held);
+                    return;
+                case "ScrollDown":
+                    HeldScroll(HeldScrollKind.Down, held);
+                    return;
+                case "ScrollLeft":
+                    HeldScroll(HeldScrollKind.Left, held);
+                    return;
+                case "ScrollRight":
+                    HeldScroll(HeldScrollKind.Right, held);
+                    return;
             }
 
             // Maps-modifier relays must see BOTH levels: the hold's release
@@ -1763,5 +1820,7 @@ namespace GamepadKeyboard
             public List<ushort> Modifiers { get; } = new();
         }
 
+
+        private enum HeldScrollKind { Up, Down, Left, Right }
     }
 }
