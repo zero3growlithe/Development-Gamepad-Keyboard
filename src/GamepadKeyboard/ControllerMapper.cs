@@ -357,7 +357,7 @@ namespace GamepadKeyboard
                         state.Action = action;
                         state.Previous = false;
                     }
-                    bool held = InputValue(s, binding.Buttons[0]) >= 0.5;
+                    bool held = HeldWithHysteresis(s, binding.Buttons[0], state.Previous);
                     if (ControllerMapper.KeyMapsMoveModeActive
                         && !string.Equals(NormalizeAction(binding.Action), "ToggleMoveScale", StringComparison.Ordinal))
                     {
@@ -619,10 +619,10 @@ namespace GamepadKeyboard
 
                 bool prefixHeld = true;
                 for (int i = 0; i < parts.Count - 1; i++)
-                    if (InputValue(s, parts[i]) < 0.5) { prefixHeld = false; break; }
+                    if (InputValue(s, parts[i]) < 0.55) { prefixHeld = false; break; }
 
                 string last = parts[^1];
-                bool lastHeld = InputValue(s, last) >= 0.5;
+                bool lastHeld = HeldWithHysteresis(s, last, state.LastButtonHeld);
 
                 if (state.ActionHeld && !lastHeld)
                 {
@@ -737,6 +737,18 @@ namespace GamepadKeyboard
             DispatchButton(action, false, ref previous);
         }
 
+        /// <summary>Held-edge decision with analog hysteresis: analog inputs
+        /// (triggers, stick directions) drift around the 0.5 line while a user
+        /// holds them lightly, and raw flapping around the threshold injects
+        /// key-down/key-up pairs at poll rate — perceived as instant, insanely
+        /// fast "key repeat". Enter the held state at ≥ 0.55, leave below 0.45;
+        /// digital buttons report exact 0/1 and are unaffected.</summary>
+        private bool HeldWithHysteresis(in GamepadSnapshot snapshot, string button, bool previousHeld)
+        {
+            double value = InputValue(snapshot, button);
+            return previousHeld ? value >= 0.45 : value >= 0.55;
+        }
+
         private void DispatchSingleBindings(
             List<ProfileBinding> bindings,
             in GamepadSnapshot snapshot,
@@ -764,7 +776,7 @@ namespace GamepadKeyboard
                 }
 
                 state.Continuous = false;
-                bool held = InputValue(snapshot, binding.Buttons[0]) >= 0.5;
+                bool held = HeldWithHysteresis(snapshot, binding.Buttons[0], state.Previous);
                 DispatchProfileBinding(binding, held, state, snapshot);
                 bool modeChanged = keyboardMode ? MouseMode : !MouseMode;
                 if (!InputEnabled || modeChanged) break;
@@ -1441,7 +1453,7 @@ namespace GamepadKeyboard
                 foreach (ProfileBinding binding in bindings)
                 {
                     if (!binding.Modifier && binding.Buttons.Count == 1
-                        && InputValue(snapshot, binding.Buttons[0]) >= 0.5
+                        && HeldWithHysteresis(snapshot, binding.Buttons[0], previousHeld: false)
                         && _bindingStates.TryGetValue(binding.Id, out BindingRuntimeState state))
                     {
                         state.Previous = true;

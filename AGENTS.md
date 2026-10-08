@@ -166,6 +166,10 @@ live in `README.md` / `DOCS.md`.
   in ONE `SendInput` call. Pure relative = Parsec doesn't track the cursor;
   pure absolute = remote clients smooth the teleports into momentum (brief
   diagonal wobble after fast movement). Never enable absolute unconditionally.
+- Analog hysteresis: dispatch-time held tests for triggers/stick-directions go
+  through HeldWithHysteresis (enter ≥0.55, exit <0.45). Raw 0.5-threshold checks
+  flap around the line while a user holds an analog input lightly → key
+  down/up spam at poll rate that looks like instant hyper "key repeat".
 - Rate limits: GitHub API 403s come fast with tight polling; watchers use
   ≥120 s backoff.
 
