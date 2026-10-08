@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GamepadKeyboard.Native;
+using GamepadKeyboard.Settings;
 
 namespace GamepadKeyboard.Input
 {
@@ -45,16 +46,31 @@ namespace GamepadKeyboard.Input
 
         public void MouseMove(int dx, int dy)
         {
-            // Hybrid relative + absolute injection. Remote capture tools (Parsec)
-            // track the cursor position reliably from MOUSEEVENTF_ABSOLUTE|VIRTUALDESK
-            // events, while plain relative moves can leave the streamed cursor stuck
-            // at its last drawn spot. Pure absolute injection on the other hand
-            // streams only position teleports — remote clients smooth/blend them
-            // with momentum so fast movement followed by a held direction showed a
-            // brief diagonal wobble before settling. The pair fixes both: the
+            // Default: plain relative move — the classic behavior (pointer
+            // acceleration applies, deltas accumulate normally).
+            if (!Settings.AppSettings.Instance.UseAbsoluteMouse)
+            {
+                Span<NativeMethods.INPUT> relativeInputs = stackalloc NativeMethods.INPUT[1];
+                relativeInputs[0] = new NativeMethods.INPUT
+                {
+                    type = NativeMethods.INPUT_MOUSE,
+                    U = new NativeMethods.InputUnion
+                    {
+                        mi = new NativeMethods.MOUSEINPUT { dx = dx, dy = dy, dwFlags = NativeMethods.MOUSEEVENTF_MOVE }
+                    }
+                };
+                Dispatch(relativeInputs);
+                return;
+            }
+
+            // "Use absolute mouse" toggle (remote desktop fix): remote-capture
+            // tools (Parsec) track the cursor position reliably from
+            // MOUSEEVENTF_ABSOLUTE|VIRTUALDESK events, while plain relative moves
+            // can leave the streamed cursor stuck at its last drawn spot. The
             // RELATIVE move carries the per-tick motion exactly like a physical
-            // mouse (clean deltas for smoothing, no teleports), and the absolute
-            // event re-anchors the exact intended position for capture tools.
+            // mouse (clean deltas — avoids the teleport smoothing some remote
+            // clients apply to absolute-only streams), and the absolute event
+            // re-anchors the exact intended position.
             if (NativeMethods.TryGetCursorPos(out NativeMethods.POINT point))
             {
                 (int virtualX, int virtualY, int virtualWidth, int virtualHeight) =
@@ -100,8 +116,8 @@ namespace GamepadKeyboard.Input
             }
             // No cursor position (GetCursorPos failed / empty virtual desktop):
             // fall back to the plain relative move.
-            Span<NativeMethods.INPUT> relativeInputs = stackalloc NativeMethods.INPUT[1];
-            relativeInputs[0] = new NativeMethods.INPUT
+            Span<NativeMethods.INPUT> fallbackInputs = stackalloc NativeMethods.INPUT[1];
+            fallbackInputs[0] = new NativeMethods.INPUT
             {
                 type = NativeMethods.INPUT_MOUSE,
                 U = new NativeMethods.InputUnion
@@ -109,7 +125,7 @@ namespace GamepadKeyboard.Input
                     mi = new NativeMethods.MOUSEINPUT { dx = dx, dy = dy, dwFlags = NativeMethods.MOUSEEVENTF_MOVE }
                 }
             };
-            Dispatch(relativeInputs);
+            Dispatch(fallbackInputs);
         }
 
         public void MouseButton(uint downFlag, uint upFlag, uint mouseData = 0)

@@ -50,6 +50,7 @@ namespace GamepadKeyboard.Settings
         public int ProfileToastSeconds { get; set; } = 3;
         public bool ProfileToastPermanent { get; set; } = false;
         public bool StartInMouseMode { get; set; } = true;
+        public bool UseAbsoluteMouse { get; set; } = false;   // remote-desktop (Parsec) fix, off = classic relative moves
         public bool HidHideSessionEnabled { get; set; } = false;
         public bool HidHideLegacyFallbackEnabled { get; set; } = false;
         public List<string> HidHideDeviceInstancePaths { get; set; } = new();

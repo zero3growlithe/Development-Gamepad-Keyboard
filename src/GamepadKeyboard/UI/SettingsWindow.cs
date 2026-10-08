@@ -43,6 +43,7 @@ namespace GamepadKeyboard.UI
             Text = "",
             ToolTip = "Below 1 responds quickly near the center; 1 is linear; above 1 starts gently and rises toward the edge."
         };
+        private readonly CheckBox _absoluteMouse = new() { Content = "Use absolute mouse (remote desktop fix)" };
         private readonly CheckBox _cursorLag = new() { Content = "Enable cursor lag" };
         private readonly TextBox _cursorLagSeconds = new() { Text = "" };
         private readonly CheckBox _hideLagRays = new() { Content = "Hide rays in cursor lag mode" };
@@ -86,6 +87,7 @@ namespace GamepadKeyboard.UI
             _deadzone.Text = s.StickDeadzone.ToString("0.###");
             _mouseDeadzone.Text = s.MouseStickDeadzone.ToString("0.###");
             _curveExponent.Text = s.AnalogStickCurveExponent.ToString("0.##");
+            _absoluteMouse.IsChecked = s.UseAbsoluteMouse;
             _cursorLag.IsChecked = s.CursorLagEnabled;
             _cursorLagSeconds.Text = s.CursorLagSeconds.ToString("0.###");
             _hideLagRays.IsChecked = s.HideRaysInCursorLag;
@@ -153,7 +155,8 @@ namespace GamepadKeyboard.UI
                     ("Mouse speed boost multiplier:", _boost),
                     ("Scroll speed:", _scroll),
                     ("Stick deadzone (0.000–0.5):", _mouseDeadzone),
-                    ("Analog sensitivity curve (0.1–5; 1 = linear):", _curveExponent))
+                    ("Analog sensitivity curve (0.1–5; 1 = linear):", _curveExponent),
+                    ("", _absoluteMouse))
             });
             tabs.Items.Add(new TabItem
             {
@@ -503,6 +506,7 @@ namespace GamepadKeyboard.UI
             s.StickDeadzone = ReadValidatedNumber(_deadzone);
             s.MouseStickDeadzone = ReadValidatedNumber(_mouseDeadzone);
             s.AnalogStickCurveExponent = ReadValidatedNumber(_curveExponent);
+            s.UseAbsoluteMouse = _absoluteMouse.IsChecked == true;
             s.CursorLagEnabled = _cursorLag.IsChecked == true;
             s.CursorLagSeconds = ReadValidatedNumber(_cursorLagSeconds);
             s.HideRaysInCursorLag = _hideLagRays.IsChecked == true;
