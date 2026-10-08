@@ -213,6 +213,35 @@ namespace GamepadKeyboard.Input
 
         // ── Poll tick: exception isolation + seed gate ─────────────────────────
 
+        // ── Held slot registry (stuck-key guard across map switches) ──────────
+        // A slot pressed on map A whose KeyDown already went out must not
+        // outlive map A: pressing the maps key selects another map BEFORE the
+        // physical release edge arrives, HoldSlot then sees held=true on the
+        // NEW map (no up-edge for the OLD slot) and the old key stays down
+        // with the repeater echoing it. Track every key/mouse-button this
+        // mode sent down for a slot; when the selected map changes, release
+        // them all in one sweep.
+
+        private readonly List<string> _downSlotKeys = new();
+
+        private void ReleaseDownSlotKeys(string reason)
+        {
+            if (_downSlotKeys.Count == 0)
+            {
+                return;
+            }
+            foreach (string slot in _downSlotKeys)
+            {
+                HandleMouseSlotUp(slot);
+                ushort slotKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
+                if (slotKey != Vk.None)
+                {
+                    _sender.KeyUp(slotKey, ControllerMapper.IsExtendedKey(slotKey));
+                }
+            }
+            _downSlotKeys.Clear();
+        }
+
         public void Process(in GamepadSnapshot snapshot)
         {
             try
@@ -244,6 +273,7 @@ namespace GamepadKeyboard.Input
         /// </summary>
         public void ReleaseAll()
         {
+            ReleaseDownSlotKeys("mode reset");
             _seeded = false;
             MapsModifierToggleRequested = false;
             MapsModifierRequested = false;
@@ -336,8 +366,13 @@ namespace GamepadKeyboard.Input
             bool mapsKeyEdge = mapsKey && !_previousMapsKey;
             _previousMapsKey = mapsKey;
             int mapIndex = SelectMapForChord(mapsSettings, mapsKey);
+            int previousMapIndex = ActiveMapIndex;
             MapsKeyHeld = mapsKey;
             ActiveMapIndex = mapIndex;
+            if (mapIndex != previousMapIndex)
+            {
+                ReleaseDownSlotKeys("map switch");   // old map's pressed keys go up NOW
+            }
             UpdateComboHighlights(mapsSettings, mapsKey);
             LogMapChange(mapIndex);
 
@@ -946,12 +981,20 @@ namespace GamepadKeyboard.Input
             }
             if (HandleMouseSlotDown(slot))
             {
+                if (!_downSlotKeys.Contains(slot))
+                {
+                    _downSlotKeys.Add(slot);
+                }
                 return;
             }
             ushort virtualKey = ControllerMapper.NamedVk(ResolveSlotKeyName(slot));
             if (virtualKey != Vk.None)
             {
                 _sender.KeyDown(virtualKey, ControllerMapper.IsExtendedKey(virtualKey));
+                if (!_downSlotKeys.Contains(slot))
+                {
+                    _downSlotKeys.Add(slot);
+                }
                 return;
             }
             if (slot.Length == 1)
@@ -987,6 +1030,7 @@ namespace GamepadKeyboard.Input
             {
                 return;
             }
+            _downSlotKeys.Remove(slot);
             if (HandleMouseSlotUp(slot))
             {
                 return;

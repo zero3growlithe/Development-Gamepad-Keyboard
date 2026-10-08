@@ -179,7 +179,12 @@ live in `README.md` / `DOCS.md`.
   `state.Previous` (hysteresis) so no phantom edges fire on combo exit —
   the combo owns the action while prefix+last are held, the single binding
   must stay silent (DUp=ScrollUp beside RT+DUp=PageUp case). Removal line
-  is 0.45 / enter 0.55 — analog prefixes must not flap the set.
+- Stuck-slot guard (Key Maps): the mapper tracks every key/mouse button a
+  SLOT sent down (`_downSlotKeys`); when the selected map changes
+  (maps-key chord selects another map while a press is still held, the
+  release edge then re-routes to the NEW map's slot) or ReleaseAll runs,
+  everything in that registry gets KeyUp/mouse-up in one sweep (`ReleaseDownSlotKeys`)
+  — otherwise the old map's key stays down and the repeater echoes it forever.  is 0.45 / enter 0.55 — analog prefixes must not flap the set.
 - Rate limits: GitHub API 403s come fast with tight polling; watchers use
   ≥120 s backoff.
 
