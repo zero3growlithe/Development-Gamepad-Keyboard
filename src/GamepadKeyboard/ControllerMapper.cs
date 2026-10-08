@@ -824,7 +824,24 @@ namespace GamepadKeyboard
                 }
 
                 state.Continuous = false;
-                bool held = HeldWithHysteresis(snapshot, binding.Buttons[0], state.Previous);
+                string button = binding.Buttons[0];
+
+                // An ACTIVE combo (prefix held + last pressed) consumes its
+                // buttons this frame: the last button's own single binding
+                // stays silent — otherwise ScrollUp/Down on the same pad
+                // button fires at poll rate BESIDE the combo's action, and a
+                // key keeps its previous held-state tracked without dispatch
+                // (no phantom release edge after the combo ends).
+                if (_comboConsumedButtons.Contains(button))
+                {
+                    bool heldWhileConsumed = HeldWithHysteresis(snapshot, button, state.Previous);
+                    state.Previous = heldWhileConsumed;
+                    bool modeChangedWhileConsumed = keyboardMode ? MouseMode : !MouseMode;
+                    if (modeChangedWhileConsumed) break;
+                    continue;
+                }
+
+                bool held = HeldWithHysteresis(snapshot, button, state.Previous);
                 DispatchProfileBinding(binding, held, state, snapshot);
                 bool modeChanged = keyboardMode ? MouseMode : !MouseMode;
                 if (!InputEnabled || modeChanged) break;
@@ -871,8 +888,9 @@ namespace GamepadKeyboard
 
         private static bool AnyOtherPhysicalButtonHeld(string button, in GamepadSnapshot snapshot)
         {
+            // 0.55 = the hysteresis enter line — same rationales as dispatch.
             foreach (string candidate in PhysicalButtons)
-                if (candidate != button && InputValue(snapshot, candidate) >= 0.5) return true;
+                if (candidate != button && InputValue(snapshot, candidate) >= 0.55) return true;
             return false;
         }
 
@@ -968,8 +986,11 @@ namespace GamepadKeyboard
             // An in parameter cannot be captured by RemoveWhere's predicate.
             // Collect released buttons first, then mutate the set separately.
             _releasedComboButtons.Clear();
+            // 0.45 = the hysteresis release line: an analog prefix (triggers)
+            // drifting near 0.5 must not flash the button back to "free" and
+            // un-suppress its single binding for a tick.
             foreach (var button in _comboConsumedButtons)
-                if (InputValue(s, button) < 0.5) _releasedComboButtons.Add(button);
+                if (InputValue(s, button) < 0.45) _releasedComboButtons.Add(button);
             foreach (var button in _releasedComboButtons)
                 _comboConsumedButtons.Remove(button);
         }

@@ -174,6 +174,12 @@ live in `README.md` / `DOCS.md`.
   HeldScroll throttle: 25 notches/s max, first hold-tick fires once
   immediately; raw per-tick dispatch = 250 WM_MOUSEWHEEL events/s. Analog
   scroll (AnalogScroll*) stays smooth per-tick by design.
+- Active combos CONSUME their buttons for the frame (`_comboConsumedButtons`):
+  DispatchSingleBindings skips consumed buttons but keeps tracking
+  `state.Previous` (hysteresis) so no phantom edges fire on combo exit —
+  the combo owns the action while prefix+last are held, the single binding
+  must stay silent (DUp=ScrollUp beside RT+DUp=PageUp case). Removal line
+  is 0.45 / enter 0.55 — analog prefixes must not flap the set.
 - Rate limits: GitHub API 403s come fast with tight polling; watchers use
   ≥120 s backoff.
 
