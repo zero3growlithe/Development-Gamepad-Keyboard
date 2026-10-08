@@ -140,6 +140,35 @@ namespace GamepadKeyboard.Native
         [DllImport("winmm.dll")]
         public static extern uint TimeEndPeriod(uint ms);
 
+        // ── Keyboard repeat (OS settings) ───────────────────────────────────────
+        private const int SpiGetKeyboardDelay = 0x0016;   // 0..3 → 250..1000 ms (steps of 250)
+        private const int SpiGetKeyboardSpeed = 0x000A;   // 0..31 → ~2..30 chars/second
+
+        [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SystemParametersInfo(uint action, uint parameter, ref uint value, uint initialization);
+
+        /// <summary>OS keyboard repeat: (initial delay ms, repeat period ms).
+        /// Reads the Control Panel "Keyboard" values once per process; on any
+        /// failure falls back to the Windows defaults (500 ms delay, 33 ms
+        /// period ≈ 30 characters/second).</summary>
+        public static (int DelayMs, int RepeatPeriodMs) KeyboardRepeatTiming()
+        {
+            uint delaySetting = 1;
+            uint speedSetting = 31;
+            bool ok = SystemParametersInfo(SpiGetKeyboardDelay, 0, ref delaySetting, 0)
+                && SystemParametersInfo(SpiGetKeyboardSpeed, 0, ref speedSetting, 0);
+            if (!ok)
+            {
+                return (500, 33);
+            }
+            int delayMs = 250 + 250 * (int)Math.Clamp(delaySetting, 0, 3);
+            // Speed setting 0..31 maps to roughly 2..30 repeats/second.
+            int repeatsPerSecond = (int)Math.Round(2.5 + 27.5 * Math.Clamp(speedSetting, 0, 31) / 31.0);
+            int repeatPeriodMs = Math.Max(16, 1000 / Math.Max(2, repeatsPerSecond));
+            return (delayMs, repeatPeriodMs);
+        }
+
         // ── Cursor position (absolute mouse-move injection) ────────────────────
         [DllImport("user32.dll", EntryPoint = "GetCursorPos", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

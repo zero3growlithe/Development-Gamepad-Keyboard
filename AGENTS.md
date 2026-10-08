@@ -148,6 +148,15 @@ live in `README.md` / `DOCS.md`.
 - Settings ctor runs JSON repair per `KeyMapDefinition`; the (name)
   constructor lays spec defaults first, then file values overwrite — keep
   new slot properties in `ApplyDefaults` AND the repair probe.
+- Key repeat: KeyDown/KeyUp do NOT trigger Windows key repeat (documented in the
+  classic KB article about synthetic keys). "Simulate key repeat" (Keyboard tab,
+  off by default) makes InputSender track held repeatable keys and send repeat
+  key-downs per the OS schedule (SystemParametersInfo SPI_GETKEYBOARDDELAY=0x16 /
+  SPI_GETKEYBOARDSPEED=0xA); modifiers/toggles never repeat. PumpKeyRepeats() runs
+  on every mode tick (keyboard, mouse, Key Maps); ClearKeyRepeats() on every ReleaseAllModifiers.
+- Mode ping-pong fix: ReleaseAllModifiers re-latches still-held single-button
+  binding edges (RelatchHeldBindingEdges) so an app-level action bound in TWO modes
+  (Start = SwitchBetweenKeyMapMouseMode) fires once per press, not once per mode.
 - GitHub Actions artifact download: 302 → signed URL rejects Bearer →
   follow Location manually.
 - `InputSender.MouseMove` default = plain RELATIVE move (classic behavior).

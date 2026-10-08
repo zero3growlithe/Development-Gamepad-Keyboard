@@ -156,7 +156,6 @@ namespace GamepadKeyboard
         private readonly HashSet<string> _activeBindingIds = new(StringComparer.Ordinal);
         private readonly List<string> _releasedComboButtons = new();
         private readonly Dictionary<ushort, int> _heldKeyCounts = new();
-        private readonly Dictionary<ushort, double> _nextKeyRepeat = new();
 
         private readonly Dictionary<string, BindingRuntimeState> _bindingStates = new(StringComparer.Ordinal);
         private readonly List<string> _staleBindingKeys = new();
@@ -227,7 +226,6 @@ namespace GamepadKeyboard
                 default: ProcessKeyboardMode(s); break;
             }
 
-            RepeatHeldKeys();
             CleanupRuntimeBindings(ActiveBindings());
         }
 
@@ -266,6 +264,7 @@ namespace GamepadKeyboard
 
             DispatchSingleBindings(p.Bindings, s, keyboardMode: true);
             FinishComboFrame(s);
+            _sender.PumpKeyRepeats();
         }
 
         // ── Mouse mode ────────────────────────────────────────────────────────
@@ -295,6 +294,7 @@ namespace GamepadKeyboard
             if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
             DispatchSingleBindings(profile.Bindings, s, keyboardMode: false);
             FinishComboFrame(s);
+            _sender.PumpKeyRepeats();
         }
 
         // ── Key Maps mode (DirectInput) ───────────────────────────────────────
@@ -1307,8 +1307,9 @@ namespace GamepadKeyboard
                 _heldKeyCounts[vk] = count;
                 if (count == 1)
                 {
+                    // Repeat bookkeeping lives in InputSender's registered-hold
+                    // map ("Simulate key repeat" toggle owns the schedule).
                     _sender.KeyDown(vk, extended);
-                    _nextKeyRepeat[vk] = _cursorClock.Elapsed.TotalSeconds + 0.5;
                 }
             }
             else if (!held && previous)
@@ -1319,24 +1320,12 @@ namespace GamepadKeyboard
                 if (count == 0)
                 {
                     _heldKeyCounts.Remove(vk);
-                    _nextKeyRepeat.Remove(vk);
                     _sender.KeyUp(vk, extended);
                 }
                 else
                 {
                     _heldKeyCounts[vk] = count;
                 }
-            }
-        }
-
-        private void RepeatHeldKeys()
-        {
-            double now = _cursorClock.Elapsed.TotalSeconds;
-            foreach (var pair in _heldKeyCounts)
-            {
-                if (!_nextKeyRepeat.TryGetValue(pair.Key, out double next) || now < next) continue;
-                _sender.KeyDown(pair.Key, IsExtendedKey(pair.Key));
-                _nextKeyRepeat[pair.Key] = now + 0.033;
             }
         }
 
@@ -1410,7 +1399,6 @@ namespace GamepadKeyboard
             foreach (var pair in _heldKeyCounts)
                 _sender.KeyUp(pair.Key, IsExtendedKey(pair.Key));
             _heldKeyCounts.Clear();
-            _nextKeyRepeat.Clear();
             foreach (var vk in _heldModifiers)
                 _sender.KeyUp(vk);
             _heldModifiers.Clear();
@@ -1431,7 +1419,36 @@ namespace GamepadKeyboard
             }
             ReleaseHeldClicks();  // no stuck mouse buttons on disable / mode switch
             ReleaseHeldRayKeys(); // no stuck held-typed keys
+            _sender.ClearKeyRepeats(); // nothing repeats stray across the mode switch
             _keyMaps.ReleaseAll(); // no stuck Side-mouse/modifiers from Key Maps taps
+            RelatchHeldBindingEdges();
+        }
+
+        /// <summary>After the mode-switch wipe, a STILL-HELD app-level button
+        /// (e.g. Start mapped to "SwitchBetweenKeyMapMouseMode" in both modes)
+        /// must not fire again from the other mode's dispatch — its edge state
+        /// re-latches to "held" so the repeat only happens after a real
+        /// release. This is the rapid mode ping-pong fix.</summary>
+        private void RelatchHeldBindingEdges()
+        {
+            GamepadSnapshot snapshot = LatestSnapshot;
+            List<List<ProfileBinding>> bindingLists = new()
+            {
+                AppSettings.Instance.Profile.Bindings,
+                AppSettings.Instance.MouseProfile.Bindings,
+            };
+            foreach (List<ProfileBinding> bindings in bindingLists)
+            {
+                foreach (ProfileBinding binding in bindings)
+                {
+                    if (!binding.Modifier && binding.Buttons.Count == 1
+                        && InputValue(snapshot, binding.Buttons[0]) >= 0.5
+                        && _bindingStates.TryGetValue(binding.Id, out BindingRuntimeState state))
+                    {
+                        state.Previous = true;
+                    }
+                }
+            }
         }
 
         internal static bool IsExtendedKey(ushort vk) => vk is

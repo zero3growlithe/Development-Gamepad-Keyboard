@@ -24,6 +24,12 @@ namespace GamepadKeyboard.Input
             Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
             inputs[0] = KeyInput(vk, true, extended);
             Dispatch(inputs);
+            if (keyRepeatEnabled && IsRepeatableKey(vk))
+            {
+                _repeatHeldEntries[vk] = _repeatClock.Elapsed.TotalSeconds
+                    + KeyboardRepeatDelaySeconds;
+                _repeatExtendedStates[vk] = extended;
+            }
         }
 
         public void KeyUp(ushort vk, bool extended = false)
@@ -31,6 +37,8 @@ namespace GamepadKeyboard.Input
             Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
             inputs[0] = KeyInput(vk, false, extended);
             Dispatch(inputs);
+            _repeatHeldEntries.Remove(vk);
+            _repeatExtendedStates.Remove(vk);
         }
 
         public void TypeText(string text)
@@ -171,6 +179,93 @@ namespace GamepadKeyboard.Input
                 }
             };
             Dispatch(inputs);
+        }
+
+        // ── Simulated key repeat ("Simulate key repeat" Keyboard-tab toggle) ────
+        //
+        // While the toggle is on, every held repeatable key sends fresh
+        // KeyDown events on the OS repeat schedule (initial delay then
+        // period, both read once from the Control Panel keyboard settings) —
+        // the behavior of a physically held keyboard key. Modifier and toggle
+        // keys (Shift/Ctrl/Alt/Win/Caps/Num/Scroll) never repeat, exactly like
+        // real hardware. The pump is called from the keyboard and Key Maps UI
+        // ticks; mode switches clear the registry so nothing repeats stray.
+
+        private static readonly System.Diagnostics.Stopwatch _repeatClock =
+            System.Diagnostics.Stopwatch.StartNew();
+        private static readonly Dictionary<ushort, double> _repeatHeldEntries = new();
+        private static readonly Dictionary<ushort, bool> _repeatExtendedStates = new();
+        private static bool _repeatTimingResolved;
+        private static double _repeatDelaySeconds = 0.5;
+        private static double _repeatPeriodSeconds = 0.033;
+
+        private static double KeyboardRepeatDelaySeconds
+        {
+            get
+            {
+                if (!_repeatTimingResolved)
+                {
+                    (int delayMs, int periodMs) = NativeMethods.KeyboardRepeatTiming();
+                    _repeatDelaySeconds = delayMs / 1000.0;
+                    _repeatPeriodSeconds = periodMs / 1000.0;
+                    _repeatTimingResolved = true;
+                }
+                return _repeatDelaySeconds;
+            }
+        }
+
+        private static bool keyRepeatEnabled => Settings.AppSettings.Instance.SimulateKeyRepeat;
+
+        private static bool IsRepeatableKey(ushort vk) => vk is not
+            (Vk.LShift or Vk.RShift or Vk.LControl or Vk.RControl
+            or Vk.LMenu or Vk.RMenu or Vk.LWin or Vk.RWin
+            or Vk.Capital or Vk.NumLock or Vk.Scroll);
+
+        /// <summary>Sends repeat key-downs for every held repeatable key whose
+        /// timer expired; called once per UI tick while the toggle is on.</summary>
+        public void PumpKeyRepeats()
+        {
+            if (!keyRepeatEnabled || _repeatHeldEntries.Count == 0)
+            {
+                return;
+            }
+            double now = _repeatClock.Elapsed.TotalSeconds;
+            double periodSeconds = 0.033;
+            if (!_repeatTimingResolved)
+            {
+                (int delayMs, int periodMs) = NativeMethods.KeyboardRepeatTiming();
+                _repeatDelaySeconds = delayMs / 1000.0;
+                _repeatPeriodSeconds = periodMs / 1000.0;
+                _repeatTimingResolved = true;
+            }
+            periodSeconds = _repeatPeriodSeconds;
+            List<ushort> dueKeys = null;
+            foreach (KeyValuePair<ushort, double> entry in _repeatHeldEntries)
+            {
+                if (entry.Value <= now)
+                {
+                    (dueKeys ??= new List<ushort>()).Add(entry.Key);
+                }
+            }
+            if (dueKeys == null)
+            {
+                return;
+            }
+            foreach (ushort vk in dueKeys)
+            {
+                _repeatHeldEntries[vk] = now + periodSeconds;
+                Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
+                inputs[0] = KeyInput(vk, true, _repeatExtendedStates.TryGetValue(vk, out bool extended) && extended);
+                Dispatch(inputs);
+            }
+        }
+
+        /// <summary>Forgets every held key (mode switches / releases); nothing
+        /// repeats after the switch.</summary>
+        public void ClearKeyRepeats()
+        {
+            _repeatHeldEntries.Clear();
+            _repeatExtendedStates.Clear();
         }
 
         private static NativeMethods.INPUT KeyInput(ushort vk, bool down, bool extended = false)
