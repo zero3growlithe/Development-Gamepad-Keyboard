@@ -226,6 +226,7 @@ namespace GamepadKeyboard
                 default: ProcessKeyboardMode(s); break;
             }
 
+            _sender.PumpKeyRepeats();
             CleanupRuntimeBindings(ActiveBindings());
         }
 
@@ -264,7 +265,6 @@ namespace GamepadKeyboard
 
             DispatchSingleBindings(p.Bindings, s, keyboardMode: true);
             FinishComboFrame(s);
-            _sender.PumpKeyRepeats();
         }
 
         // ── Mouse mode ────────────────────────────────────────────────────────
@@ -294,7 +294,6 @@ namespace GamepadKeyboard
             if (!InputEnabled || !MouseMode) { FinishComboFrame(s); return; }
             DispatchSingleBindings(profile.Bindings, s, keyboardMode: false);
             FinishComboFrame(s);
-            _sender.PumpKeyRepeats();
         }
 
         // ── Key Maps mode (DirectInput) ───────────────────────────────────────

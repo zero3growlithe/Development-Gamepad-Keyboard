@@ -24,7 +24,7 @@ namespace GamepadKeyboard.Input
             Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
             inputs[0] = KeyInput(vk, true, extended);
             Dispatch(inputs);
-            if (keyRepeatEnabled && IsRepeatableKey(vk))
+            if (keyRepeatEnabled && vk != Vk.None && IsRepeatableKey(vk))
             {
                 _repeatHeldEntries[vk] = _repeatClock.Elapsed.TotalSeconds
                     + KeyboardRepeatDelaySeconds;
@@ -45,7 +45,7 @@ namespace GamepadKeyboard.Input
         {
             foreach (char c in text)
             {
-                var inputs = new NativeMethods.INPUT[2];
+                NativeMethods.INPUT[] inputs = new NativeMethods.INPUT[2];
                 inputs[0] = UnicodeInput(c, true);
                 inputs[1] = UnicodeInput(c, false);
                 Dispatch(inputs);
@@ -138,7 +138,7 @@ namespace GamepadKeyboard.Input
 
         public void MouseButton(uint downFlag, uint upFlag, uint mouseData = 0)
         {
-            var inputs = new NativeMethods.INPUT[2];
+            NativeMethods.INPUT[] inputs = new NativeMethods.INPUT[2];
             inputs[0] = MouseInput(downFlag, mouseData);
             inputs[1] = MouseInput(upFlag, mouseData);
             Dispatch(inputs);

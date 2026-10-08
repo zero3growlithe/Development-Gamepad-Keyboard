@@ -165,8 +165,8 @@ namespace GamepadKeyboard.Native
             int delayMs = 250 + 250 * (int)Math.Clamp(delaySetting, 0, 3);
             // Speed setting 0..31 maps to roughly 2..30 repeats/second.
             int repeatsPerSecond = (int)Math.Round(2.5 + 27.5 * Math.Clamp(speedSetting, 0, 31) / 31.0);
-            int repeatPeriodMs = Math.Max(16, 1000 / Math.Max(2, repeatsPerSecond));
-            return (delayMs, repeatPeriodMs);
+            int repeatPeriodMs = Math.Clamp(1000 / Math.Max(2, repeatsPerSecond), 33, 400);
+            return (Math.Clamp(delayMs, 250, 1000), repeatPeriodMs);
         }
 
         // ── Cursor position (absolute mouse-move injection) ────────────────────
