@@ -29,6 +29,7 @@ namespace GamepadKeyboard.Keyboard
                 Label = label;
                 Vk = vk;
                 W = w;
+                Extended = extended;
             }
 
             /// <summary>Char keys: letters/digits map to their VK; punctuation maps to the proper VK_OEM_* code.</summary>
@@ -166,19 +167,19 @@ namespace GamepadKeyboard.Keyboard
         /// 2×3 navigation block plus arrow keys right of the main block.</summary>
         private void AppendSpecialKeys()
         {
-            Add(new KeyDef("PrtSc", Vk.Print), 13, 0);
+            Add(new KeyDef("PrtSc", Vk.Print, 1, true), 13, 0);
             Add(new KeyDef("ScrLk", Vk.Scroll), 14, 0);
             Add(new KeyDef("PasBr", Vk.Pause), 15, 0);
-            Add(new KeyDef("Ins", Vk.Insert), 16.25, 1);
-            Add(new KeyDef("Home", Vk.Home), 17.25, 1);
-            Add(new KeyDef("PgUp", Vk.PageUp), 18.25, 1);
-            Add(new KeyDef("Del", Vk.Delete), 16.25, 2);
-            Add(new KeyDef("End", Vk.End), 17.25, 2);
-            Add(new KeyDef("PgDn", Vk.PageDown), 18.25, 2);
-            Add(new KeyDef("↑", Vk.Up), 17.25, 4);
-            Add(new KeyDef("←", Vk.Left), 16.25, 5);
-            Add(new KeyDef("↓", Vk.Down), 17.25, 5);
-            Add(new KeyDef("→", Vk.Right), 18.25, 5);
+            Add(new KeyDef("Ins", Vk.Insert, 1, true), 16.25, 1);
+            Add(new KeyDef("Home", Vk.Home, 1, true), 17.25, 1);
+            Add(new KeyDef("PgUp", Vk.PageUp, 1, true), 18.25, 1);
+            Add(new KeyDef("Del", Vk.Delete, 1, true), 16.25, 2);
+            Add(new KeyDef("End", Vk.End, 1, true), 17.25, 2);
+            Add(new KeyDef("PgDn", Vk.PageDown, 1, true), 18.25, 2);
+            Add(new KeyDef("↑", Vk.Up, 1, true), 17.25, 4);
+            Add(new KeyDef("←", Vk.Left, 1, true), 16.25, 5);
+            Add(new KeyDef("↓", Vk.Down, 1, true), 17.25, 5);
+            Add(new KeyDef("→", Vk.Right, 1, true), 18.25, 5);
             GridW = 19.25;
             GridH = 6;
         }
