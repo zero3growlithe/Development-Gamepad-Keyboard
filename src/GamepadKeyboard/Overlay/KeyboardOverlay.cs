@@ -43,6 +43,9 @@ namespace GamepadKeyboard.Overlay
         private double _lastRightPointX = double.NaN, _lastRightPointY = double.NaN;
         private bool? _lastCentersVisible;
         private readonly List<UIElement> _bindingPromptElements = new();
+        private static readonly System.Windows.Media.Brush PromptLabelPlate =
+            new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x14, 0x18, 0x20))
+            { Opacity = 0.78 };   // frozen (immutable) at static init — no per-rebuild allocation
         private readonly List<KeyboardLayout.KeyDef> _promptExtraDefs = new();   // off-layout VK keys (volume/media) drawn right of the grid
         private double _promptListHeight;
         private double _lastPromptFingerprint = double.NaN;
@@ -272,7 +275,7 @@ namespace GamepadKeyboard.Overlay
             System.Windows.Media.Brush textBrush = (System.Windows.Media.Brush)FindResource("TextBrush");
             foreach ((string IconSlot, string Label) entry in appPrompts)
             {
-                Canvas icon = KeyMapsAtom.MakeIcon(entry.IconSlot);
+                Canvas icon = KeyMapsAtom.MakeIcon(PromptIconSlot(entry.IconSlot));
                 icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
                 double entryWidth = iconSpan + 6 + 8 + MeasureTextWidth(entry.Label, 12) + 14;
                 if (listX > 4 && listX + entryWidth > listWidth)
@@ -293,11 +296,21 @@ namespace GamepadKeyboard.Overlay
                     VerticalAlignment = VerticalAlignment.Center,
                     IsHitTestVisible = false,
                 };
-                Canvas.SetLeft(label, listX + iconSpan + 6);
-                Canvas.SetTop(label, listY + iconSpan / 2 - 8);
-                _canvas.Children.Add(label);
-                _bindingPromptElements.Add(label);
-                listX += entryWidth;
+                int labelWidth = (int)Math.Ceiling(MeasureTextWidth(entry.Label, 12));
+                Border labelPlate = new Border
+                {
+                    Width = labelWidth + 10,
+                    Height = iconSpan - 6,
+                    CornerRadius = new CornerRadius(3),
+                    Background = PromptLabelPlate,
+                    Child = label,
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(labelPlate, listX + iconSpan + 1);
+                Canvas.SetTop(labelPlate, listY + 3);
+                _canvas.Children.Add(labelPlate);
+                _bindingPromptElements.Add(labelPlate);
+                listX += entryWidth + 8;
             }
             if (appPrompts.Count > 0)
             {
@@ -352,7 +365,9 @@ namespace GamepadKeyboard.Overlay
             "LT" => "L2",
             "RT" => "R2",
             "LS" => "LeftStickPress",
+            "L3" => "LeftStickPress",
             "RS" => "RightStickPress",
+            "R3" => "RightStickPress",
             "View" => "Select",
             "Menu" => "Start",
             "Home" => "Start",
