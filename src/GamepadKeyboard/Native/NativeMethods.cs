@@ -78,6 +78,7 @@ namespace GamepadKeyboard.Native
 
         // ── Toggle-key state ───────────────────────────────────────────────────
         public const ushort VkCapital = 0x14;
+        public const ushort VkScroll = 0x91;
 
         public const ushort KeyStateToggled = 0x0001;
 
@@ -89,6 +90,13 @@ namespace GamepadKeyboard.Native
         public static bool CapsLockActive
         {
             get { return (GetKeyState(VkCapital) & KeyStateToggled) != 0; }
+        }
+
+        /// <summary>True when the OS-level ScrollLock toggle is ON (no polling
+        /// cost — read on relabel only).</summary>
+        public static bool ScrollLockActive
+        {
+            get { return (GetKeyState(VkScroll) & KeyStateToggled) != 0; }
         }
 
         // ── Window styles for the overlay ─────────────────────────────────────

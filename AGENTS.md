@@ -179,6 +179,14 @@ live in `README.md` / `DOCS.md`.
   `state.Previous` (hysteresis) so no phantom edges fire on combo exit —
   the combo owns the action while prefix+last are held, the single binding
   must stay silent (DUp=ScrollUp beside RT+DUp=PageUp case). Removal line
+- "Show special keys" (Keyboard tab, `AppSettings.ShowSpecialKeys`, default OFF):
+  `KeyboardLayout.Build(bool)` is REBUILDABLE on the SAME instance — orchestrator holds
+  `_keyboardLayout` and re-Builds it in `NotifyKeyboardLayoutChanged()` (keyboard overlay +
+  ray targeting read Keys/GridW live); the projected Key Maps keyboard re-Builds via the
+  `_projectedSpecialKeys` flag + ShowSpecialKeys term in PromptFingerprint. GridW grows
+  16 → 19.25 (PrtSc/ScrLk/Pause at 13..15 on row 0 WITHOUT gaps; nav block at 16.25..18.25:
+  Ins/Home/PgUp, Del/End/PgDn, arrows ↑(row4) ←↓→(row5)). ScrollLock (VK_SCROLL=0x91) joins
+  CapsLock as an OS-toggle tint (NativeMethods.ScrollLockActive).
 - Stuck-slot guard (Key Maps): the mapper tracks every key/mouse button a
   SLOT sent down (`_downSlotKeys`); when the selected map changes
   (maps-key chord selects another map while a press is still held, the

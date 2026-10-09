@@ -80,7 +80,36 @@ namespace GamepadKeyboard.Keyboard
             }
         }
 
+        private bool _includeSpecialKeys;
+
+        /// <summary>Rebuilds the key table. Passing true appends the
+        /// navigation cluster (PrintScreen/ScrollLock/Pause beside the
+        /// function row; Ins/Home/PgUp, Del/End/PgDn and the arrow keys to
+        /// the right of the main block). The same instance can be rebuilt
+        /// when the user toggles the setting — ray targeting reads Keys
+        /// and GridW/GridH live.</summary>
+        public void Build(bool includeSpecialKeys)
+        {
+            if (_keys.Count > 0 && _includeSpecialKeys == includeSpecialKeys)
+            {
+                return;
+            }
+            _keys.Clear();
+            _includeSpecialKeys = includeSpecialKeys;
+            BuildCore();
+            if (includeSpecialKeys)
+            {
+                AppendSpecialKeys();
+            }
+        }
+
+        /// <summary>Legacy parameterless call = core layout only.</summary>
         public void Build()
+        {
+            Build(false);
+        }
+
+        private void BuildCore()
         {
             // Row 0: Esc + F1..F12
             Row(0,
@@ -131,6 +160,27 @@ namespace GamepadKeyboard.Keyboard
 
             GridW = 16;   // widest row: 13 function keys
             GridH = 6;    // rows 0..5
+        }
+
+        /// <summary>Appends PrtSc/ScrLk/Pause to the function row and the
+        /// 2×3 navigation block plus arrow keys right of the main block.</summary>
+        private void AppendSpecialKeys()
+        {
+            Add(new KeyDef("PrtSc", Vk.Print), 13, 0);
+            Add(new KeyDef("ScrLk", Vk.Scroll), 14, 0);
+            Add(new KeyDef("PasBr", Vk.Pause), 15, 0);
+            Add(new KeyDef("Ins", Vk.Insert), 16.25, 1);
+            Add(new KeyDef("Home", Vk.Home), 17.25, 1);
+            Add(new KeyDef("PgUp", Vk.PageUp), 18.25, 1);
+            Add(new KeyDef("Del", Vk.Delete), 16.25, 2);
+            Add(new KeyDef("End", Vk.End), 17.25, 2);
+            Add(new KeyDef("PgDn", Vk.PageDown), 18.25, 2);
+            Add(new KeyDef("↑", Vk.Up), 17.25, 4);
+            Add(new KeyDef("←", Vk.Left), 16.25, 5);
+            Add(new KeyDef("↓", Vk.Down), 17.25, 5);
+            Add(new KeyDef("→", Vk.Right), 18.25, 5);
+            GridW = 19.25;
+            GridH = 6;
         }
 
         private void Add(KeyDef k, double x, double y, double w = 1, double h = 1)

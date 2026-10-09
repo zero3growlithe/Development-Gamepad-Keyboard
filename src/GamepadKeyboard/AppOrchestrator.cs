@@ -18,6 +18,7 @@ namespace GamepadKeyboard
     {
         private readonly Input.GamepadService _pad = new();
         private readonly ControllerMapper _mapper;
+        private readonly Keyboard.KeyboardLayout _keyboardLayout;
         private readonly HidHideSession _hidHide = new();
         private readonly KeyboardOverlay _keyboard;
         private readonly KeyMapsOverlayWindow _keyMapsOverlay = new();
@@ -41,7 +42,8 @@ namespace GamepadKeyboard
         {
             _current = this;
             Keyboard.KeyboardLayout layout = new();
-            layout.Build();
+            layout.Build(Settings.AppSettings.Instance.ShowSpecialKeys);
+            _keyboardLayout = layout;
             _mapper = new ControllerMapper(layout);
             Input.GamepadService.MouseModeProbe =
                 () => _mapper.Mode != ControllerMapper.MapperMode.Keyboard;   // per-mode deadzone
@@ -116,6 +118,25 @@ namespace GamepadKeyboard
                 o._keyboard.SetPointPositions();
                 o._keyboard.SetProfileName(Settings.AppSettings.Instance.Profile.Name);
                 o.RefreshUiCore();
+            });
+        }
+
+        /// <summary>Rebuilds the shared keyboard layout (special-keys toggle)
+        /// and refreshes the keyboard overlay; no-op when the layout is
+        /// unchanged. The projected Key Maps keyboard rebuilds through its
+        /// own fingerprint gate seeing ShowSpecialKeys.</summary>
+        public static void NotifyKeyboardLayoutChanged()
+        {
+            AppOrchestrator? orchestrator = _current;
+            if (orchestrator == null) return;
+            System.Windows.Threading.Dispatcher? dispatcher = orchestrator._keyboard?.Dispatcher;
+            if (dispatcher == null) return;
+            dispatcher.BeginInvoke(() =>
+            {
+                if (orchestrator._keyboard == null) return;
+                orchestrator._keyboardLayout.Build(Settings.AppSettings.Instance.ShowSpecialKeys);
+                orchestrator._keyboard.RebuildAndResize();
+                orchestrator.RefreshUiCore();
             });
         }
 

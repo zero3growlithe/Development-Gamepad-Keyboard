@@ -327,6 +327,10 @@ namespace GamepadKeyboard.Overlay
             {
                 next.Add((ushort)0x14);
             }
+            if (NativeMethods.ScrollLockActive)
+            {
+                next.Add((ushort)0x91);
+            }
 
             if (_toggledVks.SetEquals(next)) return;
             _toggledVks = next;
@@ -395,7 +399,7 @@ namespace GamepadKeyboard.Overlay
             (ushort)0xA2 or (ushort)0xA3 or   // LControl / RControl
             (ushort)0xA4 or (ushort)0xA5 or   // LMenu / RMenu (Alt)
             (ushort)0x5B or (ushort)0x5C or   // LWin / RWin
-            (ushort)0x14;                     // CapsLock (OS toggle)
+            (ushort)0x14 or (ushort)0x91;     // CapsLock / ScrollLock (OS toggles)
 
         private void ApplyToggleTint(Border border, bool on)
         {

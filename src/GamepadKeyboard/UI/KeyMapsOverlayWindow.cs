@@ -66,6 +66,7 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
         private readonly List<Canvas> _projectedExtraModifierBadges = new();
         private readonly Dictionary<string, (KeyboardLayout.KeyDef Key, string Label)> _promptTargets = new();
         private KeyboardLayout? _projectedLayout;
+        private bool _projectedSpecialKeys;
         private double _lastProjectedFingerprint = double.NaN;
         private bool _lastProjectedShift;
 
@@ -970,10 +971,12 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
             _lastProjectedShift = false;
             _lastPromptOpacity = double.NaN;
 
-            if (_projectedLayout == null)
+            bool wantSpecialKeys = AppSettings.Instance.ShowSpecialKeys;
+            if (_projectedLayout == null || _projectedSpecialKeys != wantSpecialKeys)
             {
-                _projectedLayout = new KeyboardLayout();
-                _projectedLayout.Build();
+                _projectedLayout = _projectedLayout ?? new KeyboardLayout();
+                _projectedLayout.Build(wantSpecialKeys);
+                _projectedSpecialKeys = wantSpecialKeys;
             }
 
             KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
@@ -1423,7 +1426,8 @@ private const double AtomSpreadPitchY = 120.0;   // px between atom rows at Spre
                 + layout.ExtraKeySpacing * 13.0
                 + layout.IconScale * 43.0
                 + AppSettings.Instance.KeySpacing * 47.0
-                + (layout.ProjectKeyboard ? 3.0 : 0.0);
+                + (layout.ProjectKeyboard ? 3.0 : 0.0)
+                + (AppSettings.Instance.ShowSpecialKeys ? 53.0 : 0.0);
         }
 
         /// <summary>Projected-view press source: same physical controls as the

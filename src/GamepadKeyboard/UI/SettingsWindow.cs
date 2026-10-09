@@ -541,6 +541,11 @@ namespace GamepadKeyboard.UI
 
             Settings.AppSettings.Save();
             AppOrchestrator.NotifyStickPointsChanged();
+            if (specialKeysChanged)
+            {
+                AppOrchestrator.NotifyKeyboardLayoutChanged();
+                AppOrchestrator.NotifyKeyMapsLayoutChanged();
+            }
             if (hidHideChanged)
                 AppOrchestrator.NotifyHidHideSettingsChanged();
         }
