@@ -561,6 +561,7 @@ namespace GamepadKeyboard
         private void RefreshUiCore(bool refreshStatic = true)
         {
             _keyboard.ClearHighlights();
+            _keyboard.RefreshBindingPromptsIfDirty();
             if (refreshStatic)
             {
                 _keyboard.SetToggledKeys(_mapper.HeldModifierVks.Concat(_mapper.HeldRayKeyVks));

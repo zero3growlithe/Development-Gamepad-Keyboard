@@ -46,6 +46,7 @@ namespace GamepadKeyboard.UI
         private readonly CheckBox _absoluteMouse = new() { Content = "Use absolute mouse (remote desktop fix)" };
         private readonly CheckBox _keyRepeat = new() { Content = "Simulate key repeat" };
         private readonly CheckBox _specialKeys = new() { Content = "Show special keys" };
+        private readonly CheckBox _keyboardPrompts = new() { Content = "Show button prompts (Maps Mode style)" };
         private readonly CheckBox _cursorLag = new() { Content = "Enable cursor lag" };
         private readonly TextBox _cursorLagSeconds = new() { Text = "" };
         private readonly CheckBox _hideLagRays = new() { Content = "Hide rays in cursor lag mode" };
@@ -92,6 +93,7 @@ namespace GamepadKeyboard.UI
             _absoluteMouse.IsChecked = s.UseAbsoluteMouse;
             _keyRepeat.IsChecked = s.SimulateKeyRepeat;
             _specialKeys.IsChecked = s.ShowSpecialKeys;
+            _keyboardPrompts.IsChecked = s.ShowKeyboardButtonPrompts;
             _cursorLag.IsChecked = s.CursorLagEnabled;
             _cursorLagSeconds.Text = s.CursorLagSeconds.ToString("0.###");
             _hideLagRays.IsChecked = s.HideRaysInCursorLag;
@@ -300,6 +302,7 @@ namespace GamepadKeyboard.UI
                 ("Stick deadzone (0.000–0.5):", _deadzone),
                 ("", _keyRepeat),
                 ("", _specialKeys),
+                ("", _keyboardPrompts),
             };
         }
 
@@ -513,8 +516,10 @@ namespace GamepadKeyboard.UI
             s.MouseStickDeadzone = ReadValidatedNumber(_mouseDeadzone);
             s.AnalogStickCurveExponent = ReadValidatedNumber(_curveExponent);
             bool specialKeysChanged = s.ShowSpecialKeys != _specialKeys.IsChecked;
+            bool keyboardPromptsChanged = s.ShowKeyboardButtonPrompts != _keyboardPrompts.IsChecked;
             s.UseAbsoluteMouse = _absoluteMouse.IsChecked == true;
             s.ShowSpecialKeys = _specialKeys.IsChecked == true;
+            s.ShowKeyboardButtonPrompts = _keyboardPrompts.IsChecked == true;
             s.SimulateKeyRepeat = _keyRepeat.IsChecked == true;
             s.CursorLagEnabled = _cursorLag.IsChecked == true;
             s.CursorLagSeconds = ReadValidatedNumber(_cursorLagSeconds);
@@ -546,7 +551,7 @@ namespace GamepadKeyboard.UI
 
             Settings.AppSettings.Save();
             AppOrchestrator.NotifyStickPointsChanged();
-            if (specialKeysChanged)
+            if (specialKeysChanged || keyboardPromptsChanged)
             {
                 AppOrchestrator.NotifyKeyboardLayoutChanged();
                 AppOrchestrator.NotifyKeyMapsLayoutChanged();

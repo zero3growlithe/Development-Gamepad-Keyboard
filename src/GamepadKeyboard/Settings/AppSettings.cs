@@ -53,6 +53,7 @@ namespace GamepadKeyboard.Settings
         public bool UseAbsoluteMouse { get; set; } = false;   // remote-desktop (Parsec) fix, off = classic relative moves
         public bool SimulateKeyRepeat { get; set; } = false;  // held keys repeat like a real keyboard (OS delay/rate)
         public bool ShowSpecialKeys { get; set; } = false;    // PrtSc/ScrLk/Pause + nav cluster & arrows on the virtual keyboard
+        public bool ShowKeyboardButtonPrompts { get; set; } = false; // pad-button icons on virtual keys + app-action list (Keyboard mode)
         public bool HidHideSessionEnabled { get; set; } = false;
         public bool HidHideLegacyFallbackEnabled { get; set; } = false;
         public List<string> HidHideDeviceInstancePaths { get; set; } = new();

@@ -43,6 +43,10 @@ namespace GamepadKeyboard.Overlay
         private double _lastRightPointX = double.NaN, _lastRightPointY = double.NaN;
         private bool? _lastCentersVisible;
         private readonly System.Collections.Generic.Dictionary<KeyboardLayout.KeyDef, Canvas> _modifierBadges = new();
+        private readonly List<UIElement> _bindingPromptElements = new();
+        private readonly List<KeyboardLayout.KeyDef> _promptExtraDefs = new();   // off-layout VK keys (volume/media) drawn right of the grid
+        private double _promptListHeight;
+        private double _lastPromptFingerprint = double.NaN;
 
         public double Scale => _scale;
 
@@ -135,6 +139,293 @@ namespace GamepadKeyboard.Overlay
             _canvas.Children.Add(_rightPoint);
             _canvas.Children.Add(_leftHit);
             _canvas.Children.Add(_rightHit);
+
+            RenderBindingPrompts();
+        }
+
+        /// <summary>"Show button prompts" (Keyboard tab): pins pad-button
+        /// icons onto the virtual keyboard the same way the Key Maps board
+        /// pins them — right-upper corner, scaled/offset by the shared
+        /// 'Buttons icons scale'/'Prompt offset' sliders. Actions whose keys
+        /// are not on the layout (volume, media) get extra virtual keys right
+        /// of the grid; app-level commands render as a [icon label] list
+        /// under the grid, wrapping inside the keyboard width.</summary>
+        private double PromptFingerprintNow()
+        {
+            string text = AppSettings.Instance.ShowKeyboardButtonPrompts.ToString()
+                + "|" + AppSettings.Instance.Profile.Name
+                + "|" + AppSettings.Instance.ActiveProfile
+                + "|" + AppSettings.Instance.KeySpacing
+                + "|" + AppSettings.Instance.KeyboardKeyOpacity;
+            foreach (ProfileBinding binding in AppSettings.Instance.Profile.Bindings)
+            {
+                text += "|" + string.Join(",", binding.Buttons) + "=" + binding.Action
+                    + (binding.Modifier ? "+M" : string.Empty) + (binding.HoldLast ? "+H" : string.Empty);
+            }
+            return text.GetHashCode();
+        }
+
+        /// <summary>Called from RefreshUiCore (mapper state transitions —
+        /// profile switches, binding edits): rebuilds the prompt block only
+        /// when a cheap fingerprint of the relevant settings changed.</summary>
+        public void RefreshBindingPromptsIfDirty()
+        {
+            if (PromptFingerprintNow() == _lastPromptFingerprint)
+            {
+                return;
+            }
+            RenderBindingPrompts();
+        }
+
+        private void RenderBindingPrompts()
+        {
+            foreach (UIElement element in _bindingPromptElements)
+            {
+                _canvas.Children.Remove(element);
+            }
+            _bindingPromptElements.Clear();
+            _promptExtraDefs.Clear();
+            _promptListHeight = 0;
+            _lastPromptFingerprint = PromptFingerprintNow();
+
+            if (!AppSettings.Instance.ShowKeyboardButtonPrompts)
+            {
+                foreach (KeyValuePair<KeyboardLayout.KeyDef, Canvas> badge in _modifierBadges)
+                {
+                    badge.Value.Visibility = Visibility.Visible;
+                }
+                SizeToContent();
+                _lastPromptFingerprint = PromptFingerprintNow();
+                return;
+            }
+
+            Dictionary<ushort, List<string>> keyPrompts = new();
+            List<ushort> extraKeyVks = new();
+            List<(string IconSlot, string Label)> appPrompts = new();
+            ControllerMapper.CollectKeyboardPrompts(
+                AppSettings.Instance.Profile.Bindings,
+                vk => Layout.FindByVk(vk) != null,
+                keyPrompts, extraKeyVks, appPrompts);
+
+            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
+            double pitch = 48 + AppSettings.Instance.KeySpacing;
+            double promptScale = KeyMapsOverlayWindow.PromptIconScale * Math.Max(0.05, layout.IconScale);
+            double iconSpan = KeyMapsAtom.IconSpan * promptScale;
+
+            // ── 1. badges on keys present on the layout ──
+            foreach (KeyValuePair<ushort, List<string>> pair in keyPrompts)
+            {
+                KeyboardLayout.KeyDef? key = Layout.FindByVk(pair.Key);
+                if (key == null)
+                {
+                    continue;
+                }
+                Rect keyRect = KeyboardLayout.KeyRect(key, AppSettings.Instance.KeySpacing);
+                AttachPromptIcons(pair.Value, keyRect, promptScale, iconSpan, layout);
+            }
+
+            // ── 2. extra virtual keys for off-layout VKs (Maps-Mode style) ──
+            if (extraKeyVks.Count > 0)
+            {
+                const int Rows = 6;
+                int columns = (int)Math.Ceiling(extraKeyVks.Count / (double)Rows);
+                double baseX = Layout.GridW + 0.25;
+                System.Windows.Media.Brush borderBrush = (System.Windows.Media.Brush)FindResource("KeyBorderBrush");
+                System.Windows.Media.Brush fillBrush = (System.Windows.Media.Brush)FindResource("KeyBrush");
+                for (int index = 0; index < extraKeyVks.Count; index++)
+                {
+                    ushort vk = extraKeyVks[index];
+                    int row = index % Rows;
+                    int column = index / Rows;
+                    KeyboardLayout.KeyDef extra = new KeyboardLayout.KeyDef(VkLabel(vk), vk, 1, ControllerMapper.IsExtendedKey(vk));
+                    extra.X = baseX + column;
+                    extra.Y = row;
+                    _promptExtraDefs.Add(extra);
+                    Rect r = KeyboardLayout.KeyRect(extra, AppSettings.Instance.KeySpacing);
+                    Border tile = new Border
+                    {
+                        Width = r.Width,
+                        Height = r.Height,
+                        BorderBrush = borderBrush,
+                        BorderThickness = new Thickness(1),
+                        Background = fillBrush,
+                        Opacity = Math.Clamp(AppSettings.Instance.KeyboardKeyOpacity, 0.2, 1.0),
+                        CornerRadius = new CornerRadius(3),
+                        Child = new TextBlock
+                        {
+                            Text = VkLabel(vk),
+                            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+                            FontSize = 12,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        IsHitTestVisible = false,
+                    };
+                    Canvas.SetLeft(tile, r.X);
+                    Canvas.SetTop(tile, r.Y);
+                    _canvas.Children.Add(tile);
+                    _bindingPromptElements.Add(tile);
+                    if (keyPrompts.TryGetValue(vk, out List<string>? slots))
+                    {
+                        AttachPromptIcons(slots, r, promptScale, iconSpan, layout);
+                    }
+                }
+            }
+
+            // ── 3. app-level action list under the grid, wraps at keyboard width ──
+            double listY = Layout.GridH * pitch + 6;
+            double listX = 4;
+            double listWidth = Layout.GridW * pitch;
+            System.Windows.Media.Brush textBrush = (System.Windows.Media.Brush)FindResource("TextBrush");
+            foreach ((string IconSlot, string Label) entry in appPrompts)
+            {
+                Canvas icon = KeyMapsAtom.MakeIcon(entry.IconSlot);
+                icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
+                double entryWidth = iconSpan + 6 + 8 + MeasureTextWidth(entry.Label, 12) + 14;
+                if (listX > 4 && listX + entryWidth > listWidth)
+                {
+                    listX = 4;
+                    listY += iconSpan + 8;
+                }
+                Canvas.SetLeft(icon, listX);
+                Canvas.SetTop(icon, listY + (iconSpan * 0.0));
+                icon.IsHitTestVisible = false;
+                _canvas.Children.Add(icon);
+                _bindingPromptElements.Add(icon);
+                TextBlock label = new TextBlock
+                {
+                    Text = entry.Label,
+                    Foreground = textBrush,
+                    FontSize = 12,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(label, listX + iconSpan + 6);
+                Canvas.SetTop(label, listY + iconSpan / 2 - 8);
+                _canvas.Children.Add(label);
+                _bindingPromptElements.Add(label);
+                listX += entryWidth;
+            }
+            if (appPrompts.Count > 0)
+            {
+                _promptListHeight = listY + iconSpan + 8 - Layout.GridH * pitch;
+            }
+
+            // Per-key badge pins: skip the legacy modifier badge when binding
+            // prompts already cover that key (avoids double drawing on Ctrl).
+            foreach (KeyValuePair<KeyboardLayout.KeyDef, Canvas> badge in _modifierBadges)
+            {
+                if (keyPrompts.ContainsKey(badge.Key.Vk))
+                {
+                    badge.Value.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    badge.Value.Visibility = Visibility.Visible;
+                }
+            }
+
+            SizeToContent();
+        }
+
+        /// <summary>Pins a row of pad-button icons to a key's right-upper
+        /// corner (same anchor as the modifier badge), chaining leftward so
+        /// multiple buttons do not overlap; zero allocations per tick — only
+        /// runs on rebuilds.</summary>
+        private void AttachPromptIcons(List<string> buttonIds, Rect keyRect, double promptScale, double iconSpan, KeyMapsLayoutSettings layout)
+        {
+            int placed = 0;
+            foreach (string buttonId in buttonIds)
+            {
+                string slot = PromptIconSlot(buttonId);
+                if (slot.Length == 0)
+                {
+                    continue;
+                }
+                Canvas icon = KeyMapsAtom.MakeIcon(slot);
+                icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
+                double left = keyRect.X + keyRect.Width - iconSpan / 2.0 + layout.PromptOffsetX - placed * iconSpan * 0.72;
+                double top = keyRect.Y - iconSpan / 2.0 + layout.PromptOffsetY;
+                Canvas.SetLeft(icon, left);
+                Canvas.SetTop(icon, top);
+                icon.IsHitTestVisible = false;
+                _canvas.Children.Add(icon);
+                _bindingPromptElements.Add(icon);
+                placed++;
+                if (placed >= 3)
+                {
+                    break;
+                }
+            }
+        }
+
+        /// <summary>Profile button id -> Key Maps icon slot ("" = no icon).</summary>
+        private static string PromptIconSlot(string buttonId) => buttonId switch
+        {
+            "A" => "FaceA",
+            "B" => "FaceB",
+            "X" => "FaceX",
+            "Y" => "FaceY",
+            "LB" => "L1",
+            "RB" => "R1",
+            "LT" => "L2",
+            "RT" => "R2",
+            "LS" => "LeftStickPress",
+            "RS" => "RightStickPress",
+            "View" => "Select",
+            "Menu" => "Start",
+            "Home" => "Start",
+            "DUp" => "DPadUp",
+            "DDown" => "DPadDown",
+            "DLeft" => "DPadLeft",
+            "DRight" => "DPadRight",
+            "LUp" => "LeftStickUp",
+            "LDown" => "LeftStickDown",
+            "LLeft" => "LeftStickLeft",
+            "LRight" => "LeftStickRight",
+            "RUp" => "RightStickUp",
+            "RDown" => "RightStickDown",
+            "RLeft" => "RightStickLeft",
+            "RRight" => "RightStickRight",
+            _ => ""
+        };
+
+        private static string VkLabel(ushort vk) => vk switch
+        {
+            Vk.VolumeUp => "Vol+",
+            Vk.VolumeDown => "Vol−",
+            Vk.VolumeMute => "Mut",
+            Vk.MediaPlayPause => "▷∥",
+            Vk.MediaNext => "▷▷",
+            Vk.MediaPrev => "◁◁",
+            Vk.MediaStop => "■",
+            Vk.PageUp => "PgUp",
+            Vk.PageDown => "PgDn",
+            Vk.Insert => "Ins",
+            Vk.Delete => "Del",
+            Vk.Home => "Home",
+            Vk.End => "End",
+            Vk.Print => "PrtSc",
+            Vk.Scroll => "ScrLk",
+            Vk.Pause => "PasBr",
+            Vk.Up => "▲",
+            Vk.Down => "▼",
+            Vk.Left => "◀",
+            Vk.Right => "▶",
+            _ => ((int)vk).ToString()
+        };
+
+        private double MeasureTextWidth(string text, double fontSize)
+        {
+            FormattedText formatted = new FormattedText(
+                text,
+                System.Globalization.CultureInfo.CurrentCulture,
+                System.Windows.FlowDirection.LeftToRight,
+                new Typeface("Segoe UI"),
+                fontSize,
+                (System.Windows.Media.Brush)FindResource("TextBrush"),
+                VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            return formatted.Width;
         }
 
         private static Ellipse MakePoint(Brush fill) => new()
@@ -220,8 +511,13 @@ namespace GamepadKeyboard.Overlay
         public new void SizeToContent()
         {
             var pitch = 48 + AppSettings.Instance.KeySpacing;
-            _baseW = Layout.GridW * pitch + 8;
-            _baseH = Layout.GridH * pitch + 44;
+            double extraW = 0;
+            foreach (KeyboardLayout.KeyDef extra in _promptExtraDefs)
+            {
+                extraW = Math.Max(extraW, extra.X + extra.W - Layout.GridW);
+            }
+            _baseW = (Layout.GridW + extraW) * pitch + 8;
+            _baseH = Layout.GridH * pitch + 44 + _promptListHeight;
             ApplyScale();
         }
 

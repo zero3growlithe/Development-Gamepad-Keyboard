@@ -179,6 +179,18 @@ live in `README.md` / `DOCS.md`.
   `state.Previous` (hysteresis) so no phantom edges fire on combo exit —
   the combo owns the action while prefix+last are held, the single binding
   must stay silent (DUp=ScrollUp beside RT+DUp=PageUp case). Removal line
+- "Show button prompts" (Keyboard tab, `AppSettings.ShowKeyboardButtonPrompts`, default OFF):
+  Keyboard-mode pad-button prompts in Maps-Mode style — `ControllerMapper.CollectKeyboardPrompts`
+  classifies ACTIVE keyboard-profile bindings: on-layout key VKs get icon badges (right-upper
+  corner, `KeyMapsAtom.MakeIcon`, PromptIconScale×IconScale, PromptOffset, chain ≤3 icons
+  leftward); off-layout VKs (Vol+/−/Mut, media, NumPad) render as extra info tiles right of the
+  grid (rows 0..5, `VkLabel` names); app-level actions render [icon label] list UNDER the
+  grid (wraps at keyboard width, camel-case split labels). Hold*/Toggle* actions resolve to
+  their modifier-family VK. Rebuild triggers: RebuildKeys (all paths) + cheap
+  `RefreshBindingPromptsIfDirty()` fingerprint (profile/spacing/opacity/bindings) called from
+  RefreshUiCore; SizeToContent extends _baseW/_baseH by `_promptExtraDefs`/`_promptListHeight`.
+  When enabled, the legacy Maps-trigger modifier badge on Shift/Ctrl/Alt/Win is hidden for
+  keys that binding prompts already cover (restored visibly when the option turns off).
 - "Show special keys" (Keyboard tab, `AppSettings.ShowSpecialKeys`, default OFF):
   `KeyboardLayout.Build(bool)` is REBUILDABLE on the SAME instance — orchestrator holds
   `_keyboardLayout` and re-Builds it in `NotifyKeyboardLayoutChanged()` (keyboard overlay +

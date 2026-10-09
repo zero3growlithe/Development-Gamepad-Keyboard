@@ -1843,5 +1843,93 @@ namespace GamepadKeyboard
 
 
         private enum HeldScrollKind { Up, Down, Left, Right }
+        /// <summary>Keyboard-mode button prompts: walks the ACTIVE keyboard
+        /// profile bindings and classifies each action for the overlay — key
+        /// VKs found on the layout (badge pinned to that key), VKs missing
+        /// from the layout (extra virtual keys right of the grid, e.g.
+        /// volume/media) and app-level commands (bottom prompt list). Combo
+        /// bindings badge every button id they involve; single bindings badge
+        /// their one button. Modifiers resolve to their family VK so
+        /// "RT = HoldCtrl" pins R2 onto Ctrl. App actions also get their
+        /// canonical display label (camel-case split with spaces).</summary>
+        internal static void CollectKeyboardPrompts(
+            List<ProfileBinding> bindings,
+            Func<ushort, bool> isOnLayout,
+            Dictionary<ushort, List<string>> keyPrompts,
+            List<ushort> extraKeyVks,
+            List<(string IconSlot, string Label)> appPrompts)
+        {
+            foreach (ProfileBinding binding in bindings)
+            {
+                string action = NormalizeAction(binding.Action);
+                if (action == "None" || string.IsNullOrWhiteSpace(action))
+                {
+                    continue;
+                }
+                List<string>? buttons = binding.Buttons;
+                if (buttons == null || buttons.Count == 0)
+                {
+                    continue;
+                }
+                if (IsAppLevelAction(action))
+                {
+                    string display = System.Text.RegularExpressions.Regex.Replace(
+                        action, "(?<=[a-z])(?=[A-Z])", " ");
+                    bool alreadyListed = false;
+                    foreach ((string IconSlot, string Label) existing in appPrompts)
+                    {
+                        if (existing.Label == display)
+                        {
+                            alreadyListed = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyListed)
+                    {
+                        appPrompts.Add((buttons[buttons.Count - 1], display));
+                    }
+                    continue;
+                }
+                ushort modifierVk = ModifierForPrompt(action);
+                bool isModifierCommand = (action.StartsWith("Hold", StringComparison.Ordinal)
+                    || action.StartsWith("Toggle", StringComparison.Ordinal)) && modifierVk != 0;
+                if (!isModifierCommand && !TryResolveKeyAction(action, out ushort resolved, out bool _))
+                {
+                    continue;   // mouse-only / cursor-relay actions — no key to pin anywhere
+                }
+                ushort vk = isModifierCommand ? modifierVk : resolved;
+                // "Just like Maps Mode": keys missing from the layout (volume,
+                // media transport, NumPad) become extra virtual keys instead
+                // of being dropped.
+                if (!isOnLayout(vk) && !extraKeyVks.Contains(vk))
+                {
+                    extraKeyVks.Add(vk);
+                }
+                if (!keyPrompts.TryGetValue(vk, out List<string>? slots))
+                {
+                    slots = new List<string>();
+                    keyPrompts[vk] = slots;
+                }
+                foreach (string button in buttons)
+                {
+                    if (!slots.Contains(button))
+                    {
+                        slots.Add(button);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Modifier-family VK for Hold*/Toggle* actions; 0 when the
+        /// action is not a modifier command.</summary>
+        private static ushort ModifierForPrompt(string action) => action switch
+        {
+            "HoldShift" or "ToggleShift" => Vk.LShift,
+            "HoldCtrl" or "ToggleCtrl" => Vk.LControl,
+            "HoldAlt" or "ToggleAlt" => Vk.LMenu,
+            "HoldWin" or "ToggleWin" => Vk.LWin,
+            _ => 0
+        };
+
     }
 }
