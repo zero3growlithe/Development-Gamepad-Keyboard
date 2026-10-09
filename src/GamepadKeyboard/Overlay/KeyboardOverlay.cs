@@ -148,11 +148,15 @@ namespace GamepadKeyboard.Overlay
         /// under the grid, wrapping inside the keyboard width.</summary>
         private double PromptFingerprintNow()
         {
+            KeyMapsLayoutSettings promptLayout = AppSettings.Instance.KeyMaps.Layout;
             string text = AppSettings.Instance.ShowKeyboardButtonPrompts.ToString()
                 + "|" + AppSettings.Instance.Profile.Name
                 + "|" + AppSettings.Instance.ActiveProfile
                 + "|" + AppSettings.Instance.KeySpacing
-                + "|" + AppSettings.Instance.KeyboardKeyOpacity;
+                + "|" + AppSettings.Instance.KeyboardKeyOpacity
+                + "|" + promptLayout.IconScale
+                + "|" + promptLayout.PromptOffsetX
+                + "|" + promptLayout.PromptOffsetY;
             foreach (ProfileBinding binding in AppSettings.Instance.Profile.Bindings)
             {
                 text += "|" + string.Join(",", binding.Buttons) + "=" + binding.Action
