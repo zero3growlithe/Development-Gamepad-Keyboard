@@ -187,7 +187,6 @@ namespace GamepadKeyboard.Overlay
             if (!AppSettings.Instance.ShowKeyboardButtonPrompts)
             {
                 SizeToContent();
-                _lastPromptFingerprint = PromptFingerprintNow();
                 return;
             }
 
@@ -220,7 +219,6 @@ namespace GamepadKeyboard.Overlay
             if (extraKeyVks.Count > 0)
             {
                 const int Rows = 6;
-                int columns = (int)Math.Ceiling(extraKeyVks.Count / (double)Rows);
                 double baseX = Layout.GridW + 0.25;
                 System.Windows.Media.Brush borderBrush = (System.Windows.Media.Brush)FindResource("KeyBorderBrush");
                 System.Windows.Media.Brush fillBrush = (System.Windows.Media.Brush)FindResource("KeyBrush");
@@ -322,8 +320,9 @@ namespace GamepadKeyboard.Overlay
                 }
                 Canvas icon = KeyMapsAtom.MakeIcon(slot);
                 icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
-                double left = keyRect.X + keyRect.Width - iconSpan / 2.0 + layout.PromptOffsetX - placed * iconSpan * 0.72;
-                double top = keyRect.Y - iconSpan / 2.0 + layout.PromptOffsetY;
+                double left = Math.Max(2.0, keyRect.X + keyRect.Width - iconSpan / 2.0
+                    + layout.PromptOffsetX - placed * iconSpan * 0.72);
+                double top = Math.Max(2.0, keyRect.Y - iconSpan / 2.0 + layout.PromptOffsetY);
                 Canvas.SetLeft(icon, left);
                 Canvas.SetTop(icon, top);
                 icon.IsHitTestVisible = false;
