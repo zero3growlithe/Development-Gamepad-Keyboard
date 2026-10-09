@@ -1891,13 +1891,12 @@ namespace GamepadKeyboard
                     continue;
                 }
                 ushort modifierVk = ModifierForPrompt(action);
-                bool isModifierCommand = (action.StartsWith("Hold", StringComparison.Ordinal)
-                    || action.StartsWith("Toggle", StringComparison.Ordinal)) && modifierVk != 0;
-                if (!isModifierCommand && !TryResolveKeyAction(action, out ushort resolved, out bool _))
+                ushort vk = modifierVk;
+                if (vk == Vk.None
+                    && !TryResolveKeyAction(action, out vk, out bool _))
                 {
                     continue;   // mouse-only / cursor-relay actions — no key to pin anywhere
                 }
-                ushort vk = isModifierCommand ? modifierVk : resolved;
                 // "Just like Maps Mode": keys missing from the layout (volume,
                 // media transport, NumPad) become extra virtual keys instead
                 // of being dropped.
