@@ -334,10 +334,10 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
                     AddStick(canvas, mid, 0xE0, 0x64, 0xA8, StickArrowDegrees(slot), "R");
                     break;
                 case "Select":
-                    AddShape(canvas, MakeWordGlyph("Select", 0xB8, 0xB8, 0xC8), 3, 3);
+                    AddShape(canvas, MakeWordGlyph("Select", 0xB8, 0xB8, 0xC8), 1, 1);
                     break;
                 case "Start":
-                    AddShape(canvas, MakeWordGlyph("Start", 0xB8, 0xB8, 0xC8), 3, 3);
+                    AddShape(canvas, MakeWordGlyph("Start", 0xB8, 0xB8, 0xC8), 1, 1);
                     break;
                 default:
                     AddShape(canvas, new System.Windows.Shapes.Rectangle
@@ -419,25 +419,24 @@ private static readonly Brush QuarkBorderCombo = Frozen(new SolidColorBrush(Colo
         /// standard circle plate — the two buttons have no letter glyph.</summary>
         private static System.Windows.Controls.Grid MakeWordGlyph(string word, byte r, byte g, byte b)
         {
-            System.Windows.Shapes.Ellipse ring = new()
-            {
-                Width = IconSpan - 6,
-                Height = IconSpan - 6,
-                Stroke = new SolidColorBrush(Color.FromRgb(r, g, b)),
-                StrokeThickness = 1.8,
-            };
+            // Word-only glyph (no ring): at the old 6px-inside-a-ring sizing the
+            // word clipped into unreadable fragments when scaled down.
             System.Windows.Controls.TextBlock text = new()
             {
                 Text = word,
                 Foreground = new SolidColorBrush(Color.FromRgb(r, g, b)),
-                FontSize = 6,
+                FontSize = 7.5,
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
                 TextAlignment = TextAlignment.Center,
                 FontWeight = FontWeights.SemiBold,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            System.Windows.Controls.Grid grid = new();
-            grid.Children.Add(ring);
+            System.Windows.Controls.Grid grid = new()
+            {
+                Width = IconSpan - 2,
+                Height = IconSpan - 2,
+            };
             grid.Children.Add(text);
             return grid;
         }

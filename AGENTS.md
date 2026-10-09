@@ -179,6 +179,8 @@ live in `README.md` / `DOCS.md`.
   `state.Previous` (hysteresis) so no phantom edges fire on combo exit —
   the combo owns the action while prefix+last are held, the single binding
   must stay silent (DUp=ScrollUp beside RT+DUp=PageUp case). Removal line
+- Select/Start icon = word-only glyph (MakeWordGlyph, KeyMapsAtom): ring removed + 7.5px text; the old 6px-in-ring clipped to unreadable fragments at small scales.
+- KeyboardOverlay NO LONGER draws KeyMaps-trigger modifier badges (AttachModifierBadge/RefreshModifierBadges REMOVED, _modifierBadges field gone) — binding prompts cover modifiers; the old path leaked Maps-mode badges into Keyboard mode.
 - "Show button prompts" (Keyboard tab, `AppSettings.ShowKeyboardButtonPrompts`, default OFF):
   Keyboard-mode pad-button prompts in Maps-Mode style — `ControllerMapper.CollectKeyboardPrompts`
   classifies ACTIVE keyboard-profile bindings: on-layout key VKs get icon badges (right-upper

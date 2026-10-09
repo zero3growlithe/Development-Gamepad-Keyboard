@@ -42,7 +42,6 @@ namespace GamepadKeyboard.Overlay
         private double _lastLeftPointX = double.NaN, _lastLeftPointY = double.NaN;
         private double _lastRightPointX = double.NaN, _lastRightPointY = double.NaN;
         private bool? _lastCentersVisible;
-        private readonly System.Collections.Generic.Dictionary<KeyboardLayout.KeyDef, Canvas> _modifierBadges = new();
         private readonly List<UIElement> _bindingPromptElements = new();
         private readonly List<KeyboardLayout.KeyDef> _promptExtraDefs = new();   // off-layout VK keys (volume/media) drawn right of the grid
         private double _promptListHeight;
@@ -87,8 +86,6 @@ namespace GamepadKeyboard.Overlay
         {
             foreach (var b in _keyBorders.Values) _canvas.Children.Remove(b);
             _keyBorders.Clear();
-            foreach (var b in _modifierBadges.Values) _canvas.Children.Remove(b);
-            _modifierBadges.Clear();
 
             foreach (var k in Layout.Keys)
             {
@@ -115,7 +112,6 @@ namespace GamepadKeyboard.Overlay
                 Canvas.SetTop(border, r.Y);
                 _canvas.Children.Add(border);
                 _keyBorders[k] = border;
-                AttachModifierBadge(k, r);
 
                 if (k.Vk != 0 && _toggledVks.Contains(k.Vk))
                     border.Background = ToggledBrush;
@@ -190,10 +186,6 @@ namespace GamepadKeyboard.Overlay
 
             if (!AppSettings.Instance.ShowKeyboardButtonPrompts)
             {
-                foreach (KeyValuePair<KeyboardLayout.KeyDef, Canvas> badge in _modifierBadges)
-                {
-                    badge.Value.Visibility = Visibility.Visible;
-                }
                 SizeToContent();
                 _lastPromptFingerprint = PromptFingerprintNow();
                 return;
@@ -309,20 +301,6 @@ namespace GamepadKeyboard.Overlay
             if (appPrompts.Count > 0)
             {
                 _promptListHeight = listY + iconSpan + 8 - Layout.GridH * pitch;
-            }
-
-            // Per-key badge pins: skip the legacy modifier badge when binding
-            // prompts already cover that key (avoids double drawing on Ctrl).
-            foreach (KeyValuePair<KeyboardLayout.KeyDef, Canvas> badge in _modifierBadges)
-            {
-                if (keyPrompts.ContainsKey(badge.Key.Vk))
-                {
-                    badge.Value.Visibility = Visibility.Collapsed;
-                }
-                else
-                {
-                    badge.Value.Visibility = Visibility.Visible;
-                }
             }
 
             SizeToContent();
@@ -729,56 +707,8 @@ namespace GamepadKeyboard.Overlay
             _highlighted.Clear();
         }
 
-        // ── Pad-button badges on modifier keys ─────────────────────────────────
-        // A small rounded tag ("L2", "R1"…) pinned to the key's top-right corner
-        // shows which gamepad control drives that modifier in Key Maps mode
-        // (resolved from the configured system-button actions). No driver →
-        // no badge, so the keyboard never lies.
-
-        /// <summary>Attach (or leave off) the pad-button badge for one key;
-        /// badges live on the same canvas and scale with the window.</summary>
-        private void AttachModifierBadge(KeyboardLayout.KeyDef key, Rect keyRect)
-        {
-            string driver = key.Vk is (ushort)0xA0 or (ushort)0xA1   // Shift
-                ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LShift, Vk.RShift)
-                : key.Vk is (ushort)0xA2 or (ushort)0xA3   // Ctrl
-                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LControl, Vk.RControl)
-                : key.Vk is (ushort)0xA4 or (ushort)0xA5   // Alt
-                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LMenu, Vk.RMenu)
-                : key.Vk is (ushort)0x5B or (ushort)0x5C   // Windows
-                    ? Input.KeyMapsMapper.ModifierDriverButton(Vk.LWin, Vk.RWin)
-                : "";
-            if (string.IsNullOrEmpty(driver))
-            {
-                return;
-            }
-
-            // Same prompt-icon system as the Key Maps board prompts: the vector
-            // button glyph scales with "Buttons icons scale" and shifts with
-            // "Prompt offset" (sliders live in Keyboard Maps layout settings).
-            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
-            double promptScale = KeyMapsOverlayWindow.PromptIconScale * Math.Max(0.05, layout.IconScale);
-            Canvas icon = KeyMapsAtom.MakeIcon(driver);
-            icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
-            double iconSpan = KeyMapsAtom.IconSpan * promptScale;
-            Canvas.SetLeft(icon, keyRect.X + keyRect.Width - iconSpan / 2.0 + layout.PromptOffsetX);
-            Canvas.SetTop(icon, keyRect.Y - iconSpan / 2.0 + layout.PromptOffsetY);
-            icon.IsHitTestVisible = false;
-            _canvas.Children.Add(icon);
-            if (_modifierBadges.TryGetValue(key, out Canvas? previous))
-            {
-                _canvas.Children.Remove(previous);
-            }
-
-            _modifierBadges[key] = icon;
-        }
-
-        /// <summary>Re-resolves every modifier badge after the system-button
-        /// bindings change (badges rebuild with the next RebuildKeys).</summary>
-        public void RefreshModifierBadges()
-        {
-            RebuildKeys();
-        }
+        // ── Pad-button badges now live ONLY in binding prompts (RenderBindingPrompts):
+        // the old KeyMaps-trigger badges showed Maps-mode leftovers in Keyboard mode.
 
         protected override void OnSourceInitialized(EventArgs e)
         {
