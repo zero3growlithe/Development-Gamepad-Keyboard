@@ -21,6 +21,13 @@ namespace GamepadKeyboard.Settings
         /// the Maps Mode projected keyboard (0.2–1; clamped in Normalize()).
         /// </summary>
         public double KeyboardKeyOpacity { get; set; } = 1.0;
+
+        /// <summary>"Show button prompts" (Keyboard tab): independent X/Y
+        /// offset and icon-scale for Keyboard-mode pad-button prompts —
+        /// unrelated to the Key Maps layout sliders.</summary>
+        public double KeyboardPromptOffsetX { get; set; } = 0.0;
+        public double KeyboardPromptOffsetY { get; set; } = 0.0;
+        public double KeyboardPromptIconScale { get; set; } = 1.0;
         public double StickDeadzone { get; set; } = 0.1;
         public double MouseStickDeadzone { get; set; } = 0.1;   // separate deadzone for mouse mode
         public double OverlayScale { get; set; } = 1.0;
@@ -170,6 +177,9 @@ namespace GamepadKeyboard.Settings
             KeyMaps ??= new KeyMapsSettings();
             KeyMaps.Normalize();
             KeyboardKeyOpacity = Math.Clamp(KeyboardKeyOpacity, 0.2, 1.0);
+            KeyboardPromptOffsetX = Math.Clamp(KeyboardPromptOffsetX, -200.0, 200.0);
+            KeyboardPromptOffsetY = Math.Clamp(KeyboardPromptOffsetY, -100.0, 100.0);
+            KeyboardPromptIconScale = Math.Clamp(KeyboardPromptIconScale, 0.3, 3.0);
             HidHideDeviceInstancePaths = HidHideDeviceInstancePaths
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)

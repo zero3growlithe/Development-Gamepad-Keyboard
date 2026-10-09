@@ -148,15 +148,14 @@ namespace GamepadKeyboard.Overlay
         /// under the grid, wrapping inside the keyboard width.</summary>
         private double PromptFingerprintNow()
         {
-            KeyMapsLayoutSettings promptLayout = AppSettings.Instance.KeyMaps.Layout;
             string text = AppSettings.Instance.ShowKeyboardButtonPrompts.ToString()
                 + "|" + AppSettings.Instance.Profile.Name
                 + "|" + AppSettings.Instance.ActiveProfile
                 + "|" + AppSettings.Instance.KeySpacing
                 + "|" + AppSettings.Instance.KeyboardKeyOpacity
-                + "|" + promptLayout.IconScale
-                + "|" + promptLayout.PromptOffsetX
-                + "|" + promptLayout.PromptOffsetY;
+                + "|" + AppSettings.Instance.KeyboardPromptIconScale
+                + "|" + AppSettings.Instance.KeyboardPromptOffsetX
+                + "|" + AppSettings.Instance.KeyboardPromptOffsetY;
             foreach (ProfileBinding binding in AppSettings.Instance.Profile.Bindings)
             {
                 text += "|" + string.Join(",", binding.Buttons) + "=" + binding.Action
@@ -202,9 +201,9 @@ namespace GamepadKeyboard.Overlay
                 vk => Layout.FindByVk(vk) != null,
                 keyPrompts, extraKeyVks, appPrompts);
 
-            KeyMapsLayoutSettings layout = AppSettings.Instance.KeyMaps.Layout;
             double pitch = 48 + AppSettings.Instance.KeySpacing;
-            double promptScale = KeyMapsOverlayWindow.PromptIconScale * Math.Max(0.05, layout.IconScale);
+            double promptScale = KeyMapsOverlayWindow.PromptIconScale * Math.Max(0.05,
+                AppSettings.Instance.KeyboardPromptIconScale);
             double iconSpan = KeyMapsAtom.IconSpan * promptScale;
 
             // ── 1. badges on keys present on the layout ──
@@ -216,7 +215,7 @@ namespace GamepadKeyboard.Overlay
                     continue;
                 }
                 Rect keyRect = KeyboardLayout.KeyRect(key, AppSettings.Instance.KeySpacing);
-                AttachPromptIcons(pair.Value, keyRect, promptScale, iconSpan, layout);
+                AttachPromptIcons(pair.Value, keyRect, promptScale, iconSpan);
             }
 
             // ── 2. extra virtual keys for off-layout VKs (Maps-Mode style) ──
@@ -261,7 +260,7 @@ namespace GamepadKeyboard.Overlay
                     _bindingPromptElements.Add(tile);
                     if (keyPrompts.TryGetValue(vk, out List<string>? slots))
                     {
-                        AttachPromptIcons(slots, r, promptScale, iconSpan, layout);
+                        AttachPromptIcons(slots, r, promptScale, iconSpan);
                     }
                 }
             }
@@ -312,7 +311,7 @@ namespace GamepadKeyboard.Overlay
         /// corner (same anchor as the modifier badge), chaining leftward so
         /// multiple buttons do not overlap; zero allocations per tick — only
         /// runs on rebuilds.</summary>
-        private void AttachPromptIcons(List<string> buttonIds, Rect keyRect, double promptScale, double iconSpan, KeyMapsLayoutSettings layout)
+        private void AttachPromptIcons(List<string> buttonIds, Rect keyRect, double promptScale, double iconSpan)
         {
             int placed = 0;
             foreach (string buttonId in buttonIds)
@@ -325,8 +324,9 @@ namespace GamepadKeyboard.Overlay
                 Canvas icon = KeyMapsAtom.MakeIcon(slot);
                 icon.RenderTransform = new ScaleTransform(promptScale, promptScale);
                 double left = Math.Max(2.0, keyRect.X + keyRect.Width - iconSpan / 2.0
-                    + layout.PromptOffsetX - placed * iconSpan * 0.72);
-                double top = Math.Max(2.0, keyRect.Y - iconSpan / 2.0 + layout.PromptOffsetY);
+                    + AppSettings.Instance.KeyboardPromptOffsetX - placed * iconSpan * 0.72);
+                double top = Math.Max(2.0, keyRect.Y - iconSpan / 2.0
+                    + AppSettings.Instance.KeyboardPromptOffsetY);
                 Canvas.SetLeft(icon, left);
                 Canvas.SetTop(icon, top);
                 icon.IsHitTestVisible = false;

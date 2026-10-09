@@ -47,6 +47,33 @@ namespace GamepadKeyboard.UI
         private readonly CheckBox _keyRepeat = new() { Content = "Simulate key repeat" };
         private readonly CheckBox _specialKeys = new() { Content = "Show special keys" };
         private readonly CheckBox _keyboardPrompts = new() { Content = "Show button prompts (Maps Mode style)" };
+        private readonly Slider _promptOffsetXSlider = new()
+        {
+            Minimum = -100.0,
+            Maximum = 100.0,
+            TickFrequency = 1.0,
+            IsSnapToTickEnabled = false,
+            Width = 220,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        private readonly Slider _promptOffsetYSlider = new()
+        {
+            Minimum = -60.0,
+            Maximum = 60.0,
+            TickFrequency = 1.0,
+            IsSnapToTickEnabled = false,
+            Width = 220,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        private readonly Slider _promptIconScaleSlider = new()
+        {
+            Minimum = 0.3,
+            Maximum = 3.0,
+            TickFrequency = 0.05,
+            IsSnapToTickEnabled = false,
+            Width = 220,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         private readonly CheckBox _cursorLag = new() { Content = "Enable cursor lag" };
         private readonly TextBox _cursorLagSeconds = new() { Text = "" };
         private readonly CheckBox _hideLagRays = new() { Content = "Hide rays in cursor lag mode" };
@@ -94,6 +121,9 @@ namespace GamepadKeyboard.UI
             _keyRepeat.IsChecked = s.SimulateKeyRepeat;
             _specialKeys.IsChecked = s.ShowSpecialKeys;
             _keyboardPrompts.IsChecked = s.ShowKeyboardButtonPrompts;
+            _promptOffsetXSlider.Value = s.KeyboardPromptOffsetX;
+            _promptOffsetYSlider.Value = s.KeyboardPromptOffsetY;
+            _promptIconScaleSlider.Value = s.KeyboardPromptIconScale;
             _cursorLag.IsChecked = s.CursorLagEnabled;
             _cursorLagSeconds.Text = s.CursorLagSeconds.ToString("0.###");
             _hideLagRays.IsChecked = s.HideRaysInCursorLag;
@@ -303,7 +333,48 @@ namespace GamepadKeyboard.UI
                 ("", _keyRepeat),
                 ("", _specialKeys),
                 ("", _keyboardPrompts),
+                ("Prompt icon offset X:", MakeKeyboardPromptSliderHost(
+                    _promptOffsetXSlider, "0.#", value =>
+                    {
+                        Settings.AppSettings.Instance.KeyboardPromptOffsetX = value;
+                    })),
+                ("Prompt icon offset Y:", MakeKeyboardPromptSliderHost(
+                    _promptOffsetYSlider, "0.#", value =>
+                    {
+                        Settings.AppSettings.Instance.KeyboardPromptOffsetY = value;
+                    })),
+                ("Prompt icon scale:", MakeKeyboardPromptSliderHost(
+                    _promptIconScaleSlider, "0.##", value =>
+                    {
+                        Settings.AppSettings.Instance.KeyboardPromptIconScale = value;
+                    })),
             };
+        }
+
+        /// <summary>Keyboard-tab prompt sliders: live value readout + instant
+        /// apply (setting write + Save + RefreshUiCore notify), independent of
+        /// the Key Maps layout sliders.</summary>
+        private StackPanel MakeKeyboardPromptSliderHost(Slider slider, string format, Action<double> apply)
+        {
+            System.Windows.Controls.TextBlock valueText = new()
+            {
+                Foreground = System.Windows.Media.Brushes.Gray,
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            slider.ValueChanged += (_, __) =>
+            {
+                double value = slider.Value;
+                apply(value);
+                Settings.AppSettings.Save();
+                valueText.Text = value.ToString(format, CultureInfo.CurrentCulture);
+                AppOrchestrator.NotifyMappingsChanged();
+            };
+            valueText.Text = slider.Value.ToString(format, CultureInfo.CurrentCulture);
+            StackPanel host = new() { Orientation = Orientation.Horizontal };
+            host.Children.Add(slider);
+            host.Children.Add(valueText);
+            return host;
         }
 
         /// <summary>Key Maps layout editors — every option a slider (circle
@@ -520,6 +591,9 @@ namespace GamepadKeyboard.UI
             s.UseAbsoluteMouse = _absoluteMouse.IsChecked == true;
             s.ShowSpecialKeys = _specialKeys.IsChecked == true;
             s.ShowKeyboardButtonPrompts = _keyboardPrompts.IsChecked == true;
+            s.KeyboardPromptOffsetX = _promptOffsetXSlider.Value;
+            s.KeyboardPromptOffsetY = _promptOffsetYSlider.Value;
+            s.KeyboardPromptIconScale = _promptIconScaleSlider.Value;
             s.SimulateKeyRepeat = _keyRepeat.IsChecked == true;
             s.CursorLagEnabled = _cursorLag.IsChecked == true;
             s.CursorLagSeconds = ReadValidatedNumber(_cursorLagSeconds);

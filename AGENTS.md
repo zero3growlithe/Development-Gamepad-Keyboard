@@ -181,6 +181,7 @@ live in `README.md` / `DOCS.md`.
   must stay silent (DUp=ScrollUp beside RT+DUp=PageUp case). Removal line
 - Select/Start icon = word-only glyph (MakeWordGlyph, KeyMapsAtom): ring removed + 7.5px text; the old 6px-in-ring clipped to unreadable fragments at small scales.
 - KeyboardOverlay NO LONGER draws KeyMaps-trigger modifier badges (AttachModifierBadge/RefreshModifierBadges REMOVED, _modifierBadges field gone) — binding prompts cover modifiers; the old path leaked Maps-mode badges into Keyboard mode.
+- Keyboard-prompt geometry is INDEPENDENT of Key Maps layout sliders: `AppSettings.KeyboardPromptOffsetX/Y` (±100/±60 px) + `KeyboardPromptIconScale` (0.3–3.0) own Keyboard-mode prompt positioning/sizing; Keyboard prompt icons NEVER read `KeyMaps.Layout.IconScale`/`PromptOffset*`. SettingsWindow builds these with `MakeKeyboardPromptSliderHost` (live apply on ValueChanged: write + Save + `NotifyMappingsChanged`; Save() also writes them authoritatively on OK).
 - "Show button prompts" (Keyboard tab, `AppSettings.ShowKeyboardButtonPrompts`, default OFF):
   Keyboard-mode pad-button prompts in Maps-Mode style — `ControllerMapper.CollectKeyboardPrompts`
   classifies ACTIVE keyboard-profile bindings: on-layout key VKs get icon badges (right-upper
