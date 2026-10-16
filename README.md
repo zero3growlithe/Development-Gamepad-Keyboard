@@ -44,6 +44,32 @@ without the library the app keeps the classic SendInput path, and every
 failure falls back per key. Note: Windows Memory Integrity (Core isolation)
 can block this older driver on some systems.
 
+## Optional: keyboard overlay above the Start menu (UIAccess)
+
+Windows keeps the Start menu in a z-order band that plain always-on-top
+windows can never reach, so the virtual keyboard overlay hides under it. The
+fix is the same mechanism the built-in touch keyboard uses: a **UIAccess**
+build — an Authenticode-signed executable with `uiAccess="true"` whose
+windows land in the topmost `ZBID_UIACCESS` band and float above the Start
+menu, so gamepad typing works in Start search.
+
+The zip ships both flavors plus a one-command installer:
+
+```
+extract the zip
+run  install-uiaccess.bat         (asks for administrator rights)
+launch  "Development Gamepad Keyboard" from the Start menu
+```
+
+The script (installer/Install-UiAccess.ps1) copies the `uiaccess\` build to
+`C:\Program Files\DevelopmentGamepadKeyboard`, creates a self-signed
+code-signing certificate and trusts it on the machine, signs the executable,
+and creates the Start-menu shortcut. Windows requires signature + secure
+location for UIAccess, which is why the installed copy is the one to launch —
+the plain build in the zip keeps the stock behavior (overlay under Start).
+If "Run on startup" was used, toggle it off/on after installing so the
+scheduled task points at the new copy.
+
 ## Building
 
 ```sh

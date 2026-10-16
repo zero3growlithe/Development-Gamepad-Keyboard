@@ -23,9 +23,17 @@ jobs:
       - name: Publish framework-dependent (requires .NET 8 Desktop Runtime)
         run: dotnet publish src/GamepadKeyboard/GamepadKeyboard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -p:NuGetAudit=false -o publish
 
+      - name: Publish uiAccess flavor (keyboard overlay above the Start menu)
+        run: dotnet publish src/GamepadKeyboard/GamepadKeyboard.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -p:NuGetAudit=false -p:ApplicationManifest=app.uiaccess.manifest -o publish-uiaccess
+
       - name: Zip publish output
         shell: pwsh
-        run: Compress-Archive -Path publish/* -DestinationPath DevelopmentGamepadKeyboard-win-x64.zip
+        run: |
+          Copy-Item installer/install-uiaccess.bat, installer/Install-UiAccess.ps1 -Destination publish/
+          New-Item -ItemType Directory -Force -Path bundle/uiaccess | Out-Null
+          Copy-Item publish/* bundle/
+          Copy-Item publish-uiaccess/* bundle/uiaccess/
+          Compress-Archive -Path bundle/* -DestinationPath DevelopmentGamepadKeyboard-win-x64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

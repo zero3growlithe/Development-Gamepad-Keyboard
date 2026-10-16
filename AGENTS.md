@@ -247,3 +247,29 @@ Driver install (user, once): github.com/oblitum/Interception →
 zip's `library\x64\interception.dll` next to the exe (or any probed path).
 DLL/driver are NOT bundled (license + it's the user's machine). Caveat:
 Memory Integrity (Core isolation) can block this old driver on some Win11s.
+
+## Keyboard overlay above the Start menu = UIAccess build
+
+Win10/11 Start menu (StartMenuExperienceHost/SearchHost) lives in a shell
+z-band (`ZBID_IMMERSIVE_MOGO`) above every classic `HWND_TOPMOST` window; any
+topmost overlay is hidden under Start. SetWindowBand/CreateWindowInBand from
+a normal process always fail (ACCESS DENIED — only the OS/IAM keys); the ONE
+supported workaround is a UIAccess token: Authenticode-signed exe +
+`uiAccess="true"` manifest + secure location (Program Files) → its windows
+(incl. our topmost overlay) automatically land in `ZBID_UIACCESS`, the
+highest z-band — above Start, Task Manager, everything. Same mechanism as
+osk.exe. Implementation: `app.uiaccess.manifest` (copy of app.manifest,
+`uiAccess="true"`) published by CI via
+`-p:ApplicationManifest=app.uiaccess.manifest` into the zip's `uiaccess\`
+subfolder; `installer/Install-UiAccess.bat` → `Install-UiAccess.ps1`
+self-elevates, stops running instances, copies to Program Files, creates a
+self-signed CodeSigningCert (reuse by exact Subject match
+`CN=Development Gamepad Keyboard UIAccess`, 20 y validity), imports it into
+LocalMachine\Root, `Set-AuthenticodeSignature`, marks status Valid, creates
+the Start-menu shortcut. Unsigned/misplaced uiAccess exe = does not start
+(ERROR_INVALID_IMAGE_HASH 577) — the zip keeps the stock (uiAccess false)
+build at root. No app-code z-order changes needed (band is per-process at
+window creation). Caveat: in the UIAccess process EVERY window floats above
+normal topmost windows (band ordering dominates) — Settings too; acceptable.
+Single-instance mutex `DevelopmentGamepadKeyboard_SingleInstance` is shared
+by both flavors (mutual exclusion, no double-input).

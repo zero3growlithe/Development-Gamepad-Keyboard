@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="DevelopmentGamepadKeyboard.app"/>
+  <!--
+    uiAccess build (installer\install-uiaccess.bat): this manifest requests the
+    UIAccess token, which every window of the process (the topmost keyboard
+    overlay included) receives: windows land in the ZBID_UIACCESS z-order band
+    (same mechanism as the Windows touch keyboard / osk.exe) so the overlay
+    floats ABOVE the Start menu and other shell immersive surfaces instead of
+    hiding under them. Requirements enforced by Windows at CreateProcess time:
+    the executable must be Authenticode-signed and installed in a secure
+    location (e.g. C:\Program Files) — the bundled installer script does both;
+    an unsigned copy placed anywhere else refuses to start (ERROR_INVALID_IMAGE_HASH).
+  -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="true" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and Windows 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+    </windowsSettings>
+  </application>
+</assembly>
