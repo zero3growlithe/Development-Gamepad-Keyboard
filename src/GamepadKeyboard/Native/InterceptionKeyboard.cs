@@ -54,10 +54,11 @@ namespace GamepadKeyboard.Native
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate uint HardwareIdDelegate(IntPtr context, int device, byte[] buffer, uint size);
 
-        private static CreateContextDelegate _createContext;
-        private static DestroyContextDelegate _destroyContext;
-        private static SendDelegate _send;
-        private static HardwareIdDelegate _hardwareIdGetter;
+        private static CreateContextDelegate _createContext = null!;
+        private static DestroyContextDelegate _destroyContext = null!;
+        private static SendDelegate _send = null!;
+        private static HardwareIdDelegate _hardwareIdGetter = null!;
+        private static string _lastLibrarySearch = "";
 
         /// <summary>True when interception.dll and the Interception driver are
         /// loaded and a keyboard slot was chosen. The Keyboard-tab toggle still
