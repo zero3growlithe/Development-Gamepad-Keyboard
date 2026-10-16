@@ -13,6 +13,10 @@ namespace GamepadKeyboard.Input
     {
         public void TapKey(ushort vk, bool extended = false)
         {
+            if (InterceptionKeyboard.TrySendTap(vk, extended))
+            {
+                return;
+            }
             Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[2];
             inputs[0] = KeyInput(vk, true, extended);
             inputs[1] = KeyInput(vk, false, extended);
@@ -21,9 +25,12 @@ namespace GamepadKeyboard.Input
 
         public void KeyDown(ushort vk, bool extended = false)
         {
-            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
-            inputs[0] = KeyInput(vk, true, extended);
-            Dispatch(inputs);
+            if (!InterceptionKeyboard.TrySendKey(vk, true, extended))
+            {
+                Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
+                inputs[0] = KeyInput(vk, true, extended);
+                Dispatch(inputs);
+            }
             if (keyRepeatEnabled && vk != Vk.None && IsRepeatableKey(vk))
             {
                 _repeatHeldEntries[vk] = _repeatClock.Elapsed.TotalSeconds
@@ -34,9 +41,12 @@ namespace GamepadKeyboard.Input
 
         public void KeyUp(ushort vk, bool extended = false)
         {
-            Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
-            inputs[0] = KeyInput(vk, false, extended);
-            Dispatch(inputs);
+            if (!InterceptionKeyboard.TrySendKey(vk, false, extended))
+            {
+                Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
+                inputs[0] = KeyInput(vk, false, extended);
+                Dispatch(inputs);
+            }
             _repeatHeldEntries.Remove(vk);
             _repeatExtendedStates.Remove(vk);
         }
@@ -254,9 +264,13 @@ namespace GamepadKeyboard.Input
             foreach (ushort vk in dueKeys)
             {
                 _repeatHeldEntries[vk] = now + periodSeconds;
-                Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
-                inputs[0] = KeyInput(vk, true, _repeatExtendedStates.TryGetValue(vk, out bool extended) && extended);
-                Dispatch(inputs);
+                bool extended = _repeatExtendedStates.TryGetValue(vk, out bool heldExtended) && heldExtended;
+                if (!InterceptionKeyboard.TrySendKey(vk, true, extended))
+                {
+                    Span<NativeMethods.INPUT> inputs = stackalloc NativeMethods.INPUT[1];
+                    inputs[0] = KeyInput(vk, true, extended);
+                    Dispatch(inputs);
+                }
             }
         }
 

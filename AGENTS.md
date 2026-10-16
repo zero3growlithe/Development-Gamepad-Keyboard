@@ -217,3 +217,33 @@ Commits straight to `main`. After push, watch the **Build** run for the push
 SHA (query `/actions/runs?head_sha=<sha>` — don't trust "latest run"), verify
 `conclusion=success`, download + extract the artifact zip, deliver to the
 user via Telegram MEDIA in Polish.
+
+## Parsec host: injected keyboard swallowed → Interception mode
+
+Parsec host's low-level keyboard hook eats keys that arrive with the
+LLKHF_INJECTED flag while a session is connected (AutoHotkey "Sends on the
+host" fails the same way; mouse injection is NOT filtered — that's why mouse
+mode kept working). Our SendInput keys therefore vanish on a Parsec host.
+
+Fix (Keyboard tab): "Send keys through the Interception driver"
+(`AppSettings.InterceptionKeyboard`, default OFF + `InterceptionDllPath`
+optional). `Native/InterceptionKeyboard.cs` = lazy singleton: loads
+`interception.dll` (configured path → exe dir → `C:\Interception\library\x64`
+→ PATH), binds `interception_create_context/_destroy_context/_send/
+_get_hardware_id`, picks the first keyboard slot (1..10) with a hardware id,
+sends `InterceptionKeyStroke { ushort code; ushort state; uint info }`
+strides of 8 B in one `send` call (TapKey = 2 strokes, nstroke=2), falling
+back to SendInput per key on ANY failure (10 s rate-limited re-probe after a
+failure; repeat-pump follows the path the hold started on).
+
+Scancodes: `MapVirtualKeyEx(vk, MAPVK_VK_TO_VSC_EX=4, GetKeyboardLayout(0))`
+— high byte 0xE0 → state|=KEY_E0(0x02) (matches the caller's `extended`
+flag too), 0xE1 (Pause) → falls back. States follow ntddkbd KEYBOARD_INPUT_
+DATA.Flags: make=0, break=1 (NOT the header enum's DOWN=0/UP=1 confusion —
+UP is the bit 0x01).
+
+Driver install (user, once): github.com/oblitum/Interception →
+`command line installer\install-interception.exe /install` → REBOOT; copy the
+zip's `library\x64\interception.dll` next to the exe (or any probed path).
+DLL/driver are NOT bundled (license + it's the user's machine). Caveat:
+Memory Integrity (Core isolation) can block this old driver on some Win11s.

@@ -45,6 +45,15 @@ namespace GamepadKeyboard.UI
         };
         private readonly CheckBox _absoluteMouse = new() { Content = "Use absolute mouse (remote desktop fix)" };
         private readonly CheckBox _keyRepeat = new() { Content = "Simulate key repeat" };
+        private readonly CheckBox _interceptionKeys = new()
+        {
+            Content = "Send keys through the Interception driver (physical input; fixes Parsec host)"
+        };
+        private readonly TextBlock _interceptionStatus = new()
+        {
+            Foreground = System.Windows.Media.Brushes.Gray,
+            TextWrapping = TextWrapping.Wrap,
+        };
         private readonly CheckBox _specialKeys = new() { Content = "Show special keys" };
         private readonly CheckBox _keyboardPrompts = new() { Content = "Show button prompts (Maps Mode style)" };
         private readonly Slider _promptOffsetXSlider = new()
@@ -119,6 +128,8 @@ namespace GamepadKeyboard.UI
             _curveExponent.Text = s.AnalogStickCurveExponent.ToString("0.##");
             _absoluteMouse.IsChecked = s.UseAbsoluteMouse;
             _keyRepeat.IsChecked = s.SimulateKeyRepeat;
+            _interceptionKeys.IsChecked = s.InterceptionKeyboard;
+            RefreshInterceptionStatus();
             _specialKeys.IsChecked = s.ShowSpecialKeys;
             _keyboardPrompts.IsChecked = s.ShowKeyboardButtonPrompts;
             _promptOffsetXSlider.Value = s.KeyboardPromptOffsetX;
@@ -292,6 +303,20 @@ namespace GamepadKeyboard.UI
             };
         }
 
+        /// <summary>Diagnostics line under the Interception toggle: keeps
+        /// the user informed whether the driver/dll path will be used or
+        /// keystrokes stay on SendInput (which a Parsec host swallows).</summary>
+        private void RefreshInterceptionStatus()
+        {
+            Native.InterceptionKeyboard.Probe();
+            string status = Native.InterceptionKeyboard.Status ?? "";
+            if (_interceptionKeys.IsChecked != true)
+            {
+                status += " (toggle is off — SendInput is used)";
+            }
+            _interceptionStatus.Text = status;
+        }
+
         /// <summary>Keyboard tab rows: the classic keyboard settings.</summary>
         private (string, FrameworkElement)[] BuildKeyboardTabRows()
         {
@@ -331,6 +356,8 @@ namespace GamepadKeyboard.UI
                 ("Keyboard move speed:", _keyboardMoveSpeed),
                 ("Stick deadzone (0.000–0.5):", _deadzone),
                 ("", _keyRepeat),
+                ("", _interceptionKeys),
+                ("", _interceptionStatus),
                 ("", _specialKeys),
                 ("", _keyboardPrompts),
                 ("Prompt icon offset X:", MakeKeyboardPromptSliderHost(
@@ -595,6 +622,8 @@ namespace GamepadKeyboard.UI
             s.KeyboardPromptOffsetY = _promptOffsetYSlider.Value;
             s.KeyboardPromptIconScale = _promptIconScaleSlider.Value;
             s.SimulateKeyRepeat = _keyRepeat.IsChecked == true;
+            s.InterceptionKeyboard = _interceptionKeys.IsChecked == true;
+            RefreshInterceptionStatus();
             s.CursorLagEnabled = _cursorLag.IsChecked == true;
             s.CursorLagSeconds = ReadValidatedNumber(_cursorLagSeconds);
             s.HideRaysInCursorLag = _hideLagRays.IsChecked == true;

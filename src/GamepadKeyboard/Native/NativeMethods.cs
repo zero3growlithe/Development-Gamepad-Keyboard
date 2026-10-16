@@ -82,6 +82,15 @@ namespace GamepadKeyboard.Native
 
         public const ushort KeyStateToggled = 0x0001;
 
+        // ── Virtual-key to scan-code mapping (Interception keyboard mode) ─────
+        public const uint MapVkToVscExtended = 4;   // MAPVK_VK_TO_VSC_EX: high byte = E0/E1 prefix for extended keys
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr MapVirtualKeyEx(uint virtualKey, uint mapType, IntPtr keyboardLayout);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetKeyboardLayout(uint idThread);
+
         [DllImport("user32.dll", EntryPoint = "GetKeyState")]
         public static extern short GetKeyState(ushort virtualKey);
 

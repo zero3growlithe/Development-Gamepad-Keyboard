@@ -24,6 +24,26 @@ In Settings, enable **Reserve selected controllers while input is enabled** and 
 
 The app prefers HidHide's process-lifetime session blacklist IOCTLs (functions 2056/2057). For current drivers without that API, Settings offers an explicit legacy fallback. The fallback temporarily adds only the selected device paths to HidHide's persistent blacklist, removes only entries it added on `DisableInput`/exit, and writes a recovery journal before changing the list so the next app launch can clean up after a crash. It also asks Windows to restart the selected device so the change affects applications that already had it open; this needs Administrator rights, otherwise the toast asks you to reconnect the controller manually. Missing, inactive, inversely configured, or otherwise incompatible drivers fail open and show a toast.
 
+## Optional: physical keyboard keys over Parsec (Interception)
+
+By default keystrokes arrive via `SendInput`, which marks them *injected*
+(`LLKHF_INJECTED`). Parsec's host-side keyboard hook swallows exactly that
+class of input while a session is connected, so gamepad-driven keys can
+silently vanish when this app runs on the Parsec host. Mouse injection is not
+filtered, which is why mouse mode kept working.
+
+Fix: install the [Interception](https://github.com/oblitum/Interception)
+driver once on the game machine —
+`command line installer\install-interception.exe /install`, then reboot —
+and put its `library\x64\interception.dll` next to `DevelopmentGamepadKeyboard.exe`
+(or leave it in `C:\Interception\library\x64`). Then enable **Send keys
+through the Interception driver** in Settings → Keyboard. Keys are then
+written as genuine keyboard-device input below the injected-flag layer and
+behave like physical keys everywhere. The toggle is optional (default off);
+without the library the app keeps the classic SendInput path, and every
+failure falls back per key. Note: Windows Memory Integrity (Core isolation)
+can block this older driver on some systems.
+
 ## Building
 
 ```sh

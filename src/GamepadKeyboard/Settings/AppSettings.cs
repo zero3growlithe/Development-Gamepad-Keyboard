@@ -59,6 +59,8 @@ namespace GamepadKeyboard.Settings
         public bool StartInMouseMode { get; set; } = true;
         public bool UseAbsoluteMouse { get; set; } = false;   // remote-desktop (Parsec) fix, off = classic relative moves
         public bool SimulateKeyRepeat { get; set; } = false;  // held keys repeat like a real keyboard (OS delay/rate)
+        public bool InterceptionKeyboard { get; set; } = false; // send keys through the Interception driver (physical input; Parsec-host fix)
+        public string InterceptionDllPath { get; set; } = "";   // optional explicit interception.dll path (empty = auto-probe exe dir / C:\Interception\library\x64 / PATH)
         public bool ShowSpecialKeys { get; set; } = false;    // PrtSc/ScrLk/Pause + nav cluster & arrows on the virtual keyboard
         public bool ShowKeyboardButtonPrompts { get; set; } = false; // pad-button icons on virtual keys + app-action list (Keyboard mode)
         public bool HidHideSessionEnabled { get; set; } = false;
