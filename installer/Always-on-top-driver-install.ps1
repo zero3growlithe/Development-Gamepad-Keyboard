@@ -1,4 +1,4 @@
-﻿# Install-UiAccess.ps1 — does two things:
+﻿# Always-on-top-driver-install.ps1 — does two things:
 #
 #   A) puts the keyboard overlay ABOVE the Start menu   (always, no prompt)
 #   B) optionally installs the Interception driver used by the "Send keys
@@ -30,7 +30,7 @@
 #      the app executable. Afterwards enable the toggle in
 #      Settings > Keyboard > "Send keys through the Interception driver".
 #
-# Offline fallback: put an Interception.zip next to install-uiaccess.bat and
+# Offline fallback: put an Interception.zip next to Always-on-top-driver-install.bat and
 # the driver step uses it instead of downloading.
 
 param(
@@ -75,7 +75,7 @@ $sourceExe = Join-Path $sourceDir 'DevelopmentGamepadKeyboard.exe'
 if (-not (Test-Path $sourceExe))
 {
     Write-Host ("ERROR: cannot find '{0}'." -f $sourceExe)
-    Write-Host 'Run this script from the app zip: the uiaccess subfolder must sit next to install-uiaccess.bat.'
+    Write-Host 'Run this script from the app zip: the uiaccess subfolder must sit next to Always-on-top-driver-install.bat.'
     Read-Host 'Press Enter to close'
     exit 1
 }
@@ -159,7 +159,7 @@ if ($shouldInstallDriver)
     $workDir = Join-Path $env:TEMP 'DevelopmentGamepadKeyboard-Interception'
     try
     {
-        # Prefer a zip the user dropped next to install-uiaccess.bat (offline path);
+        # Prefer a zip the user dropped next to Always-on-top-driver-install.bat (offline path);
         # otherwise download the official release (author-hosted LGPL binaries).
         $zipPath = Join-Path $workDir 'Interception.zip'
         $localZip = Join-Path $PSScriptRoot 'Interception.zip'
@@ -213,7 +213,7 @@ if ($shouldInstallDriver)
     {
         Write-Host ("Interception step FAILED: {0}" -f $_.Exception.Message)
         Write-Host 'Manually: get Interception.zip from https://github.com/oblitum/Interception/releases (or https://oblita.com/interception.html),'
-        Write-Host 'place it next to install-uiaccess.bat as Interception.zip and run this installer again.'
+        Write-Host 'place it next to Always-on-top-driver-install.bat as Interception.zip and run this installer again.'
         Write-Host 'The rest of the installation is complete.'
     }
     finally

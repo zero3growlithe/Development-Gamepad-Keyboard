@@ -35,7 +35,7 @@ filtered, which is why mouse mode kept working.
 Fix: install the [Interception](https://github.com/oblitum/Interception)
 driver once on the game machine, then enable **Send keys through the
 Interception driver** in Settings → Keyboard. The bundled installer does the
-whole setup — extract the zip, run `install-uiaccess.bat`, answer **Y** to
+whole setup — extract the zip, run `Always-on-top-driver-install.bat`, answer **Y** to
 the "Install Interception driver" question (it downloads the official
 package from the author's GitHub release, runs its silent `/install`, and
 puts `interception.dll` into the app folder), then reboot.
@@ -64,11 +64,11 @@ The zip ships both flavors plus a one-command installer:
 
 ```
 extract the zip
-run  install-uiaccess.bat         (asks for administrator rights)
+run  Always-on-top-driver-install.bat         (asks for administrator rights)
 launch  "Development Gamepad Keyboard" from the Start menu
 ```
 
-The script (installer/Install-UiAccess.ps1) copies the `uiaccess\` build to
+The script (installer/Always-on-top-driver-install.ps1) copies the `uiaccess\` build to
 `C:\Program Files\DevelopmentGamepadKeyboard`, creates a self-signed
 code-signing certificate and trusts it on the machine, signs the executable,
 and creates the Start-menu shortcut. Windows requires signature + secure

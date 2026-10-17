@@ -261,7 +261,7 @@ highest z-band — above Start, Task Manager, everything. Same mechanism as
 osk.exe. Implementation: `app.uiaccess.manifest` (copy of app.manifest,
 `uiAccess="true"`) published by CI via
 `-p:ApplicationManifest=app.uiaccess.manifest` into the zip's `uiaccess\`
-subfolder; `installer/Install-UiAccess.bat` → `Install-UiAccess.ps1`
+subfolder; `installer/Always-on-top-driver-install.bat` → `Always-on-top-driver-install.ps1`
 self-elevates, stops running instances, copies to Program Files, creates a
 self-signed CodeSigningCert (reuse by exact Subject match
 `CN=Development Gamepad Keyboard UIAccess`, 20 y validity), imports it into
@@ -276,7 +276,7 @@ by both flavors (mutual exclusion, no double-input).
 
 ## Installer v2 — optional Interception driver step (2026-10-16)
 
-`installer/Install-UiAccess.ps1` now asks ONE Y/N question (or
+`installer/Always-on-top-driver-install.ps1` now asks ONE Y/N question (or
 `-InstallInterception`/`-SkipInterception` flags) about the Interception
 driver AFTER resolving the choice but BEFORE the UAC relaunch — the choice is
 re-passed through the elevated command line (`-Wait` keeps the flow
@@ -284,7 +284,7 @@ synchronous; final `Read-Host` keeps the elevated window open).
 Driver step: `Interception.zip` v1.0.1 (official author release
 `https://github.com/oblitum/Interception/releases/download/v1.0.1/Interception.zip`,
 LGPL non-commercial binaries — NOT bundled in the repo/zip) — prefers an
-`Interception.zip` dropped next to install-uiaccess.bat (offline path), else
+`Interception.zip` dropped next to Always-on-top-driver-install.bat (offline path), else
 TLS12 + Invoke-WebRequest -UseBasicParsing download to
 %TEMP%\DevelopmentGamepadKeyboard-Interception, Expand-Archive, verify members, run
 `command line installer\install-interception.exe /install` (silent; drivers
