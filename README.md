@@ -33,11 +33,18 @@ silently vanish when this app runs on the Parsec host. Mouse injection is not
 filtered, which is why mouse mode kept working.
 
 Fix: install the [Interception](https://github.com/oblitum/Interception)
-driver once on the game machine —
-`command line installer\install-interception.exe /install`, then reboot —
-and put its `library\x64\interception.dll` next to `DevelopmentGamepadKeyboard.exe`
-(or leave it in `C:\Interception\library\x64`). Then enable **Send keys
-through the Interception driver** in Settings → Keyboard. Keys are then
+driver once on the game machine, then enable **Send keys through the
+Interception driver** in Settings → Keyboard. The bundled installer does the
+whole setup — extract the zip, run `install-uiaccess.bat`, answer **Y** to
+the "Install Interception driver" question (it downloads the official
+package from the author's GitHub release, runs its silent `/install`, and
+puts `interception.dll` into the app folder), then reboot.
+
+Manual alternative: run
+`command line installer\install-interception.exe /install` from the official
+[Interception zip](https://github.com/oblitum/Interception/releases) (reboot
+afterwards) and copy its `library\x64\interception.dll` next to
+`DevelopmentGamepadKeyboard.exe` (or leave it in `C:\Interception\library\x64`). Keys are then
 written as genuine keyboard-device input below the injected-flag layer and
 behave like physical keys everywhere. The toggle is optional (default off);
 without the library the app keeps the classic SendInput path, and every

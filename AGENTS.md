@@ -273,3 +273,24 @@ window creation). Caveat: in the UIAccess process EVERY window floats above
 normal topmost windows (band ordering dominates) — Settings too; acceptable.
 Single-instance mutex `DevelopmentGamepadKeyboard_SingleInstance` is shared
 by both flavors (mutual exclusion, no double-input).
+
+## Installer v2 — optional Interception driver step (2026-10-16)
+
+`installer/Install-UiAccess.ps1` now asks ONE Y/N question (or
+`-InstallInterception`/`-SkipInterception` flags) about the Interception
+driver AFTER resolving the choice but BEFORE the UAC relaunch — the choice is
+re-passed through the elevated command line (`-Wait` keeps the flow
+synchronous; final `Read-Host` keeps the elevated window open).
+Driver step: `Interception.zip` v1.0.1 (official author release
+`https://github.com/oblitum/Interception/releases/download/v1.0.1/Interception.zip`,
+LGPL non-commercial binaries — NOT bundled in the repo/zip) — prefers an
+`Interception.zip` dropped next to install-uiaccess.bat (offline path), else
+TLS12 + Invoke-WebRequest -UseBasicParsing download to
+%TEMP%\DevelopmentGamepadKeyboard-Interception, Expand-Archive, verify members, run
+`command line installer\install-interception.exe /install` (silent; drivers
+load at BOOT → print REBOOT REQUIRED), copy `library/x64/interception.dll`
+to BOTH Program Files install dir and the zip extraction dir ($PSScriptRoot,
+app probes exe dir first). Step failures are NON-fatal to the UIAccess
+install (try/catch, prints manual-download instructions). Zip layout facts:
+top-level root folder `Interception/`, single `install-interception.exe`
+handles /install and /uninstall.
