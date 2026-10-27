@@ -42,12 +42,40 @@ namespace GamepadKeyboard
             }
             if (!isNew)
             {
+                Log("single instance: another copy is already running - this launch exits. " +
+                    "Close the running instance (tray icon -> Exit) before starting the installed UIAccess copy.");
                 Shutdown();
                 return;
             }
 
             Log("=== launch ===");
             Log(DescribeBuild());
+
+            // UIAccess is what puts our windows above the Start menu, and Windows grants
+            // it only to a signed exe in a secure location started WITHOUT elevation.
+            bool uiAccess = Native.ProcessToken.HasUiAccess();
+            bool elevated = Native.ProcessToken.IsElevated();
+            bool secureLocation = Native.ProcessToken.IsInSecureLocation();
+            Log("run mode: uiaccess=" + (uiAccess ? "yes" : "no") +
+                " elevated=" + (elevated ? "yes" : "no") +
+                " secure_location=" + (secureLocation ? "yes" : "no") +
+                " exe=" + (Environment.ProcessPath ?? "?"));
+            if (elevated)
+            {
+                Log("WARNING: this copy is elevated - an elevated process can never hold UIAccess, " +
+                    "so the overlay stays below the Start menu. Turn OFF \"Run as Administrator\" " +
+                    "(and Settings > AdminLaunch) and start the installed copy from the Start menu.");
+            }
+            else if (!uiAccess)
+            {
+                Log("note: no UIAccess in this process - stock build, or the installed copy is unsigned / " +
+                    "not in Program Files / launch refused. The overlay stays below the Start menu.");
+            }
+            if (Settings.AppSettings.Instance.AdminLaunch)
+            {
+                Log("WARNING: AdminLaunch is enabled in settings.json - every launch elevates the app, " +
+                    "which permanently costs the UIAccess flag. Set it to false for the UIAccess build.");
+            }
 
             Input.GamepadSnapshot.Deadzone = Settings.AppSettings.Instance.StickDeadzone;
             // overlay position is restored in KeyboardOverlay ctor via OverlayLeft/Top
