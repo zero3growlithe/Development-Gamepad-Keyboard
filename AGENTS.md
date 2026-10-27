@@ -261,7 +261,7 @@ highest z-band — above Start, Task Manager, everything. Same mechanism as
 osk.exe. Implementation: `app.uiaccess.manifest` (copy of app.manifest,
 `uiAccess="true"`) published by CI via
 `-p:ApplicationManifest=app.uiaccess.manifest` into the zip's `uiaccess\`
-subfolder; `installer/Always-on-top-driver-install.bat` → `Always-on-top-driver-install.ps1`
+subfolder; `installer/Drivers-installer.bat` → `Drivers-installer.ps1`
 self-elevates, stops running instances, copies to Program Files, creates a
 self-signed CodeSigningCert (reuse by exact Subject match
 `CN=Development Gamepad Keyboard UIAccess`, 20 y validity), imports it into
@@ -276,15 +276,15 @@ by both flavors (mutual exclusion, no double-input).
 
 ## Installer v2 — optional Interception driver step (2026-10-16)
 
-`installer/Always-on-top-driver-install.ps1` now asks ONE Y/N question (or
-`-InstallInterception`/`-SkipInterception` flags) about the Interception
-driver AFTER resolving the choice but BEFORE the UAC relaunch — the choice is
-re-passed through the elevated command line (`-Wait` keeps the flow
-synchronous; final `Read-Host` keeps the elevated window open).
+`installer/Drivers-installer.ps1` takes `-UiAccess` / `-Interception` switches
+(both = both features) and asks interactively when neither is passed; the
+choice is resolved BEFORE the UAC relaunch and re-passed through the elevated
+command line (`-Wait` keeps the flow synchronous; final `Read-Host` keeps the
+elevated window open). A Y/N question no longer exists — see "Installer v4".
 Driver step: `Interception.zip` v1.0.1 (official author release
 `https://github.com/oblitum/Interception/releases/download/v1.0.1/Interception.zip`,
 LGPL non-commercial binaries — NOT bundled in the repo/zip) — prefers an
-`Interception.zip` dropped next to Always-on-top-driver-install.bat (offline path), else
+`Interception.zip` dropped next to Drivers-installer.bat (offline path), else
 TLS12 + Invoke-WebRequest -UseBasicParsing download to
 %TEMP%\DevelopmentGamepadKeyboard-Interception, Expand-Archive, verify members, run
 `command line installer\install-interception.exe /install` (silent; drivers
@@ -294,3 +294,39 @@ app probes exe dir first). Step failures are NON-fatal to the UIAccess
 install (try/catch, prints manual-download instructions). Zip layout facts:
 top-level root folder `Interception/`, single `install-interception.exe`
 handles /install and /uninstall.
+
+## Installer v4 — renamed pair + Driver uninstaller (2026-10-27)
+
+The installer pair was renamed and now covers both directions; the CI workflow
+copies all FOUR files into the zip root (that `Copy-Item` list is the usual
+casualty of a rename — a missing one ships a batch that calls a script which is
+not in the zip):
+
+- `installer/Drivers-installer.bat` → `Drivers-installer.ps1` — ONE
+  `choice /c:123Q /n` menu: 1 = UIAccess, 2 = Interception driver, 3 = both,
+  Q = quit. Each branch passes `-UiAccess` / `-Interception` /
+  `-UiAccess -Interception` to the ps1; the ps1 accepts the same switches
+  directly and asks 1/2/3/Q itself when given none.
+- `installer/Driver-uninstaller.bat` → `Driver-uninstaller.ps1` — identical
+  menu semantics in reverse.
+
+Ordering rules that keep the flows honest: the UIAccess source check
+(`uiaccess\DevelopmentGamepadKeyboard.exe` next to the script) runs INSIDE the
+`if ($doUiAccess)` block, so an Interception-only install works from any folder;
+the Interception step copies `interception.dll` into the Program Files dir only
+when `Test-Path $InstallDir` (an Interception-only install has no installed
+copy), and always into `$PSScriptRoot`.
+
+Uninstaller specifics: it stops `DevelopmentGamepadKeyboard`, deletes the
+Start-menu shortcut and the Program Files dir, then walks
+`Cert:\CurrentUser\My` + `Cert:\LocalMachine\My` + `Cert:\LocalMachine\Root`
+matching the EXACT Subject `CN=Development Gamepad Keyboard UIAccess` and
+removes each hit (the root trust is what would otherwise keep the machine
+trusting a cert nobody uses). The driver side runs
+`install-interception.exe /uninstall` from the same offline/downloaded package
+as the installer and deletes the `interception.dll` copies; a nonzero exit code
+is reported as "may simply mean the driver was not installed", not as a
+failure. Both paths end with `Read-Host 'Press Enter to close'` — an elevated
+console closes on exit and flashing output reads as a crashed uninstaller.
+Removing the driver needs a reboot to unload it; the app falls back to
+SendInput on its own once the toggle is off.

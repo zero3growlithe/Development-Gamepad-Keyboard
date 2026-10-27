@@ -35,10 +35,10 @@ filtered, which is why mouse mode kept working.
 Fix: install the [Interception](https://github.com/oblitum/Interception)
 driver once on the game machine, then enable **Send keys through the
 Interception driver** in Settings → Keyboard. The bundled installer does the
-whole setup — extract the zip, run `Always-on-top-driver-install.bat`, answer **Y** to
-the "Install Interception driver" question (it downloads the official
+whole setup — extract the zip, run `Drivers-installer.bat` and pick option **2**
+(or **3** for both features). The Interception step downloads the official
 package from the author's GitHub release, runs its silent `/install`, and
-puts `interception.dll` into the app folder), then reboot.
+puts `interception.dll` into the app folder; then reboot.
 
 Manual alternative: run
 `command line installer\install-interception.exe /install` from the official
@@ -64,11 +64,11 @@ The zip ships both flavors plus a one-command installer:
 
 ```
 extract the zip
-run  Always-on-top-driver-install.bat         (asks for administrator rights)
+run  Drivers-installer.bat                    (pick 1 = UIAccess; asks for administrator rights)
 launch  "Development Gamepad Keyboard" from the Start menu
 ```
 
-The script (installer/Always-on-top-driver-install.ps1) copies the `uiaccess\` build to
+The script (installer/Drivers-installer.ps1) copies the `uiaccess\` build to
 `C:\Program Files\DevelopmentGamepadKeyboard`, creates a self-signed
 code-signing certificate and trusts it on the machine, signs the executable,
 and creates the Start-menu shortcut. Windows requires signature + secure
@@ -76,6 +76,16 @@ location for UIAccess, which is why the installed copy is the one to launch —
 the plain build in the zip keeps the stock behavior (overlay under Start).
 If "Run on startup" was used, toggle it off/on after installing so the
 scheduled task points at the new copy.
+
+### Uninstalling the optional drivers
+
+`Driver-uninstaller.bat` uses the same one-key menu (1 = UIAccess,
+2 = Interception, 3 = both) and reverses whichever parts you installed: for
+UIAccess it removes the Program Files copy, the Start-menu shortcut and the
+self-signed signing certificate together with its machine trust; for the
+Interception driver it runs the official `install-interception.exe /uninstall`
+and deletes the `interception.dll` copies. A reboot unloads the driver. The
+stock build in the zip is never touched.
 
 ## Building
 
