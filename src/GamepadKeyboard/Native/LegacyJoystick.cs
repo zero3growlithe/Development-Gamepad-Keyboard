@@ -120,6 +120,15 @@ namespace GamepadKeyboard.Native
             /// <summary>Sony Interactive Entertainment vendor id.</summary>
             public bool IsSony => VendorId == 0x054C;
 
+            /// <summary>
+            /// True when this device reports the stick pairs and triggers in the
+            /// OPPOSITE roles from the generic HID assumption. Field-verified on a
+            /// DualSense through this layer (2026-10-27): X/Y carried the RIGHT
+            /// stick, Z/R the LEFT one, and U was R2 while V was L2. Requires all
+            /// four stick axes so a two-axis pad still reads its left stick.
+            /// </summary>
+            public bool SwappedLayout => IsSony && HasZ && HasR;
+
             /// <summary>One-line capability dump — this is what crash.log needs to
             /// confirm the real axis/button layout of an unknown pad.</summary>
             public string Describe()
@@ -132,6 +141,7 @@ namespace GamepadKeyboard.Native
                 return "\"" + Name + "\" vid=0x" + VendorId.ToString("X4") +
                        " pid=0x" + ProductId.ToString("X4") +
                        " buttons=" + ButtonCount +
+                       " layout=" + (SwappedLayout ? "sony-swapped" : "standard") +
                        " axes[" + axes + "]" + (HasPov ? "+pov" : "") +
                        " xrange=" + Caps.wXmin + ".." + Caps.wXmax +
                        " yrange=" + Caps.wYmin + ".." + Caps.wYmax;
@@ -207,6 +217,20 @@ namespace GamepadKeyboard.Native
             public string Name => _device.Name;
 
             public uint Buttons => _info.dwButtons;
+
+            // Raw 16-bit positions, exposed for the diagnostics probes only — the
+            // converted properties below are what the app reads.
+            public uint RawX => _info.dwXpos;
+
+            public uint RawY => _info.dwYpos;
+
+            public uint RawZ => _info.dwZpos;
+
+            public uint RawR => _info.dwRpos;
+
+            public uint RawU => _info.dwUpos;
+
+            public uint RawV => _info.dwVpos;
 
             public uint PovHundredths => _info.dwPOV;
 

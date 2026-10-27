@@ -37,6 +37,8 @@ namespace GamepadKeyboard.Input
         private DateTime _lastLegacyScan = DateTime.MinValue;
         private DateTime _lastLegacyRead = DateTime.MinValue;
         private GamepadSnapshot _lastLegacySnapshot;
+        private Native.LegacyJoystick.Reading _lastLegacyReading;
+        private bool _hasLegacyReading;
         private long _legacyReads;
         private long _legacyReadFails;
 
@@ -355,7 +357,9 @@ namespace GamepadKeyboard.Input
                 _legacyReads++;
                 if (Native.LegacyJoystick.TryRead(device, out Native.LegacyJoystick.Reading reading))
                 {
-                    _lastLegacySnapshot = GamepadSnapshot.FromLegacy(reading, device.IsSony);
+                    _lastLegacyReading = reading;
+                    _hasLegacyReading = true;
+                    _lastLegacySnapshot = GamepadSnapshot.FromLegacy(reading, device.IsSony, device.SwappedLayout);
                 }
                 else
                 {
@@ -373,6 +377,23 @@ namespace GamepadKeyboard.Input
             snapshot = _lastLegacySnapshot;
             name = "\"" + device.Name + "\" (legacy)";
             return true;
+        }
+
+        /// <summary>
+        /// Raw legacy packet for the diagnostics probes. Built only when a probe line
+        /// is composed (every few seconds), so the 125 Hz read path stays allocation-free.
+        /// </summary>
+        private string LegacyRawTrace()
+        {
+            if (!_hasLegacyReading)
+            {
+                return "n/a";
+            }
+            Native.LegacyJoystick.Reading raw = _lastLegacyReading;
+            return "x=" + raw.RawX + " y=" + raw.RawY + " z=" + raw.RawZ +
+                   " r=" + raw.RawR + " u=" + raw.RawU + " v=" + raw.RawV +
+                   " b=0x" + raw.Buttons.ToString("X4") +
+                   " pov=" + (raw.PovCentered ? "c" : raw.PovHundredths.ToString());
         }
 
         /// <summary>Reads one XInput slot, converting to a snapshot and returning the
@@ -505,7 +526,7 @@ namespace GamepadKeyboard.Input
             }
 
             App.Log("unfocused probe: wgi[" + wgiSummary + "] xinput[" + xinputSummary + "] " +
-                        OutcomeTrace() + " mapper[" +
+                        OutcomeTrace() + " legacyraw[" + LegacyRawTrace() + "] mapper[" +
                         (MapperStateProbe?.Invoke() ?? "n/a") + "]");
         }
 
@@ -688,6 +709,7 @@ namespace GamepadKeyboard.Input
             if (_legacyDevice != null)
             {
                 lines.Add("legacy joystick: " + _legacyDevice.Describe());
+                lines.Add("  raw " + LegacyRawTrace());
             }
             if (Native.XInput.Available)
             {
@@ -1040,7 +1062,10 @@ namespace GamepadKeyboard.Input
         /// Sony pads report HID button order (Square first), Xbox-like pads the
         /// generic order; triggers may arrive as buttons instead of axes.
         /// </summary>
-        internal static GamepadSnapshot FromLegacy(Native.LegacyJoystick.Reading reading, bool sony)
+        internal static GamepadSnapshot FromLegacy(
+            Native.LegacyJoystick.Reading reading,
+            bool sonyButtons,
+            bool swappedLayout)
         {
             double dz = Deadzone;
             double Axis(double v) => Math.Abs(v) < dz ? 0 : (v - Math.Sign(v) * dz) / (1.0 - dz);
@@ -1058,7 +1083,7 @@ namespace GamepadKeyboard.Input
             bool view;
             bool menu;
             bool home;
-            if (sony)
+            if (sonyButtons)
             {
                 // HID order: 0=Square 1=Cross 2=Circle 3=Triangle 4=L1 5=R1
                 // 6=L2 7=R2 8=Create 9=Options 10=L3 11=R3 12=PS 13=Touchpad
@@ -1090,8 +1115,26 @@ namespace GamepadKeyboard.Input
                 home = false;
             }
 
-            double lt = reading.HasU ? reading.UnipolarU : (Pressed(6) ? 1.0 : 0.0);
-            double rt = reading.HasV ? reading.UnipolarV : (Pressed(7) ? 1.0 : 0.0);
+            // Trigger roles: the DualSense reports U as R2 and V as L2 on this layer
+            // (swappedLayout), generic pads the other way round; pads that expose no
+            // trigger axis use the L2/R2 buttons instead.
+            double lt;
+            double rt;
+            if (reading.HasU && reading.HasV)
+            {
+                lt = swappedLayout ? reading.UnipolarV : reading.UnipolarU;
+                rt = swappedLayout ? reading.UnipolarU : reading.UnipolarV;
+            }
+            else if (reading.HasU)
+            {
+                lt = reading.UnipolarU;
+                rt = Pressed(7) ? 1.0 : 0.0;
+            }
+            else
+            {
+                lt = Pressed(6) ? 1.0 : 0.0;
+                rt = Pressed(7) ? 1.0 : 0.0;
+            }
 
             // POV hat in hundredths of a degree, 0 = up, clockwise. A ±4500 window
             // around each cardinal lets diagonals light two directions at once.
@@ -1108,10 +1151,17 @@ namespace GamepadKeyboard.Input
                 dLeft = pov >= 22500 && pov <= 31500;
             }
 
+            // Stick roles: swappedLayout puts the LEFT stick on Z/R and the RIGHT
+            // stick on X/Y (field-verified DualSense). Y axes stay negated because
+            // HID/legacy Y grows downward while the snapshot is positive-up.
+            double leftX = swappedLayout ? reading.AxisZ : reading.AxisX;
+            double leftY = swappedLayout ? reading.AxisR : reading.AxisY;
+            double rightX = swappedLayout ? reading.AxisX : (reading.HasZ ? reading.AxisZ : 0);
+            double rightY = swappedLayout ? reading.AxisY : (reading.HasR ? reading.AxisR : 0);
+
             return new GamepadSnapshot(
-                Axis(reading.AxisX), Axis(-reading.AxisY),
-                Axis(reading.HasZ ? reading.AxisZ : 0),
-                Axis(reading.HasR ? -reading.AxisR : 0),
+                Axis(leftX), Axis(-leftY),
+                Axis(rightX), Axis(-rightY),
                 a, b, x, y, lb, rb, ls, rs,
                 dUp, dDown, dLeft, dRight,
                 view, menu, lt, rt, home);

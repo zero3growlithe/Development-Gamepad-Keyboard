@@ -355,9 +355,18 @@ Fix in the app: `Native/LegacyJoystick.cs` + a third source in `GamepadService.P
   for the same reason.
 - Readings are throttled to ~125 Hz (`>= 8 ms`) and the previous snapshot is reused in
   between, so the mapper still sees steady state at poll cadence.
-- Axis roles: X/Y = left stick, Z/R = right stick, U/V = triggers/sliders, POV hat =
-  d-pad. Legacy/HID Y grows DOWNWARD — negate BOTH stick Y axes in `FromLegacy` so every
-  converter stays positive-up (sign flips read as "bindings broken on one path only").
+- Axis roles are PER-VENDOR, do not assume the generic HID order: on a DualSense this
+  layer reports X/Y = RIGHT stick, Z/R = LEFT stick, U = R2, V = L2 (user-verified
+  2026-10-27 after the first build shipped both pairs swapped). `Device.SwappedLayout`
+  (= Sony + all four stick axes present) is the single rule used by BOTH `FromLegacy` and
+  the caps log (`layout=sony-swapped` / `layout=standard`); generic pads keep
+  X/Y = left, Z/R = right, U = L2, V = R2. Legacy/HID Y grows DOWNWARD — negate BOTH
+  stick Y axes in `FromLegacy` so every converter stays positive-up (sign flips read as
+  "bindings broken on one path only").
+- The probe carries `legacyraw[x= y= z= r= u= v= b=0x… pov=…]` (raw packet, built only
+  when a probe line is composed so the 125 Hz path stays allocation-free) and the input
+  monitor shows the same line live — that is how an unknown pad's true axis roles get
+  pinned after one user round instead of two.
 - Buttons: Sony (`wMid == 0x054C`) → HID order 0=Square 1=Cross 2=Circle 3=Triangle,
   4=L1 5=R1, 6=L2 7=R2, 8=Create 9=Options, 10=L3 11=R3, 12=PS, 13=Touchpad; otherwise
   generic 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=View 7=Menu 8=LS 9=RS. Triggers fall back to
