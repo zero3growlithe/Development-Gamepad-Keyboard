@@ -173,6 +173,34 @@ Keys held or toggled through Hold*/Toggle* bindings get a **semi-transparent gre
 - **Stick deadzone** (default 0.005) applies to all input paths, re-read live every tick.
 - **Legacy-layer axis roles** are overridable per machine in `%APPDATA%\DevelopmentGamepadKeyboard\settings.json` — `"LegacySwapSticks"` and `"LegacySwapTriggers"` (`true` / `false`; leaving a key out, or `null`, means auto: sticks keep the generic order for every pad, triggers are swapped on Sony pads and generic elsewhere). The auto defaults already match a DualSense, so the keys only need setting if some other pad reads wrongly. `crash.log` logs the resolved choice once per device (`sticks=swapped triggers=standard (auto|override from settings.json)`), and the input monitor shows the live raw packet (`raw x=… z=… u=…`) so a wrong guess is one JSON edit away from correct.
 
+## UIAccess build (keyboard overlay above the Start menu)
+
+Windows keeps the Start menu in a z-order band that plain always-on-top windows can never
+reach, so the overlay hides under it. The fix is the same mechanism the built-in touch
+keyboard uses: a **UIAccess** build — an Authenticode-signed executable with
+`uiAccess="true"` in its manifest, installed in a secure location (Program Files). Its
+windows land in the topmost band and float above the Start menu. Install it with
+`Drivers-installer.bat` → option 1; the zip's root exe stays the stock (uiAccess=false)
+build.
+
+`crash.log` logs the run mode on every launch:
+
+```
+run mode: uiaccess=yes|no elevated=yes|no secure_location=yes|no exe=<path>
+```
+
+Reading it:
+
+- `elevated=yes` → an elevated process can never hold UIAccess. Turn off "Run as
+  Administrator", set `"AdminLaunch": false` in settings.json, and start the installed
+  copy from the Start menu. Admin rights are the opposite of the fix here.
+- `uiaccess=no`, `elevated=no`, `secure_location=yes` → the installed exe was not
+  signed/trusted or Windows refused the flag; re-run `Drivers-installer.bat` → option 1.
+- `secure_location=no` → that is the zip copy, not the installed one.
+- `single instance: another copy is already running - this launch exits` → an older copy
+  (zip build, or a startup task) owns the tray; exit it from the tray icon first, then
+  start the installed copy.
+
 ## Limitations (Windows shell)
 
 - Windows 11 Game Bar / GameDVR can consume gamepad input at shell level (Explorer navigation, guide button) — the app cannot block this without a driver. **Do NOT disable the `GameInputSvc` service to stop it**: on Windows 11 24H2+ `Windows.Gaming.Input` is served by that service, so disabling it makes every WGI-based app (this one included) enumerate zero controllers *and* kills shell gamepad navigation. Turn off the Game Bar / GameDVR / Xbox-mode / Guide toggles instead. If the service must stay disabled, the app still works through the legacy joystick fallback (see Hardware support) — slower, with a heuristic button/axis map.

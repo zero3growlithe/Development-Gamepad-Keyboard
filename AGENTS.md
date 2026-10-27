@@ -400,3 +400,16 @@ triggers are separate roles and must be decided by separate rules
 = Sony). Do not reintroduce a single "layout" flag for both. The `legacyraw[...]`
 probe line stays the tie-breaker for any future pad that misreads.
 
+## UIAccess run-mode diagnostics (2026-10-27)
+"Installed with UIAccess but the overlay is still under the Start menu" is answered by
+`crash.log`, not by guessing — verify the artifact FIRST (extract RT_MANIFEST with pefile
+from both exes: the `uiaccess\` one must say `uiAccess="true"`, the root one `false`;
+that check passed here), then read the run mode. `Native/ProcessToken.cs` logs
+`run mode: uiaccess=… elevated=… secure_location=… exe=…` at startup, plus a WARNING when
+the copy is elevated or `AdminLaunch` is set (elevation and UIAccess are mutually
+exclusive — "running as Administrator" is the opposite of the fix) and a note when
+UIAccess is absent while non-elevated. The single-instance guard now LOGS its rejection
+(`single instance: another copy is already running`): previously a stale zip copy could
+own the tray mutex, so the Start-menu launch exited silently and the UIAccess install
+looked like it did nothing.
+
