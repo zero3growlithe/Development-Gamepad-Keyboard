@@ -178,10 +178,25 @@ Keys held or toggled through Hold*/Toggle* bindings get a **semi-transparent gre
 Windows keeps the Start menu in a z-order band that plain always-on-top windows can never
 reach, so the overlay hides under it. The fix is the same mechanism the built-in touch
 keyboard uses: a **UIAccess** build — an Authenticode-signed executable with
-`uiAccess="true"` in its manifest, installed in a secure location (Program Files). Its
-windows land in the topmost band and float above the Start menu. Install it with
-`Drivers-installer.bat` → option 1; the zip's root exe stays the stock (uiAccess=false)
-build.
+`uiAccess="true"` in its manifest, installed in a secure location (Program Files). Install it
+with `Drivers-installer.bat` → option 1; the zip's root exe stays the stock
+(uiAccess=false) build.
+
+Holding the flag is only half of it. The band (`ZBID_UIACCESS`, the highest one — above the
+Start menu, Task Manager and every immersive shell surface) is granted in response to an
+explicit `SetWindowPos(hwnd, HWND_TOPMOST, …)` call, **not** to `WS_EX_TOPMOST` set at window
+creation, which is all WPF's `Topmost = true` does. Every overlay therefore goes through
+`Native/WindowBand.Promote` at startup and again on every show; without that call a
+correctly-installed UIAccess build still draws underneath the Start menu. `crash.log` reports
+what the OS actually granted:
+
+```
+overlay band: keyboard setwindowpos=ok band=2 (uiaccess) (above the Start menu)
+overlay band: keyboard setwindowpos=ok band=1 (desktop) (NOT uiaccess - check the run mode line: …)
+```
+
+`band=2` is the goal; `band=1` means the promotion was refused because the process has no
+UIAccess, so go back to the `run mode` line above.
 
 `crash.log` logs the run mode on every launch:
 

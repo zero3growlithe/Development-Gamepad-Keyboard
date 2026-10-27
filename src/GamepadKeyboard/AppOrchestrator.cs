@@ -50,6 +50,7 @@ namespace GamepadKeyboard
             Input.GamepadService.InputEnabledProbe = () => _mapper.InputEnabled;
             Input.GamepadService.MapperStateProbe = () => _mapper.MapperTrace();
             _keyboard = new KeyboardOverlay(layout);
+            PromoteOverlays();
 
             _pad.StateChanged += OnPad;
             _mapper.StateChanged += RefreshUi;
@@ -182,6 +183,22 @@ namespace GamepadKeyboard
                 PositionKeyboardAtCursor();
             _keyboard.Show();
             _keyboardShown = true;
+            PromoteOverlays();
+        }
+
+        /// <summary>
+        /// Every overlay has to be pushed into the UIAccess band explicitly. Topmost = true at
+        /// creation time only sets WS_EX_TOPMOST, which leaves the window in the desktop band —
+        /// that is exactly why a UIAccess build still drew underneath the Start menu. Called
+        /// again on every show so a lock/unlock cycle or a DWM restart cannot leave an overlay
+        /// stranded in the lower band. Logs one line per band change, never per call.
+        /// </summary>
+        private void PromoteOverlays()
+        {
+            Native.WindowBand.Promote(_keyboard, "keyboard");
+            Native.WindowBand.Promote(_keyMapsOverlay, "keymaps");
+            Native.WindowBand.Promote(_toast, "toast");
+            Native.WindowBand.Promote(_legend, "legend");
         }
 
         private void PositionKeyboardAtCursor()

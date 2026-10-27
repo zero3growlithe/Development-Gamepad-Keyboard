@@ -413,3 +413,19 @@ UIAccess is absent while non-elevated. The single-instance guard now LOGS its re
 own the tray mutex, so the Start-menu launch exited silently and the UIAccess install
 looked like it did nothing.
 
+
+### The band is requested, not implied (2026-10-27)
+
+Field result that settled it: a copy with `uiaccess=yes elevated=no secure_location=yes`
+(running from `C:\Program Files\…`) still drew underneath the Start menu. The token was
+never the missing piece — **the band call was**. `WS_EX_TOPMOST` applied at window creation
+(all WPF's `Topmost = true` does) leaves a window in `ZBID_DESKTOP`; Windows moves it into
+`ZBID_UIACCESS` — the highest band, above Start, Task Manager and every immersive shell
+surface — only in response to an explicit `SetWindowPos(hwnd, HWND_TOPMOST, …)` from a
+process that holds UIAccess. Rule: any new overlay window must be routed through
+`Native/WindowBand.Promote` (startup + every show, i.e. `AppOrchestrator.PromoteOverlays`),
+and the log line `overlay band: <label> setwindowpos=ok band=<n>` must be checked, not
+assumed. `band=1 (desktop)` = promotion refused = the process never had UIAccess; `band=2
+(uiaccess)` = above the Start menu. Do not "fix" a sub-Start overlay by adding more
+`SetWindowPos` retry timers without first reading the band id — the id says whether the
+problem is permission or timing.
