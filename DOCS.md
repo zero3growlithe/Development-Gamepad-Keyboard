@@ -171,6 +171,7 @@ Keys held or toggled through Hold*/Toggle* bindings get a **semi-transparent gre
 - One-time diagnostics are logged (button labels, axis calibration) to `crash.log` next to the exe; all state changes and input errors are logged there too.
 - Log size policy (steady state, long sessions): the unfocused probe dumps only while **input is disabled** (diagnosis phase); while input is enabled you get only transitions — focus flips (one line per flip, carrying the poll counters), source flips (rate-limited 1/min), `active pad` changes, enable/disable and HidHide reservation lines. No per-tick or per-combo-press logging.
 - **Stick deadzone** (default 0.005) applies to all input paths, re-read live every tick.
+- **Legacy-layer axis roles** are overridable per machine in `%APPDATA%\DevelopmentGamepadKeyboard\settings.json` — `"LegacySwapSticks"` and `"LegacySwapTriggers"` (`true` / `false`; leaving a key out, or `null`, means auto: a Sony pad swaps the stick pairs and the triggers, every other pad keeps the generic HID order). `crash.log` logs the resolved choice once per device (`sticks=swapped triggers=standard (auto|override from settings.json)`), and the input monitor shows the live raw packet (`raw x=… z=… u=…`) so a wrong guess is one JSON edit away from correct.
 
 ## Limitations (Windows shell)
 
@@ -184,6 +185,7 @@ Keys held or toggled through Hold*/Toggle* bindings get a **semi-transparent gre
 Newer versions changed defaults; **saved old values are not overwritten**. If the app behaves oddly after an update, check these in `%APPDATA%\DevelopmentGamepadKeyboard\settings.json`:
 
 - `"Y": "ToggleLegend"` → change to `"SwitchToKeyboardMode"` (or delete the file) — mouse-mode Y opens the keyboard
+- keys `LegacySwapSticks` / `LegacySwapTriggers` are absent until you add them — add e.g. `"LegacySwapSticks": false` to force the generic stick order on the legacy joystick fallback
 - `"StickDeadzone": 0.12` → change to `0.005`
 - `"StartInMouseMode": false` → change to `true` — launch in mouse mode with input disabled
 - Old ray-scale keys (`LeftRayScale`, `RightRayScale`, per-profile `RayScale`) are ignored; use the new per-profile `LeftRayLength`/`RightRayLength` (0–1) in the stick points editor

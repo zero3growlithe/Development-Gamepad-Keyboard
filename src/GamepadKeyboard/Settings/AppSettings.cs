@@ -29,6 +29,13 @@ namespace GamepadKeyboard.Settings
         public double KeyboardPromptOffsetY { get; set; } = 0.0;
         public double KeyboardPromptIconScale { get; set; } = 1.0;
         public double StickDeadzone { get; set; } = 0.1;
+
+        // Legacy joystick fallback (winmm layer behind joy.cpl) axis roles.
+        // null = auto: a Sony pad (DualSense) is assumed to swap both stick pairs
+        // and both triggers, everything else uses the generic HID order. Set these
+        // explicitly in settings.json to force a layout without waiting for a build.
+        public bool? LegacySwapSticks { get; set; } = null;
+        public bool? LegacySwapTriggers { get; set; } = null;
         public double MouseStickDeadzone { get; set; } = 0.1;   // separate deadzone for mouse mode
         public double OverlayScale { get; set; } = 1.0;
         public double OverlayMoveSpeed { get; set; } = 6.0;

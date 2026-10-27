@@ -340,7 +340,17 @@ namespace GamepadKeyboard.Input
                 if (!stillPresent)
                 {
                     _legacyDevice = found[0];
-                    App.Log("legacy joystick: " + _legacyDevice.Describe());
+                    bool autoSticks = _legacyDevice.SwappedLayout;
+                    bool autoTriggers = _legacyDevice.SwappedLayout;
+                    bool swapSticks = Settings.AppSettings.Instance.LegacySwapSticks ?? autoSticks;
+                    bool swapTriggers = Settings.AppSettings.Instance.LegacySwapTriggers ?? autoTriggers;
+                    App.Log("legacy joystick: " + _legacyDevice.Describe() +
+                            " sticks=" + (swapSticks ? "swapped" : "standard") +
+                            " triggers=" + (swapTriggers ? "swapped" : "standard") +
+                            ((Settings.AppSettings.Instance.LegacySwapSticks == null &&
+                              Settings.AppSettings.Instance.LegacySwapTriggers == null)
+                                ? " (auto)"
+                                : " (override from settings.json)"));
                 }
             }
 
@@ -359,7 +369,9 @@ namespace GamepadKeyboard.Input
                 {
                     _lastLegacyReading = reading;
                     _hasLegacyReading = true;
-                    _lastLegacySnapshot = GamepadSnapshot.FromLegacy(reading, device.IsSony, device.SwappedLayout);
+                    bool swapSticks = Settings.AppSettings.Instance.LegacySwapSticks ?? device.SwappedLayout;
+                    bool swapTriggers = Settings.AppSettings.Instance.LegacySwapTriggers ?? device.SwappedLayout;
+                    _lastLegacySnapshot = GamepadSnapshot.FromLegacy(reading, device.IsSony, swapSticks, swapTriggers);
                 }
                 else
                 {
@@ -1065,7 +1077,8 @@ namespace GamepadKeyboard.Input
         internal static GamepadSnapshot FromLegacy(
             Native.LegacyJoystick.Reading reading,
             bool sonyButtons,
-            bool swappedLayout)
+            bool swapSticks,
+            bool swapTriggers)
         {
             double dz = Deadzone;
             double Axis(double v) => Math.Abs(v) < dz ? 0 : (v - Math.Sign(v) * dz) / (1.0 - dz);
@@ -1115,15 +1128,15 @@ namespace GamepadKeyboard.Input
                 home = false;
             }
 
-            // Trigger roles: the DualSense reports U as R2 and V as L2 on this layer
-            // (swappedLayout), generic pads the other way round; pads that expose no
-            // trigger axis use the L2/R2 buttons instead.
+            // Trigger roles: swapTriggers means the device reports U as R2 and V as L2
+            // (DualSense default on this layer); the standard order is U = L2, V = R2.
+            // Pads that expose no trigger axis use the L2/R2 buttons instead.
             double lt;
             double rt;
             if (reading.HasU && reading.HasV)
             {
-                lt = swappedLayout ? reading.UnipolarV : reading.UnipolarU;
-                rt = swappedLayout ? reading.UnipolarU : reading.UnipolarV;
+                lt = swapTriggers ? reading.UnipolarV : reading.UnipolarU;
+                rt = swapTriggers ? reading.UnipolarU : reading.UnipolarV;
             }
             else if (reading.HasU)
             {
@@ -1151,13 +1164,15 @@ namespace GamepadKeyboard.Input
                 dLeft = pov >= 22500 && pov <= 31500;
             }
 
-            // Stick roles: swappedLayout puts the LEFT stick on Z/R and the RIGHT
-            // stick on X/Y (field-verified DualSense). Y axes stay negated because
-            // HID/legacy Y grows downward while the snapshot is positive-up.
-            double leftX = swappedLayout ? reading.AxisZ : reading.AxisX;
-            double leftY = swappedLayout ? reading.AxisR : reading.AxisY;
-            double rightX = swappedLayout ? reading.AxisX : (reading.HasZ ? reading.AxisZ : 0);
-            double rightY = swappedLayout ? reading.AxisY : (reading.HasR ? reading.AxisR : 0);
+            // Stick roles: swapSticks puts the LEFT stick on Z/R and the RIGHT stick on
+            // X/Y; the standard order is X/Y = left, Z/R = right. Either way both Y axes
+            // are negated below because HID/legacy Y grows downward while the snapshot
+            // is positive-up. The live choice comes from settings.json when set,
+            // otherwise the per-vendor heuristic (Device.SwappedLayout) decides.
+            double leftX = swapSticks ? reading.AxisZ : reading.AxisX;
+            double leftY = swapSticks ? reading.AxisR : reading.AxisY;
+            double rightX = swapSticks ? reading.AxisX : (reading.HasZ ? reading.AxisZ : 0);
+            double rightY = swapSticks ? reading.AxisY : (reading.HasR ? reading.AxisR : 0);
 
             return new GamepadSnapshot(
                 Axis(leftX), Axis(-leftY),

@@ -376,3 +376,17 @@ Fix in the app: `Native/LegacyJoystick.cs` + a third source in `GamepadService.P
   legacyread[tries/fail]` in the probe, the caps line in the input-monitor window and
   `Legacy joysticks: N` in the tray diagnostics dump. That log line is how an unknown
   pad's real axis/button layout gets confirmed after one user round.
+
+### Axis-role overrides (settings.json, 2026-10-27)
+A per-vendor heuristic alone is not enough: the same DualSense reported swapped
+TRIGGERS and swapped STICKS in one round, and after swapping both pairs the
+triggers came out right while the sticks were still inverted — i.e. one of the two
+inferences was wrong and a third blind guess would have been a third wasted round.
+So the roles are now data, not code: `AppSettings.LegacySwapSticks` /
+`LegacySwapTriggers` (nullable bool; null = auto = `Device.SwappedLayout`) are read
+at read time, logged once per device (`sticks=… triggers=… (auto|override from
+settings.json)`), and let the user force either layout by editing
+`%APPDATA%\DevelopmentGamepadKeyboard\settings.json` — no build needed. The
+`legacyraw[x= y= z= r= u= v= b= pov=]` packet in the probe/input monitor is the
+tie-breaker: push ONE control at a time and the moved axis names the role.
+
