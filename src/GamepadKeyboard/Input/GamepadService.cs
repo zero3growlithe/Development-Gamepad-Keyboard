@@ -29,6 +29,17 @@ namespace GamepadKeyboard.Input
         private DateTime _lastUnfocusedProbe = DateTime.MinValue;  // ground-truth probe cadence
         private int _unfocusedProbeBudget = 90;              // cap probe lines per session
 
+        // ── Legacy joystick fallback (winmm/DirectInput) — the LAST reading source.
+        // Windows.Gaming.Input enumerates nothing when the GameInput service is
+        // stopped/disabled (Win11 24H2+ WGI is GameInput-backed), while the layer
+        // joy.cpl reads keeps working. See Native/LegacyJoystick.cs.
+        private Native.LegacyJoystick.Device? _legacyDevice;
+        private DateTime _lastLegacyScan = DateTime.MinValue;
+        private DateTime _lastLegacyRead = DateTime.MinValue;
+        private GamepadSnapshot _lastLegacySnapshot;
+        private long _legacyReads;
+        private long _legacyReadFails;
+
         public event Action<GamepadSnapshot>? StateChanged;
 
         public int PollHz { get; set; } = 250;
@@ -213,9 +224,28 @@ namespace GamepadKeyboard.Input
                     }
                 }
 
+                // Legacy joystick fallback — the LAST source. When Windows.Gaming.Input
+                // enumerates NOTHING (GameInput service stopped/disabled on Win11 24H2+:
+                // WGI is GameInput-backed) and XInput has no pad to read, fall back to
+                // the winmm/DirectInput layer behind joy.cpl so a DualSense still works
+                // with Windows' GameInput stack down.
+                if (!sourceSelected && raws.Count == 0 &&
+                    TryReadLegacy(out GamepadSnapshot legacySnapshot, out string legacyName))
+                {
+                    chosen = legacySnapshot;
+                    chosenName = legacyName;
+                    inputSource = "Legacy";
+                    foundIdle = true;
+                    if (legacySnapshot.AnyInput)
+                    {
+                        sourceSelected = true;
+                    }
+                }
+
                 if (sourceSelected)
                 {
                     if (inputSource == "WGI") _ticksWgiWin++;
+                    else if (inputSource == "Legacy") _ticksLegacyWin++;
                     else _ticksXiWin++;
                 }
                 else if (foundIdle) _ticksIdleCarried++;
@@ -259,6 +289,90 @@ namespace GamepadKeyboard.Input
             {
                 LogPollError("poll failed", ex);
             }
+        }
+
+        /// <summary>
+        /// Last-resort reading through the winmm joystick layer — the SAME stack as
+        /// joy.cpl/DirectInput, which keeps working when Windows.Gaming.Input is dead
+        /// (GameInput service stopped/disabled → WGI lists zero controllers, and the
+        /// shell loses gamepad navigation too). Devices are rescanned at most every
+        /// 3 s; readings are throttled to ~125 Hz and the previous snapshot is reused
+        /// in between so the mapper still sees a steady state at poll cadence.
+        /// </summary>
+        private bool TryReadLegacy(out GamepadSnapshot snapshot, out string name)
+        {
+            snapshot = _lastLegacySnapshot;
+            name = "";
+            DateTime now = DateTime.UtcNow;
+
+            // Scan on a strict 3 s cadence (a `_legacyDevice == null ||` shortcut here
+            // re-enumerated every HID device on each 250 Hz tick while no pad existed).
+            if ((now - _lastLegacyScan).TotalSeconds >= 3)
+            {
+                _lastLegacyScan = now;
+                List<Native.LegacyJoystick.Device> found = Native.LegacyJoystick.Enumerate();
+                if (found.Count == 0)
+                {
+                    if (_legacyDevice != null)
+                    {
+                        App.Log("legacy joysticks: none present -> fallback idle");
+                    }
+                    _legacyDevice = null;
+                    _lastLegacySnapshot = default;
+                    return false;
+                }
+                bool stillPresent = false;
+                Native.LegacyJoystick.Device? previous = _legacyDevice;
+                if (previous != null)
+                {
+                    foreach (Native.LegacyJoystick.Device candidate in found)
+                    {
+                        if (candidate.Id == previous.Id)
+                        {
+                            stillPresent = true;
+                            _legacyDevice = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (!stillPresent)
+                {
+                    _legacyDevice = found[0];
+                    App.Log("legacy joystick: " + _legacyDevice.Describe());
+                }
+            }
+
+            if (_legacyDevice == null)
+            {
+                snapshot = default;
+                return false;
+            }
+            Native.LegacyJoystick.Device device = _legacyDevice;
+
+            if ((now - _lastLegacyRead).TotalMilliseconds >= 8)
+            {
+                _lastLegacyRead = now;
+                _legacyReads++;
+                if (Native.LegacyJoystick.TryRead(device, out Native.LegacyJoystick.Reading reading))
+                {
+                    _lastLegacySnapshot = GamepadSnapshot.FromLegacy(reading, device.IsSony);
+                }
+                else
+                {
+                    // Vanished between scan and read (unplugged). Keep the 3 s
+                    // cadence before rescuing, otherwise a device that keeps
+                    // failing would re-enumerate the HID stack every tick.
+                    _legacyReadFails++;
+                    _legacyDevice = null;
+                    _lastLegacyScan = now;
+                    _lastLegacySnapshot = default;
+                    return false;
+                }
+            }
+
+            snapshot = _lastLegacySnapshot;
+            name = "\"" + device.Name + "\" (legacy)";
+            return true;
         }
 
         /// <summary>Reads one XInput slot, converting to a snapshot and returning the
@@ -401,6 +515,7 @@ namespace GamepadKeyboard.Input
         // unfocused probe) — distinguishes "XInput read errors" from "XInput ok
         // but AnyInput false" from "WGI idle zeros carried the tick".
         private long _ticksWgiWin, _ticksXiWin, _ticksIdleCarried, _ticksNoSource;
+        private long _ticksLegacyWin;
         private long _xiAttempts, _xiReadFails, _xiOkIdle;
         private readonly int[] _xiLastError = new int[4];
 
@@ -411,9 +526,11 @@ namespace GamepadKeyboard.Input
             for (int i = 0; i < 4; i++)
                 errs += (i > 0 ? "," : "") + _xiLastError[i];
             return "ticks[wgi=" + _ticksWgiWin + " xi=" + _ticksXiWin +
+                   " legacy=" + _ticksLegacyWin +
                    " idle=" + _ticksIdleCarried + " none=" + _ticksNoSource +
                    "] xread[tries=" + _xiAttempts + " fail=" + _xiReadFails +
-                   " okIdle=" + _xiOkIdle + " lastErr[" + errs + "]]";
+                   " okIdle=" + _xiOkIdle + " lastErr[" + errs + "]]" +
+                   " legacyread[tries=" + _legacyReads + " fail=" + _legacyReadFails + "]";
         }
 
         private void LogPollError(string context, Exception ex)
@@ -519,6 +636,9 @@ namespace GamepadKeyboard.Input
             _calibrations.Clear();
             _buttonMaps.Clear();
             _rawBuffers.Clear();
+            _legacyDevice = null;
+            _lastLegacySnapshot = default;
+            _lastLegacyScan = DateTime.MinValue;
             // The WGI-vs-XInput source choice is made fresh on every poll tick —
             // device-list churn can never strand a previously chosen source.
         }
@@ -538,7 +658,9 @@ namespace GamepadKeyboard.Input
             {
                 "input path: " + (_lastActivePad.StartsWith("XInput")
                     ? "XINPUT (unfocused fallback)"
-                    : "WGI"),
+                    : _lastActivePad.EndsWith("(legacy)")
+                        ? "LEGACY joystick (winmm/DirectInput)"
+                        : "WGI"),
                 "wgi readings active: " + (IsOwnWindowForeground() ? "yes (our window focused)" : "no (another app focused)"),
                 ""
             };
@@ -563,6 +685,10 @@ namespace GamepadKeyboard.Input
                 lines.Add("  buttons down: " + pressed + "/" + raw.ButtonCount + "   axes: " + axesStr);
             }
             lines.Add("");
+            if (_legacyDevice != null)
+            {
+                lines.Add("legacy joystick: " + _legacyDevice.Describe());
+            }
             if (Native.XInput.Available)
             {
                 for (int i = 0; i < 4; i++)
@@ -593,7 +719,8 @@ namespace GamepadKeyboard.Input
             var lines = new List<string>
             {
                 "RawGameControllers: " + raws.Count,
-                "Gamepad wrappers: " + Windows.Gaming.Input.Gamepad.Gamepads.Count
+                "Gamepad wrappers: " + Windows.Gaming.Input.Gamepad.Gamepads.Count,
+                "Legacy joysticks: " + Native.LegacyJoystick.Enumerate().Count
             };
             foreach (var r in raws)
             {
@@ -902,6 +1029,92 @@ namespace GamepadKeyboard.Input
                 (r.Buttons & Windows.Gaming.Input.GamepadButtons.View) != 0,
                 (r.Buttons & Windows.Gaming.Input.GamepadButtons.Menu) != 0,
                 r.LeftTrigger, r.RightTrigger, home);
+        }
+
+        /// <summary>
+        /// Legacy (winmm/DirectInput) converter — same reading layer as joy.cpl.
+        /// Axis roles follow the Windows HID joystick layout: X/Y = left stick,
+        /// Z/R = right stick, U/V = triggers/sliders, POV hat = d-pad. Legacy/HID Y
+        /// grows DOWNWARD, while every snapshot converter is positive-up, so both
+        /// stick Y axes are flipped here (one orientation per button name, always).
+        /// Sony pads report HID button order (Square first), Xbox-like pads the
+        /// generic order; triggers may arrive as buttons instead of axes.
+        /// </summary>
+        internal static GamepadSnapshot FromLegacy(Native.LegacyJoystick.Reading reading, bool sony)
+        {
+            double dz = Deadzone;
+            double Axis(double v) => Math.Abs(v) < dz ? 0 : (v - Math.Sign(v) * dz) / (1.0 - dz);
+            uint buttons = reading.Buttons;
+            bool Pressed(uint index) => index < 32 && (buttons & (1u << (int)index)) != 0;
+
+            bool a;
+            bool b;
+            bool x;
+            bool y;
+            bool lb;
+            bool rb;
+            bool ls;
+            bool rs;
+            bool view;
+            bool menu;
+            bool home;
+            if (sony)
+            {
+                // HID order: 0=Square 1=Cross 2=Circle 3=Triangle 4=L1 5=R1
+                // 6=L2 7=R2 8=Create 9=Options 10=L3 11=R3 12=PS 13=Touchpad
+                x = Pressed(0);
+                a = Pressed(1);
+                b = Pressed(2);
+                y = Pressed(3);
+                lb = Pressed(4);
+                rb = Pressed(5);
+                view = Pressed(8);
+                menu = Pressed(9);
+                ls = Pressed(10);
+                rs = Pressed(11);
+                home = Pressed(12);
+            }
+            else
+            {
+                // Generic HID/Xbox-ish: 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=View 7=Menu 8=LS 9=RS
+                a = Pressed(0);
+                b = Pressed(1);
+                x = Pressed(2);
+                y = Pressed(3);
+                lb = Pressed(4);
+                rb = Pressed(5);
+                view = Pressed(6);
+                menu = Pressed(7);
+                ls = Pressed(8);
+                rs = Pressed(9);
+                home = false;
+            }
+
+            double lt = reading.HasU ? reading.UnipolarU : (Pressed(6) ? 1.0 : 0.0);
+            double rt = reading.HasV ? reading.UnipolarV : (Pressed(7) ? 1.0 : 0.0);
+
+            // POV hat in hundredths of a degree, 0 = up, clockwise. A ±4500 window
+            // around each cardinal lets diagonals light two directions at once.
+            bool dUp = false;
+            bool dDown = false;
+            bool dLeft = false;
+            bool dRight = false;
+            if (reading.HasPov && !reading.PovCentered)
+            {
+                int pov = (int)reading.PovHundredths;
+                dUp = pov >= 31500 || pov <= 4500;
+                dRight = pov >= 4500 && pov <= 13500;
+                dDown = pov >= 13500 && pov <= 22500;
+                dLeft = pov >= 22500 && pov <= 31500;
+            }
+
+            return new GamepadSnapshot(
+                Axis(reading.AxisX), Axis(-reading.AxisY),
+                Axis(reading.HasZ ? reading.AxisZ : 0),
+                Axis(reading.HasR ? -reading.AxisR : 0),
+                a, b, x, y, lb, rb, ls, rs,
+                dUp, dDown, dLeft, dRight,
+                view, menu, lt, rt, home);
         }
 
         public bool Equals(GamepadSnapshot other) =>

@@ -330,3 +330,40 @@ failure. Both paths end with `Read-Host 'Press Enter to close'` — an elevated
 console closes on exit and flashing output reads as a crashed uninstaller.
 Removing the driver needs a reboot to unload it; the app falls back to
 SendInput on its own once the toggle is off.
+
+## Legacy joystick fallback — GameInput service outages (2026-10-27)
+
+Field case: `controllers changed: 0` in crash.log, no `poll error:`, xinput slots all
+1167 (=ERROR_DEVICE_NOT_CONNECTED, which is NORMAL for a DualSense — it has no XInput
+stack), while joy.cpl and Parsec still saw the pad and the Windows shell lost gamepad
+navigation too. Root cause: `GameInputSvc` was **Stopped/Disabled**, and on Windows 11
+24H2+ (26200 here) `Windows.Gaming.Input` is GameInput-backed — the service is down, so
+`RawGameController.RawGameControllers` is empty for EVERY consumer while HID/DirectInput
+keep working. (DOCS.md itself used to recommend disabling that service to stop the shell
+eating gamepad input — that advice is now corrected; the service must stay Manual.)
+
+Fix in the app: `Native/LegacyJoystick.cs` + a third source in `GamepadService.Poll`.
+
+- Engaged strictly as the LAST source: `!sourceSelected && raws.Count == 0` and after the
+  XInput loop, so a healthy WGI or an XInput pad never competes with it.
+- `winmm` `joyGetNumDevs`/`joyGetDevCapsW`/`joyGetPosEx` — the exact stack joy.cpl and
+  DirectInput use, independent of GameInput. Every DllImport carries an explicit
+  `EntryPoint` (the repo's standing rule), `joyGetDevCapsW` takes `UINT_PTR` (IntPtr).
+- Scan cadence is a STRICT 3 s timer. A `_legacyDevice == null ||` shortcut in the same
+  condition re-enumerated the whole HID stack on every 250 Hz tick while no pad was
+  present — the guard must be time-only, and a failed read resets `_lastLegacyScan = now`
+  for the same reason.
+- Readings are throttled to ~125 Hz (`>= 8 ms`) and the previous snapshot is reused in
+  between, so the mapper still sees steady state at poll cadence.
+- Axis roles: X/Y = left stick, Z/R = right stick, U/V = triggers/sliders, POV hat =
+  d-pad. Legacy/HID Y grows DOWNWARD — negate BOTH stick Y axes in `FromLegacy` so every
+  converter stays positive-up (sign flips read as "bindings broken on one path only").
+- Buttons: Sony (`wMid == 0x054C`) → HID order 0=Square 1=Cross 2=Circle 3=Triangle,
+  4=L1 5=R1, 6=L2 7=R2, 8=Create 9=Options, 10=L3 11=R3, 12=PS, 13=Touchpad; otherwise
+  generic 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=View 7=Menu 8=LS 9=RS. Triggers fall back to
+  buttons 6/7 when the device exposes no U/V axis.
+- Diagnostics: `legacy joystick: "name" vid=… pid=… buttons=… axes[…] range…` once per
+  device, `input source: Legacy (pad "…" (legacy))` on the flip, `ticks[… legacy=N …]
+  legacyread[tries/fail]` in the probe, the caps line in the input-monitor window and
+  `Legacy joysticks: N` in the tray diagnostics dump. That log line is how an unknown
+  pad's real axis/button layout gets confirmed after one user round.
