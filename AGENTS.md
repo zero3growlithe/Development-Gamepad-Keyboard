@@ -390,3 +390,13 @@ settings.json)`), and let the user force either layout by editing
 `legacyraw[x= y= z= r= u= v= b= pov=]` packet in the probe/input monitor is the
 tie-breaker: push ONE control at a time and the moved axis names the role.
 
+### Resolved: DualSense axis roles on the winmm layer (2026-10-27)
+Ground truth from the field, after the user flipped `LegacySwapSticks: false`: the
+sticks are **standard** (X/Y = left, Z/R = right) and only the **triggers are
+reversed** (U = R2, V = L2). The earlier "sony-swapped" assumption (both pairs
+swapped) came from reading one combined symptom as two identical ones — sticks and
+triggers are separate roles and must be decided by separate rules
+(`LegacySwapSticks` default false, `LegacySwapTriggers` default = `Device.SwappedTriggers`
+= Sony). Do not reintroduce a single "layout" flag for both. The `legacyraw[...]`
+probe line stays the tie-breaker for any future pad that misreads.
+

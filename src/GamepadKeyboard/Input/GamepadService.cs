@@ -340,8 +340,11 @@ namespace GamepadKeyboard.Input
                 if (!stillPresent)
                 {
                     _legacyDevice = found[0];
-                    bool autoSticks = _legacyDevice.SwappedLayout;
-                    bool autoTriggers = _legacyDevice.SwappedLayout;
+                    // Field-verified on a DualSense: the winmm layer reports the sticks in
+                    // the generic order (X/Y = left, Z/R = right) but swaps the triggers
+                    // (U = R2, V = L2). Two independent roles, never one "layout" flag.
+                    bool autoSticks = false;
+                    bool autoTriggers = _legacyDevice.SwappedTriggers;
                     bool swapSticks = Settings.AppSettings.Instance.LegacySwapSticks ?? autoSticks;
                     bool swapTriggers = Settings.AppSettings.Instance.LegacySwapTriggers ?? autoTriggers;
                     App.Log("legacy joystick: " + _legacyDevice.Describe() +
@@ -369,8 +372,8 @@ namespace GamepadKeyboard.Input
                 {
                     _lastLegacyReading = reading;
                     _hasLegacyReading = true;
-                    bool swapSticks = Settings.AppSettings.Instance.LegacySwapSticks ?? device.SwappedLayout;
-                    bool swapTriggers = Settings.AppSettings.Instance.LegacySwapTriggers ?? device.SwappedLayout;
+                    bool swapSticks = Settings.AppSettings.Instance.LegacySwapSticks ?? false;
+                    bool swapTriggers = Settings.AppSettings.Instance.LegacySwapTriggers ?? device.SwappedTriggers;
                     _lastLegacySnapshot = GamepadSnapshot.FromLegacy(reading, device.IsSony, swapSticks, swapTriggers);
                 }
                 else
@@ -1164,11 +1167,10 @@ namespace GamepadKeyboard.Input
                 dLeft = pov >= 22500 && pov <= 31500;
             }
 
-            // Stick roles: swapSticks puts the LEFT stick on Z/R and the RIGHT stick on
-            // X/Y; the standard order is X/Y = left, Z/R = right. Either way both Y axes
-            // are negated below because HID/legacy Y grows downward while the snapshot
-            // is positive-up. The live choice comes from settings.json when set,
-            // otherwise the per-vendor heuristic (Device.SwappedLayout) decides.
+            // Stick roles: the standard order is X/Y = left stick, Z/R = right stick, which
+            // is what a DualSense reports on this layer (field-verified); swapSticks exists
+            // for pads/drivers that invert the pairs. Both Y axes are negated below because
+            // HID/legacy Y grows downward while the snapshot is positive-up.
             double leftX = swapSticks ? reading.AxisZ : reading.AxisX;
             double leftY = swapSticks ? reading.AxisR : reading.AxisY;
             double rightX = swapSticks ? reading.AxisX : (reading.HasZ ? reading.AxisZ : 0);

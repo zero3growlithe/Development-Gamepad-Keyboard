@@ -121,13 +121,13 @@ namespace GamepadKeyboard.Native
             public bool IsSony => VendorId == 0x054C;
 
             /// <summary>
-            /// True when this device reports the stick pairs and triggers in the
-            /// OPPOSITE roles from the generic HID assumption. Field-verified on a
-            /// DualSense through this layer (2026-10-27): X/Y carried the RIGHT
-            /// stick, Z/R the LEFT one, and U was R2 while V was L2. Requires all
-            /// four stick axes so a two-axis pad still reads its left stick.
+            /// True when the TRIGGER axes arrive in the opposite roles (U = R2, V = L2
+            /// instead of U = L2, V = R2). Field-verified on a DualSense through this
+            /// layer (2026-10-27). The stick pairs are NOT swapped on the same device —
+            /// the generic X/Y = left stick, Z/R = right stick order is correct there —
+            /// so the two roles are decided independently, never as one "layout".
             /// </summary>
-            public bool SwappedLayout => IsSony && HasZ && HasR;
+            public bool SwappedTriggers => IsSony;
 
             /// <summary>One-line capability dump — this is what crash.log needs to
             /// confirm the real axis/button layout of an unknown pad.</summary>
@@ -141,7 +141,7 @@ namespace GamepadKeyboard.Native
                 return "\"" + Name + "\" vid=0x" + VendorId.ToString("X4") +
                        " pid=0x" + ProductId.ToString("X4") +
                        " buttons=" + ButtonCount +
-                       " layout=" + (SwappedLayout ? "sony-swapped" : "standard") +
+                       " sony=" + (IsSony ? "yes" : "no") +
                        " axes[" + axes + "]" + (HasPov ? "+pov" : "") +
                        " xrange=" + Caps.wXmin + ".." + Caps.wXmax +
                        " yrange=" + Caps.wYmin + ".." + Caps.wYmax;
